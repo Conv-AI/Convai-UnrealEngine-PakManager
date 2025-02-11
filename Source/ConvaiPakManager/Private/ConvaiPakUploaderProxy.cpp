@@ -2,9 +2,11 @@
 
 
 #include "ConvaiPakUploaderProxy.h"
-#include "ConvaiPakUtilityLibrary.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpResponse.h"
+#include "HAL/PlatformFileManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 
 namespace
 {
