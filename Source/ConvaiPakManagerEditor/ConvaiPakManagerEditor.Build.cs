@@ -47,6 +47,10 @@ public class ConvaiPakManagerEditor : ModuleRules
 				"EditorScriptingUtilities",
 				"PropertyEditor",
                 "DeveloperSettings",
+                "EditorSubsystem",
+                "ContentBrowser",
+                "AssetTools",
+                "DesktopPlatform"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
