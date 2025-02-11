@@ -1,10 +1,14 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "ConvaiPakUtilityLibrary.h"
-
 #include "DesktopPlatformModule.h"
+#include "IPlatformFilePak.h"
 #include "Misc/FileHelper.h"
 #include "HAL/PlatformFilemanager.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Misc/App.h"
+
+DEFINE_LOG_CATEGORY(LogConvaiPakManager);
 
 bool UConvaiPakUtilityLibrary::IsFileValid(const FString& FilePath)
 {
@@ -15,7 +19,7 @@ bool UConvaiPakUtilityLibrary::LoadFileToByteArray(const FString& FilePath, TArr
 {
 	if (!FFileHelper::LoadFileToArray(FileData, *FilePath))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Failed to load file: %s"), *FilePath);
+		UE_LOG(LogConvaiPakManager, Error, TEXT("Failed to load file: %s"), *FilePath);
 		return false;
 	}
 	return true;
@@ -29,7 +33,7 @@ FString UConvaiPakUtilityLibrary::OpenFileDialog(const TArray<FString>& Extensio
 	// Validate input
 	if (Extensions.Num() == 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Extensions array is empty"));
+		UE_LOG(LogConvaiPakManager, Warning, TEXT("Extensions array is empty"));
 		FileTypes = TEXT("All Files (*.*)|*.*");
 	}
 	else
@@ -78,4 +82,40 @@ FString UConvaiPakUtilityLibrary::OpenFileDialog(const TArray<FString>& Extensio
 	}
 
 	return FilePath;
+}
+
+FString UConvaiPakUtilityLibrary::GetProjectName()
+{
+	return FApp::GetProjectName();
+}
+
+bool UConvaiPakUtilityLibrary::ValidatePakFile(const FString& PakFilePath)
+{
+	if (!FPaths::FileExists(PakFilePath))
+	{
+		UE_LOG(LogConvaiPakManager, Error, TEXT("Pak file does not exist: %s"), *PakFilePath);
+		return false;
+	}
+
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	FPakPlatformFile* PakPlatformFile = new FPakPlatformFile();
+
+	if (!PakPlatformFile->Initialize(&PlatformFile, TEXT("")))
+	{
+		UE_LOG(LogConvaiPakManager, Error, TEXT("Failed to initialize PakPlatformFile."));
+		delete PakPlatformFile;
+		return false;
+	}
+
+	if (!PakPlatformFile->Mount(*PakFilePath, 0, *FPaths::ProjectContentDir()))
+	{
+		UE_LOG(LogConvaiPakManager, Error, TEXT("Failed to mount Pak file: %s"), *PakFilePath);
+		delete PakPlatformFile;
+		return false;
+	}
+
+	PakPlatformFile->Unmount(*PakFilePath);
+	
+	delete PakPlatformFile;
+	return true;
 }

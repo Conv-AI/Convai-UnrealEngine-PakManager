@@ -6,6 +6,7 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "ConvaiPakUtilityLibrary.generated.h"
 
+DECLARE_LOG_CATEGORY_EXTERN(LogConvaiPakManager, Log, All);
 
 UCLASS()
 class CONVAIPAKMANAGER_API UConvaiPakUtilityLibrary : public UBlueprintFunctionLibrary
@@ -20,4 +21,10 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static FString OpenFileDialog(const TArray<FString>& Extensions);
+
+	UFUNCTION(BlueprintPure, Category = "Convai|Utilities")
+	static FString GetProjectName();
+
+	UFUNCTION(BlueprintCallable, Category = "Convai|Pak Utilities")
+	static bool ValidatePakFile(const FString& PakFilePath);
 };
