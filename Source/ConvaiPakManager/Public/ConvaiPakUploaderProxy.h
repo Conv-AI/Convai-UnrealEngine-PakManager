@@ -35,5 +35,9 @@ private:
 
 	bool PrepareMultipartFormData(TArray<uint8>& DataToSend, const FString& Boundary) const;
 	void OnHttpRequestComplete(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION <= 3
 	void OnHttpRequestProgress(FHttpRequestPtr Request, int32 BytesSent, int32 BytesReceived);
+#else
+	void OnHttpRequestProgress64(FHttpRequestPtr Request, uint64 BytesSent, uint64 BytesReceived);
+#endif
 };

@@ -49,7 +49,14 @@ void UConvaiPakUploaderProxy::Activate()
 
 	// Bind delegates
 	HttpRequest->OnProcessRequestComplete().BindUObject(this, &UConvaiPakUploaderProxy::OnHttpRequestComplete);
-	HttpRequest->OnRequestProgress().BindUObject(this, &UConvaiPakUploaderProxy::OnHttpRequestProgress);
+	
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION <= 3
+	// For Unreal Engine 5.3 and earlier
+	HttpRequest->OnRequestProgress().BindUObject(this, &ThisClass::OnHttpRequestProgress);
+#else
+	// For Unreal Engine 5.4 and later (including 5.5)
+	HttpRequest->OnRequestProgress64().BindUObject(this, &ThisClass::OnHttpRequestProgress64);
+#endif
 
 	HttpRequest->ProcessRequest();
 }
@@ -87,7 +94,6 @@ bool UConvaiPakUploaderProxy::PrepareMultipartFormData(TArray<uint8>& DataToSend
 	return true;
 }
 
-
 void UConvaiPakUploaderProxy::OnHttpRequestComplete(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful)
 {
 	if (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() != 200)
@@ -101,6 +107,8 @@ void UConvaiPakUploaderProxy::OnHttpRequestComplete(FHttpRequestPtr Request, FHt
 	OnSuccess.Broadcast(true, 100.f);
 }
 
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION <= 3
+
 void UConvaiPakUploaderProxy::OnHttpRequestProgress(FHttpRequestPtr Request, int32 BytesSent, int32 BytesReceived)
 {
 	const int32 TotalBytes = Request->GetContentLength();
@@ -109,3 +117,15 @@ void UConvaiPakUploaderProxy::OnHttpRequestProgress(FHttpRequestPtr Request, int
 	UE_LOG(LogTemp, Log, TEXT("Upload progress: %.2f%%"), Progress * 100);
 	OnProgress.Broadcast(false, Progress);
 }
+
+#else
+
+void UConvaiPakUploaderProxy::OnHttpRequestProgress64(FHttpRequestPtr Request, uint64 BytesSent, uint64 BytesReceived)
+{
+	const int32 TotalBytes = Request->GetContentLength();
+	const float Progress = TotalBytes > 0 ? static_cast<float>(BytesSent) / TotalBytes : 0.0f;
+
+	UE_LOG(LogTemp, Log, TEXT("Upload progress: %.2f%%"), Progress * 100);
+	OnProgress.Broadcast(false, Progress);
+}
+#endif
