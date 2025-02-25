@@ -13,7 +13,9 @@ public class ConvaiPakManager : ModuleRules
 			{
 				"Core", 
 				"HTTP",
-				"PakFile", "ImageWrapper",
+				"PakFile", 
+				"ImageWrapper",
+				"Convai",
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
@@ -27,7 +29,6 @@ public class ConvaiPakManager : ModuleRules
 				"SlateCore",
 				"DesktopPlatform",
 				"Json", 
-				"Convai",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
