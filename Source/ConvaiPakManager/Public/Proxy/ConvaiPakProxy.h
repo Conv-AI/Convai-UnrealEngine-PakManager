@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Interfaces/IHttpRequest.h"
-#include "Net/OnlineBlueprintCallProxyBase.h"
+#include "RestAPI/ConvaiAPIBase.h"
 #include "Utility/CPM_Utils.h"
 #include "ConvaiPakProxy.generated.h"
 
@@ -13,7 +13,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPakUploadDelegate, const FString&,
 
 
 UCLASS()
-class UConvaiCreatePakAssetProxy : public UOnlineBlueprintCallProxyBase
+class UConvaiCreatePakAssetProxy : public UConvaiAPIBaseProxy
 {
 	GENERATED_BODY()
 
@@ -30,13 +30,13 @@ public:
 	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", DisplayName = "Convai Create Pak Asset"), Category = "Convai|PakManager")
 	static UConvaiCreatePakAssetProxy* CreatePakAssetProxy(const FConvaiCreatePakAssetParams& Params);
 
-	virtual void Activate() override;
-	
-private:
-	FString URL;
-	FConvaiCreatePakAssetParams AssociatedParams;
+protected:
+	virtual bool ConfigureRequest(TSharedRef<IHttpRequest> Request, const TCHAR* Verb) override;
+	virtual bool AddContentToRequest(TArray<uint8>& DataToSend, const FString& Boundary)  override;
+	virtual bool AddContentToRequestAsString(TSharedPtr<FJsonObject>& ObjectToSend) override { return false; }
+	virtual void HandleSuccess() override;
+	virtual void HandleFailure() override;
 
-	bool PrepareMultipartFormData(TArray<uint8>& DataToSend, const FString& Boundary) const;
-	void OnHttpRequestComplete(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
-	void OnHttpRequestProgress(FHttpRequestPtr Request, int32 BytesSent, int32 BytesReceived);
+private:
+	FConvaiCreatePakAssetParams AssociatedParams;
 };
