@@ -5,15 +5,18 @@
 #include "CoreMinimal.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Net/OnlineBlueprintCallProxyBase.h"
-#include "ConvaiPakUploaderProxy.generated.h"
+#include "Utility/CPM_Utils.h"
+#include "ConvaiPakProxy.generated.h"
 
-// Delegates for success, failure, and progress updates
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPakUploadDelegate, bool, bSuccess, float, Progress);
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPakUploadDelegate, const FString&, ResponseString, float, Progress);
+
 
 UCLASS()
-class CONVAIPAKMANAGER_API UConvaiPakUploaderProxy : public UOnlineBlueprintCallProxyBase
+class UConvaiCreatePakAssetProxy : public UOnlineBlueprintCallProxyBase
 {
 	GENERATED_BODY()
+
 public:
 	UPROPERTY(BlueprintAssignable)
 	FPakUploadDelegate OnSuccess;
@@ -23,21 +26,17 @@ public:
 
 	UPROPERTY(BlueprintAssignable)
 	FPakUploadDelegate OnProgress;
-
-	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", DisplayName = "Convai Upload Pak File"), Category = "Convai|PakManager")
-	static UConvaiPakUploaderProxy* UploadPakFile(const FString& FilePath);
+	
+	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", DisplayName = "Convai Create Pak Asset"), Category = "Convai|PakManager")
+	static UConvaiCreatePakAssetProxy* CreatePakAssetProxy(const FConvaiCreatePakAssetParams& Params);
 
 	virtual void Activate() override;
 	
 private:
-	FString LocalFilePath;
-	FString UploadDestinationURL;
+	FString URL;
+	FConvaiCreatePakAssetParams AssociatedParams;
 
 	bool PrepareMultipartFormData(TArray<uint8>& DataToSend, const FString& Boundary) const;
 	void OnHttpRequestComplete(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
-#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION <= 3
 	void OnHttpRequestProgress(FHttpRequestPtr Request, int32 BytesSent, int32 BytesReceived);
-#else
-	void OnHttpRequestProgress64(FHttpRequestPtr Request, uint64 BytesSent, uint64 BytesReceived);
-#endif
 };
