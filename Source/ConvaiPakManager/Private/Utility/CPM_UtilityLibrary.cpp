@@ -1,6 +1,6 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
-#include "Utility/ConvaiPakUtilityLibrary.h"
+#include "Utility/CPM_UtilityLibrary.h"
 #include "DesktopPlatformModule.h"
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
@@ -10,10 +10,18 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Misc/App.h"
 #include "Dom/JsonObject.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializerMacros.h"
+#include "Serialization/JsonSerializer.h"
+#include "Utility/CPM_Utils.h"
+#include "CoreMinimal.h"
+#include "Dom/JsonObject.h"
+#include "Dom/JsonValue.h"
+#include "Serialization/JsonWriter.h"
 
 DEFINE_LOG_CATEGORY(LogConvaiPakManager);
 
-FString UConvaiPakUtilityLibrary::OpenFileDialog(const TArray<FString>& Extensions)
+FString UCPM_UtilityLibrary::OpenFileDialog(const TArray<FString>& Extensions)
 {
 	FString FilePath;
 	FString FileTypes = TEXT("Supported Files (");
@@ -72,12 +80,12 @@ FString UConvaiPakUtilityLibrary::OpenFileDialog(const TArray<FString>& Extensio
 	return FilePath;
 }
 
-FString UConvaiPakUtilityLibrary::GetProjectName()
+FString UCPM_UtilityLibrary::GetProjectName()
 {
 	return FApp::GetProjectName();
 }
 
-bool UConvaiPakUtilityLibrary::ValidatePakFile(const FString& PakFilePath)
+bool UCPM_UtilityLibrary::ValidatePakFile(const FString& PakFilePath)
 {
 	if (!FPaths::FileExists(PakFilePath))
 	{
@@ -108,7 +116,7 @@ bool UConvaiPakUtilityLibrary::ValidatePakFile(const FString& PakFilePath)
 	return true;
 }
 
-FString UConvaiPakUtilityLibrary::ExtractAssetID()
+FString UCPM_UtilityLibrary::ExtractAssetID()
 {
 	const FString FilePath = FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("PakMetaData")) + TEXT(".txt");
 	FString FileContent;
@@ -141,8 +149,122 @@ FString UConvaiPakUtilityLibrary::ExtractAssetID()
 	return FString();
 }
 
-bool UConvaiPakUtilityLibrary::Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height,
-	TArray<FColor>& Pixels)
+bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FCPM_CreatedAssets& OutCreatedAssets)
+{
+	TSharedPtr<FJsonObject> JsonObject;
+    const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonString);
+
+    if (!FJsonSerializer::Deserialize(Reader, JsonObject) || !JsonObject.IsValid())
+    {
+        return false;
+    }
+
+    JsonObject->TryGetStringField(TEXT("transactionID"), OutCreatedAssets.TransactionID);
+
+    const TArray<TSharedPtr<FJsonValue>>* AssetsArray;
+    if (JsonObject->TryGetArrayField(TEXT("assets"), AssetsArray))
+    {
+        for (const TSharedPtr<FJsonValue>& AssetValue : *AssetsArray)
+        {
+            const TSharedPtr<FJsonObject>* AssetEntryObject;
+            if (!AssetValue->TryGetObject(AssetEntryObject))
+                continue;
+
+            FCPM_Asset ParsedAsset;
+
+            // Asset details
+            const TSharedPtr<FJsonObject>* AssetDetailsObj;
+            if ((*AssetEntryObject)->TryGetObjectField(TEXT("asset"), AssetDetailsObj))
+            {
+                (*AssetDetailsObj)->TryGetStringField(TEXT("asset_id"), ParsedAsset.Asset.AssetId);
+                (*AssetDetailsObj)->TryGetStringField(TEXT("gcp_file_name"), ParsedAsset.Asset.GCPFileName);
+                (*AssetDetailsObj)->TryGetStringField(TEXT("file_name"), ParsedAsset.Asset.FileName);
+                (*AssetDetailsObj)->TryGetStringField(TEXT("uploaded_on"), ParsedAsset.Asset.UploadedOn);
+                (*AssetDetailsObj)->TryGetStringField(TEXT("thumbnail_gcp_path"), ParsedAsset.Asset.ThumbnailGCPPath);
+
+                // Tags
+                const TArray<TSharedPtr<FJsonValue>>* TagsArray;
+                if ((*AssetDetailsObj)->TryGetArrayField(TEXT("tags"), TagsArray))
+                {
+                    for (const TSharedPtr<FJsonValue>& TagValue : *TagsArray)
+                    {
+                        ParsedAsset.Asset.Tags.Add(TagValue->AsString());
+                    }
+                }
+
+                // Versions
+                const TArray<TSharedPtr<FJsonValue>>* VersionsArray;
+                if ((*AssetDetailsObj)->TryGetArrayField(TEXT("versions"), VersionsArray))
+                {
+                    for (const TSharedPtr<FJsonValue>& VersionValue : *VersionsArray)
+                    {
+                        ParsedAsset.Asset.Versions.Add(VersionValue->AsString());
+                    }
+                }
+
+                // Asset Metadata
+                const TSharedPtr<FJsonObject>* MetadataObj;
+                if ((*AssetDetailsObj)->TryGetObjectField(TEXT("metadata"), MetadataObj))
+                {
+                    (*MetadataObj)->TryGetStringField(TEXT("version"), ParsedAsset.Asset.Metadata.Version);
+                    (*MetadataObj)->TryGetStringField(TEXT("scene_id"), ParsedAsset.Asset.Metadata.SceneId);
+                    (*MetadataObj)->TryGetStringField(TEXT("entity_id"), ParsedAsset.Asset.Metadata.EntityId);
+                    (*MetadataObj)->TryGetStringField(TEXT("root_path"), ParsedAsset.Asset.Metadata.RootPath);
+                    (*MetadataObj)->TryGetStringField(TEXT("asset_type"), ParsedAsset.Asset.Metadata.AssetType);
+                    (*MetadataObj)->TryGetStringField(TEXT("level_name"), ParsedAsset.Asset.Metadata.LevelName);
+                    (*MetadataObj)->TryGetStringField(TEXT("content_path"), ParsedAsset.Asset.Metadata.ContentPath);
+                    (*MetadataObj)->TryGetStringField(TEXT("project_name"), ParsedAsset.Asset.Metadata.ProjectName);
+                    (*MetadataObj)->TryGetStringField(TEXT("blueprint_class"), ParsedAsset.Asset.Metadata.BlueprintClass);
+                    (*MetadataObj)->TryGetStringField(TEXT("blueprint_class_path"), ParsedAsset.Asset.Metadata.BlueprintClassPath);
+
+                    // Entity Data
+                    const TSharedPtr<FJsonObject>* EntityDataObj;
+                    if ((*MetadataObj)->TryGetObjectField(TEXT("entity_data"), EntityDataObj))
+                    {
+                        (*EntityDataObj)->TryGetStringField(TEXT("scene_name"), ParsedAsset.Asset.Metadata.EntityData.SceneName);
+                        (*EntityDataObj)->TryGetStringField(TEXT("scene_description"), ParsedAsset.Asset.Metadata.EntityData.SceneDescription);
+                        // If there's SceneMetadata, handle it accordingly here.
+                    }
+                }
+            }
+
+            // Scene Details
+            const TSharedPtr<FJsonObject>* SceneObj;
+            if ((*AssetEntryObject)->TryGetObjectField(TEXT("scene"), SceneObj))
+            {
+                (*SceneObj)->TryGetStringField(TEXT("scene_id"), ParsedAsset.Scene.SceneId);
+                (*SceneObj)->TryGetStringField(TEXT("build_id"), ParsedAsset.Scene.BuildId);
+                (*SceneObj)->TryGetStringField(TEXT("owner_id"), ParsedAsset.Scene.OwnerId);
+                (*SceneObj)->TryGetStringField(TEXT("scene_name"), ParsedAsset.Scene.SceneName);
+                (*SceneObj)->TryGetStringField(TEXT("scene_description"), ParsedAsset.Scene.SceneDescription);
+                (*SceneObj)->TryGetStringField(TEXT("scene_thumbnail"), ParsedAsset.Scene.SceneThumbnail);
+                (*SceneObj)->TryGetStringField(TEXT("visibility"), ParsedAsset.Scene.Visibility);
+                (*SceneObj)->TryGetStringField(TEXT("created_on"), ParsedAsset.Scene.CreatedOn);
+            }
+
+            // Upload URLs
+            const TSharedPtr<FJsonObject>* UploadUrlsObj;
+            if ((*AssetEntryObject)->TryGetObjectField(TEXT("upload_urls"), UploadUrlsObj))
+            {
+                for (const auto& Pair : (*UploadUrlsObj)->Values)
+                {
+                    FString UrlKey = Pair.Key;
+                    FString UrlValue;
+                    if (Pair.Value->TryGetString(UrlValue))
+                    {
+                        ParsedAsset.UploadUrls.UploadURLsMap.Add(UrlKey, UrlValue);
+                    }
+                }
+            }
+
+            OutCreatedAssets.Assets.Add(ParsedAsset);
+        }
+    }
+    return true;
+}
+
+bool UCPM_UtilityLibrary::Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height,
+                                                 TArray<FColor>& Pixels)
 {
 	if (!Texture2D) return false;
 
@@ -232,7 +354,7 @@ bool UConvaiPakUtilityLibrary::Texture2DToPixels(UTexture2D* Texture2D, int32& W
 	return bSuccess;
 }
 
-bool UConvaiPakUtilityLibrary::Texture2DToBytes(UTexture2D* Texture2D, const EImageFormat ImageFormat,
+bool UCPM_UtilityLibrary::Texture2DToBytes(UTexture2D* Texture2D, const EImageFormat ImageFormat,
                                                 TArray<uint8>& ByteArray, const int32 CompressionQuality)
 {
 	if (!Texture2D)
@@ -260,7 +382,7 @@ bool UConvaiPakUtilityLibrary::Texture2DToBytes(UTexture2D* Texture2D, const EIm
 	return false;
 }
 
-bool UConvaiPakUtilityLibrary::PixelsToBytes(const int32 Width, const int32 Height, const TArray<FColor>& Pixels,
+bool UCPM_UtilityLibrary::PixelsToBytes(const int32 Width, const int32 Height, const TArray<FColor>& Pixels,
 	const EImageFormat ImageFormat, TArray<uint8>& ByteArray, const int32 CompressionQuality)
 {
 	if (Width <= 0 || Height <= 0 || CompressionQuality < 0 || CompressionQuality > 100) return false;

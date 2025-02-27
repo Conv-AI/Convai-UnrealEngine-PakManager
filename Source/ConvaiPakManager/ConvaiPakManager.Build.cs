@@ -29,6 +29,7 @@ public class ConvaiPakManager : ModuleRules
 				"SlateCore",
 				"DesktopPlatform",
 				"Json", 
+				"JsonUtilities",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
