@@ -11,5 +11,8 @@ UCLASS(Abstract)
 class CONVAIPAKMANAGEREDITOR_API UConvaiPakManagerEUWBase : public UEditorUtilityWidget
 {
 	GENERATED_BODY()
-
+public:
+	UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category="Convai|PakManager")
+	void LoadUI();
+	void LoadUI_Implementation(){}
 };
