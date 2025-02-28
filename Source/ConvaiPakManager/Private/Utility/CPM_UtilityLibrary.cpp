@@ -462,3 +462,93 @@ bool UCPM_UtilityLibrary::PixelsToBytes(const int32 Width, const int32 Height, c
 	ByteArray = ImageWrapper->GetCompressed(CompressionQuality);
 	return true;
 }
+
+bool UCPM_UtilityLibrary::ExtractAssetListFromResponseString(const FString& ResponseString, FCPM_AssetResponse& AssetResponse)
+{
+    TSharedPtr<FJsonObject> JsonObject;
+    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResponseString);
+
+    if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid())
+    {
+        JsonObject->TryGetStringField(TEXT("transactionID"), AssetResponse.transactionID);
+
+        const TArray<TSharedPtr<FJsonValue>>* AssetsArray;
+        const TArray<TSharedPtr<FJsonValue>>* AnimationsArray; 
+        const TSharedPtr<FJsonObject>* AssetObjectForAnim; 
+        if (JsonObject->TryGetArrayField(TEXT("assets"), AssetsArray))
+        {
+            for (const TSharedPtr<FJsonValue>& Value : *AssetsArray)
+            {
+                TSharedPtr<FJsonObject> AssetObject = Value->AsObject();
+                if (AssetObject.IsValid())
+                {
+                    FCPM_AssetData AssetData;
+
+                    AssetObject->TryGetStringField(TEXT("asset_id"), AssetData.asset_id);
+                    AssetObject->TryGetStringField(TEXT("gcp_file_name"), AssetData.gcp_file_name);
+                    AssetObject->TryGetStringField(TEXT("file_name"), AssetData.file_name);
+
+                    // Parse tags array
+                    const TArray<TSharedPtr<FJsonValue>>* TagsArray;
+                    if (AssetObject->TryGetArrayField(TEXT("tags"), TagsArray))
+                    {
+                        for (const TSharedPtr<FJsonValue>& TagValue : *TagsArray)
+                        {
+                            AssetData.tags.Add(TagValue->AsString());
+                        }
+                    }
+
+                    const TSharedPtr<FJsonObject>* MetadataObjectPtr;
+                    if (AssetObject->TryGetObjectField(TEXT("metadata"), MetadataObjectPtr))
+                    {
+                        FString MetadataString;
+                        TSharedRef<TJsonWriter<>> MetadataWriter = TJsonWriterFactory<>::Create(&MetadataString);
+                        FJsonSerializer::Serialize(MetadataObjectPtr->ToSharedRef(), MetadataWriter);
+                        AssetData.metadata = MetadataString;
+                    }
+
+                    AssetObject->TryGetStringField(TEXT("uploaded_on"), AssetData.uploaded_on);
+                    AssetObject->TryGetStringField(TEXT("signed_url"), AssetData.signed_url);
+
+                    AssetResponse.assets.Add(AssetData);
+                }
+            }
+        }
+
+        if (JsonObject->TryGetArrayField(TEXT("animations"), AnimationsArray))
+        {
+            for (const TSharedPtr<FJsonValue>& Value : *AnimationsArray)
+            {
+                TSharedPtr<FJsonObject> AnimationObject = Value->AsObject();
+                if (AnimationObject.IsValid())
+                {
+                    FCPM_AssetData AnimationData;
+                    AnimationObject->TryGetStringField(TEXT("animation_id"), AnimationData.asset_id);
+                    AnimationObject->TryGetStringField(TEXT("animation_name"), AnimationData.file_name);
+                    AnimationObject->TryGetStringField(TEXT("fbx_gcp_file"), AnimationData.signed_url);
+                    AnimationObject->TryGetStringField(TEXT("created_at"), AnimationData.uploaded_on);
+
+                    AssetResponse.assets.Add(AnimationData);
+                }
+            }
+        }
+
+        else if (JsonObject->TryGetObjectField(TEXT("animation"), AssetObjectForAnim)) {
+            if (AssetObjectForAnim != nullptr && AssetObjectForAnim->IsValid())
+            {
+                TSharedPtr<FJsonObject> AnimationObject = *AssetObjectForAnim;
+                FCPM_AssetData AnimationData;
+
+                AnimationObject->TryGetStringField(TEXT("animation_id"), AnimationData.asset_id);
+                AnimationObject->TryGetStringField(TEXT("animation_name"), AnimationData.file_name);
+                AnimationObject->TryGetStringField(TEXT("fbx_gcp_file"), AnimationData.signed_url);
+                AnimationObject->TryGetStringField(TEXT("created_at"), AnimationData.uploaded_on);
+
+
+                AssetResponse.assets.Add(AnimationData);
+            }
+        }
+        return true;
+    }
+    return false;
+}

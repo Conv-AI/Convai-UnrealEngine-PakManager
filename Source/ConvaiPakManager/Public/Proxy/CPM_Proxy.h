@@ -11,7 +11,7 @@
 struct FCPM_CreatedAssets;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FCPM_AssetCreateDelegate, const FCPM_CreatedAssets&, Response, float, Progress);
-
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_GetAssetsHttpResponseCallbackDelegate, const FCPM_AssetResponse&, AssetData);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_AssetUploadDelegate, float, Progress);
 
 UCLASS()
@@ -67,4 +67,37 @@ public:
 private:
 	FString URL;
 	FString M_PakFilePath;
+};
+
+
+
+
+//-------------------------------------------Get Asset-------------------------------------------
+
+/** Get Asset */
+UCLASS()
+class UCPM_GetAssetMetaDataProxy : public UConvaiAPIBaseProxy
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY(BlueprintAssignable)
+	FCPM_GetAssetsHttpResponseCallbackDelegate OnSuccess;
+
+	UPROPERTY(BlueprintAssignable)
+	FCPM_GetAssetsHttpResponseCallbackDelegate OnFailure;
+
+	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", DisplayName = "Convai Get Asset Metadata" , WorldContext = "WorldContextObject"), Category = "Convai|PakManager")
+	static UCPM_GetAssetMetaDataProxy* GetAssetProxy(UObject* WorldContextObject, FString AssetID);
+
+protected:
+	virtual bool ConfigureRequest(TSharedRef<IHttpRequest> Request, const TCHAR* Verb) override;
+	virtual bool AddContentToRequest(TArray<uint8>& DataToSend, const FString& Boundary)  override { return false; }
+	virtual bool AddContentToRequestAsString(TSharedPtr<FJsonObject>& ObjectToSend) override;
+	virtual void HandleSuccess() override;
+	virtual void HandleFailure() override;
+
+public:
+	FString AssociatedAssetIdD;
+	FCPM_AssetResponse AssetResponse;
 };

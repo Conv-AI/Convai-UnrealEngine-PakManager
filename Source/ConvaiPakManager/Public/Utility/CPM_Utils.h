@@ -197,3 +197,45 @@ enum class ECPM_LogLevel : uint8
 	Warning UMETA(DisplayName = "Warning"),
 	Error UMETA(DisplayName = "Error"),
 };
+
+
+
+USTRUCT(BlueprintType)
+struct FCPM_AssetData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Data")
+	FString asset_id;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Data")
+	FString gcp_file_name;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Data")
+	FString file_name;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Data")
+	TArray<FString> tags;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Data")
+	FString metadata;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Data")
+	FString uploaded_on;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Data")
+	FString signed_url;
+};
+
+// Main response struct containing the transaction ID and array of assets
+USTRUCT(BlueprintType)
+struct FCPM_AssetResponse
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Response")
+	FString transactionID;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Response")
+	TArray<FCPM_AssetData> assets;
+};

@@ -7,10 +7,13 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Utility/CPM_UtilityLibrary.h"
+#include "ConvaiUtils.h"
 
 namespace
 {
 	const FString CreatePakAssetURL = TEXT("http://35.239.167.143:8089/assets/upload");
+	const FString GetAssetURL = TEXT("http://35.239.167.143:8089/assets/get");
+	//const FString GetAssetURL = TEXT("https://beta.convai.com/assets/get");
 }
 
 UCPM_CreatePakAssetProxy* UCPM_CreatePakAssetProxy::CreatePakAssetProxy(const FCPM_CreatePakAssetParams& Params)
@@ -144,7 +147,7 @@ void UCPM_UploadPakAssetProxy::Activate()
 	HttpRequest->SetURL(URL);
 	HttpRequest->SetHeader(TEXT("Content-Type"), TEXT("application/octet-stream"));
 	HttpRequest->SetHeader(TEXT("access-control-allow-origin"), TEXT("*"));
-	HttpRequest->SetHeader(TEXT("x-goog-content-length-range"), TEXT("10485760"));
+	HttpRequest->SetHeader(TEXT("x-goog-content-length-range"), TEXT("0,10485760000"));
 	HttpRequest->SetContent(FileContent);
 
 	HttpRequest->OnProcessRequestComplete().BindLambda(
@@ -184,4 +187,64 @@ void UCPM_UploadPakAssetProxy::Activate()
 	});
 	
 	HttpRequest->ProcessRequest();
+}
+
+
+
+
+UCPM_GetAssetMetaDataProxy* UCPM_GetAssetMetaDataProxy::GetAssetProxy(UObject* WorldContextObject , FString AssetID)
+{
+    UCPM_GetAssetMetaDataProxy* Proxy = NewObject<UCPM_GetAssetMetaDataProxy>();
+	Proxy->URL = GetAssetURL;
+    Proxy->AssociatedAssetIdD = AssetID;
+    return Proxy;
+}
+
+bool UCPM_GetAssetMetaDataProxy::ConfigureRequest(TSharedRef<IHttpRequest> Request, const TCHAR* Verb)
+{
+    if (!Super::ConfigureRequest(Request, ConvaiHttpConstants::POST))
+    {
+        return false;
+    }
+
+    return true;
+} 
+
+bool UCPM_GetAssetMetaDataProxy::AddContentToRequestAsString(TSharedPtr<FJsonObject>& ObjectToSend) 
+{
+	const TPair<FString, FString> AuthHeaderAndKey = UConvaiUtils::GetAuthHeaderAndKey();
+	const FString AuthKey = AuthHeaderAndKey.Value;
+
+	if (!UConvaiFormValidation::ValidateAuthKey(AuthKey) || !UConvaiFormValidation::ValidateInputText(AssociatedAssetIdD))
+	{
+		HandleFailure();
+		return false;
+	}
+	
+	ObjectToSend->SetStringField(TEXT("experience_session_id"), AuthKey);
+	ObjectToSend->SetStringField(TEXT("asset_id"), AssociatedAssetIdD);
+	
+    return true;
+}
+
+void UCPM_GetAssetMetaDataProxy::HandleSuccess()
+{
+    Super::HandleSuccess();
+    
+    if (UCPM_UtilityLibrary::ExtractAssetListFromResponseString(ResponseString, AssetResponse))
+    {
+        
+        OnSuccess.Broadcast(AssetResponse);
+    }
+    else
+    {
+    	UCPM_UtilityLibrary::CPM_LogMessage(TEXT("Failed to parse response"), ECPM_LogLevel::Error);
+        HandleFailure();
+    }
+}
+
+void UCPM_GetAssetMetaDataProxy::HandleFailure()
+{
+    Super::HandleFailure();
+    OnFailure.Broadcast(FCPM_AssetResponse());
 }
