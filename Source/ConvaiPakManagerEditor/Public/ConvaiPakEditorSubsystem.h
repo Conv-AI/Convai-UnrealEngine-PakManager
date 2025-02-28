@@ -14,6 +14,7 @@ class CONVAIPAKMANAGEREDITOR_API UConvaiPakEditorSubsystem : public UEditorSubsy
 {
 	GENERATED_BODY()
 public:
-	UFUNCTION(BlueprintCallable, Category = "Convai|Pak")
-	void GetSelectedAssetData(FString& PackageName);
+	
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	void GetSelectedAssetPackageName(FString& PackageName);
 };

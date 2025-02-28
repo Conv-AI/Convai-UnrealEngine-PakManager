@@ -4,7 +4,7 @@
 #include "ConvaiPakEditorSubsystem.h"
 #include "EditorUtilityLibrary.h"
 
-void UConvaiPakEditorSubsystem::GetSelectedAssetData(FString& PackageName)
+void UConvaiPakEditorSubsystem::GetSelectedAssetPackageName(FString& PackageName)
 {
 	TArray<FAssetData> SelectedAssets = UEditorUtilityLibrary::GetSelectedAssetData();
 	if (SelectedAssets.Num() > 0)
