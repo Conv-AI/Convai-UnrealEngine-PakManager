@@ -130,7 +130,7 @@ void UCPM_UploadPakAssetProxy::Activate()
 {
 	if (URL.IsEmpty() || M_PakFilePath.IsEmpty())
 	{
-		UE_LOG(LogTemp, Error, TEXT("Invalid file URL or path"));
+		UCPM_UtilityLibrary::CPM_LogMessage(TEXT("Invalid file URL or path"), ECPM_LogLevel::Error);
 		OnFailure.Broadcast(0.f);
 		return;
 	}
@@ -138,7 +138,7 @@ void UCPM_UploadPakAssetProxy::Activate()
 	TArray<uint8> FileContent;
 	if (!FFileHelper::LoadFileToArray(FileContent, *M_PakFilePath))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Failed to load file: %s"), *M_PakFilePath);
+		UCPM_UtilityLibrary::CPM_LogMessage(FString::Printf(TEXT("Failed to load file: %s"), *M_PakFilePath), ECPM_LogLevel::Error);
 		return;
 	}
 
@@ -157,11 +157,11 @@ void UCPM_UploadPakAssetProxy::Activate()
 			{
 				if (bWasSuccessful)
 				{
-					UE_LOG(LogTemp, Warning, TEXT("HTTP request succeded - But response pointer is invalid"));
+					UCPM_UtilityLibrary::CPM_LogMessage(TEXT("HTTP request succeded - But response pointer is invalid"), ECPM_LogLevel::Error);
 				}
 				else
 				{
-					UE_LOG(LogTemp, Warning, TEXT("HTTP request failed - Response pointer is invalid"));
+					UCPM_UtilityLibrary::CPM_LogMessage(TEXT("HTTP request failed - Response pointer is invalid"), ECPM_LogLevel::Error);
 				}
 
 				OnFailure.Broadcast(0.f);
@@ -169,7 +169,8 @@ void UCPM_UploadPakAssetProxy::Activate()
 			}
 			if (!bWasSuccessful || Response->GetResponseCode() < 200 || Response->GetResponseCode() > 299)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("HTTP request failed with code %d, and with response:%s"), Response->GetResponseCode(), *Response->GetContentAsString());
+				UCPM_UtilityLibrary::CPM_LogMessage(FString::Printf(TEXT("HTTP request failed with code %d, and with response:%s"),
+					Response->GetResponseCode(), *Response->GetContentAsString()), ECPM_LogLevel::Error);
 				OnFailure.Broadcast(0.f);
 				return;
 			}
@@ -233,7 +234,6 @@ void UCPM_GetAssetMetaDataProxy::HandleSuccess()
     
     if (UCPM_UtilityLibrary::ExtractAssetListFromResponseString(ResponseString, AssetResponse))
     {
-        
         OnSuccess.Broadcast(AssetResponse);
     }
     else
