@@ -97,11 +97,13 @@ void UCPM_CreatePakAssetProxy::HandleSuccess()
 	FCPM_CreatedAssets CreatedAssets;
 	if (UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(ResponseString, CreatedAssets))
 	{
-		OnSuccess.Broadcast(CreatedAssets, 100.f);
-		return;
+		if (UCPM_UtilityLibrary::SaveConvaiAssetData(ResponseString))
+		{
+			OnSuccess.Broadcast(CreatedAssets, 100.f);
+			return;
+		}
 	}
 	
-	UE_LOG(LogTemp, Error, TEXT("Parsing failed"));
 	OnFailure.Broadcast(CreatedAssets, 0.f);
 }
 

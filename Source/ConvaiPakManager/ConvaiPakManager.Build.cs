@@ -33,5 +33,8 @@ public class ConvaiPakManager : ModuleRules
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
+		
+		const bool bEnableLogging = true;
+		PublicDefinitions.Add("CONVAI_PAK_MANAGER_LOG=" + (bEnableLogging ? "1" : "0"));
 	}
 }
