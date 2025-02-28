@@ -144,7 +144,7 @@ void UCPM_UploadPakAssetProxy::Activate()
 	HttpRequest->SetURL(URL);
 	HttpRequest->SetHeader(TEXT("Content-Type"), TEXT("application/octet-stream"));
 	HttpRequest->SetHeader(TEXT("access-control-allow-origin"), TEXT("*"));
-	HttpRequest->SetHeader(TEXT("x-goog-content-length-range"), TEXT("0,2621440000"));
+	HttpRequest->SetHeader(TEXT("x-goog-content-length-range"), TEXT("10485760"));
 	HttpRequest->SetContent(FileContent);
 
 	HttpRequest->OnProcessRequestComplete().BindLambda(
