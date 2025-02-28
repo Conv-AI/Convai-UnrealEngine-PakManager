@@ -9,17 +9,15 @@
 #include "HAL/PlatformFilemanager.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Misc/App.h"
-#include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializerMacros.h"
 #include "Serialization/JsonSerializer.h"
 #include "Utility/CPM_Utils.h"
-#include "CoreMinimal.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Serialization/JsonWriter.h"
+#include "Utility/CPM_Log.h"
 
-DEFINE_LOG_CATEGORY(LogConvaiPakManager);
 
 FString UCPM_UtilityLibrary::OpenFileDialog(const TArray<FString>& Extensions)
 {
@@ -29,7 +27,7 @@ FString UCPM_UtilityLibrary::OpenFileDialog(const TArray<FString>& Extensions)
 	// Validate input
 	if (Extensions.Num() == 0)
 	{
-		UE_LOG(LogConvaiPakManager, Warning, TEXT("Extensions array is empty"));
+		CPM_LogMessage(TEXT("Extensions array is empty"), ECPM_LogLevel::Warning);
 		FileTypes = TEXT("All Files (*.*)|*.*");
 	}
 	else
@@ -89,7 +87,7 @@ bool UCPM_UtilityLibrary::ValidatePakFile(const FString& PakFilePath)
 {
 	if (!FPaths::FileExists(PakFilePath))
 	{
-		UE_LOG(LogConvaiPakManager, Error, TEXT("Pak file does not exist: %s"), *PakFilePath);
+		CPM_LogMessage(FString::Printf(TEXT("Pak file does not exist: %s"), *PakFilePath), ECPM_LogLevel::Error);
 		return false;
 	}
 
@@ -98,14 +96,14 @@ bool UCPM_UtilityLibrary::ValidatePakFile(const FString& PakFilePath)
 
 	if (!PakPlatformFile->Initialize(&PlatformFile, TEXT("")))
 	{
-		UE_LOG(LogConvaiPakManager, Error, TEXT("Failed to initialize PakPlatformFile."));
+		CPM_LogMessage(TEXT("Failed to initialize PakPlatformFile."), ECPM_LogLevel::Error);
 		delete PakPlatformFile;
 		return false;
 	}
 
 	if (!PakPlatformFile->Mount(*PakFilePath, 0, *FPaths::ProjectContentDir()))
 	{
-		UE_LOG(LogConvaiPakManager, Error, TEXT("Failed to mount Pak file: %s"), *PakFilePath);
+		CPM_LogMessage(FString::Printf(TEXT("Failed to mount Pak file: %s"), *PakFilePath), ECPM_LogLevel::Error);
 		delete PakPlatformFile;
 		return false;
 	}
@@ -116,37 +114,43 @@ bool UCPM_UtilityLibrary::ValidatePakFile(const FString& PakFilePath)
 	return true;
 }
 
-FString UCPM_UtilityLibrary::ExtractAssetID()
+void UCPM_UtilityLibrary::GetAssetID(FString& AssetID)
 {
-	const FString FilePath = FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("PakMetaData")) + TEXT(".txt");
+	FCPM_CreatedAssets OutData;
+	if(LoadConvaiAssetData(OutData))
+	{
+		AssetID = OutData.Assets.Num() > 0 ? OutData.Assets[0].Asset.AssetId : TEXT(""); 
+		return;
+	}
+	
+	CPM_LogMessage(TEXT("Failed to get asset id from PakMetaData.txt"), ECPM_LogLevel::Error);
+}
+
+bool UCPM_UtilityLibrary::SaveConvaiAssetData(const FString& ResponseString)
+{
+	FString FilePath = GetPakMetaDataFilePath();
+	
+	if (FFileHelper::SaveStringToFile(ResponseString, *FilePath))
+	{
+		return true;
+	}
+	
+	CPM_LogMessage(FString::Printf(TEXT("Failed to save asset data to %s"), *FilePath), ECPM_LogLevel::Error);
+	return false;
+}
+
+bool UCPM_UtilityLibrary::LoadConvaiAssetData(FCPM_CreatedAssets& OutData)
+{
+	const FString FilePath = GetPakMetaDataFilePath();
 	FString FileContent;
 
 	if (!FFileHelper::LoadFileToString(FileContent, *FilePath))
 	{
-		UE_LOG(LogConvaiPakManager, Error, TEXT("Failed to read PakMetaData.txt"));
-		return FString();
+		//CPM_LogMessage(TEXT("Failed to read PakMetaData.txt"), ECPM_LogLevel::Error);
+		return false;
 	}
 
-	TSharedPtr<FJsonObject> JsonObject;
-	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(FileContent);
-	if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid())
-	{
-		FString AssetID;
-		if (JsonObject->TryGetStringField(TEXT("asset_id"), AssetID))
-		{
-			return AssetID;
-		}
-		else
-		{
-			UE_LOG(LogConvaiPakManager, Error, TEXT("Asset ID field not found in JSON"));
-		}
-	}
-	else
-	{
-		UE_LOG(LogConvaiPakManager, Error, TEXT("Failed to parse JSON from PakMetaData.txt"));
-	}
-
-	return FString();
+	return GetCreatedAssetsFromJSON(FileContent, OutData);
 }
 
 bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FCPM_CreatedAssets& OutCreatedAssets)
@@ -216,7 +220,9 @@ bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FC
                     (*MetadataObj)->TryGetStringField(TEXT("project_name"), ParsedAsset.Asset.Metadata.ProjectName);
                     (*MetadataObj)->TryGetStringField(TEXT("blueprint_class"), ParsedAsset.Asset.Metadata.BlueprintClass);
                     (*MetadataObj)->TryGetStringField(TEXT("blueprint_class_path"), ParsedAsset.Asset.Metadata.BlueprintClassPath);
-
+                	(*MetadataObj)->TryGetStringField(TEXT("asset_name"), ParsedAsset.Asset.Metadata.AssetName);
+                	(*MetadataObj)->TryGetStringField(TEXT("asset_description"), ParsedAsset.Asset.Metadata.AssetDescription);
+                	
                     // Entity Data
                     const TSharedPtr<FJsonObject>* EntityDataObj;
                     if ((*MetadataObj)->TryGetObjectField(TEXT("entity_data"), EntityDataObj))
@@ -263,8 +269,39 @@ bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FC
     return true;
 }
 
+FString UCPM_UtilityLibrary::GetPakMetaDataFilePath()
+{
+	return FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("PakMetaData")) + TEXT(".txt");
+}
+
+bool UCPM_UtilityLibrary::ShouldCreateAsset()
+{
+	FString AssetID;
+	GetAssetID(AssetID);
+	return AssetID.IsEmpty();
+}
+
+void UCPM_UtilityLibrary::CPM_LogMessage(const FString& Message, const ECPM_LogLevel Verbosity)
+{
+	switch (Verbosity)
+	{
+	case ECPM_LogLevel::Error:
+		CPM_LOG(Error, TEXT("%s"), *Message);
+		break;
+
+	case ECPM_LogLevel::Warning:
+		CPM_LOG(Warning, TEXT("%s"), *Message);
+		break;
+
+	case ECPM_LogLevel::Log:
+	default:
+		CPM_LOG(Log, TEXT("%s"), *Message);
+		break;
+	}
+}
+
 bool UCPM_UtilityLibrary::Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height,
-                                                 TArray<FColor>& Pixels)
+                                            TArray<FColor>& Pixels)
 {
 	if (!Texture2D) return false;
 
