@@ -86,6 +86,12 @@ struct FCPM_AssetMetadata
 
 	UPROPERTY(BlueprintReadWrite, Category = "Convai|PakManager")
 	FString BlueprintClassPath;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Convai|PakManager")
+	FString AssetName;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Convai|PakManager")
+	FString AssetDescription;
 };
 
 USTRUCT(BlueprintType)
@@ -182,4 +188,12 @@ struct FCPM_CreatedAssets
 
 	UPROPERTY(BlueprintReadWrite, Category = "Convai|PakManager")
 	TArray<FCPM_Asset> Assets;
+};
+
+UENUM(BlueprintType)
+enum class ECPM_LogLevel : uint8
+{
+	Log UMETA(DisplayName = "Log"),
+	Warning UMETA(DisplayName = "Warning"),
+	Error UMETA(DisplayName = "Error"),
 };
