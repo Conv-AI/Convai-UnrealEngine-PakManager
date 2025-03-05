@@ -12,7 +12,7 @@ public class ConvaiPakManager : ModuleRules
 			new string[]
 			{
 				"Core", 
-				"HTTP",
+				"CONVAIHTTP",
 				"PakFile", 
 				"ImageWrapper",
 				"Convai",
