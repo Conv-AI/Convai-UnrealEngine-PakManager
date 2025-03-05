@@ -150,44 +150,44 @@ void UCPM_UploadPakAssetProxy::Activate()
 	HttpRequest->SetHeader(TEXT("x-goog-content-length-range"), TEXT("0,10485760000"));
 	HttpRequest->SetContent(FileContent);
 	
-	// HttpRequest->OnProcessRequestComplete().BindLambda(
-	// 	[&](FConvaihttpRequestPtr Request, FConvaihttpResponsePtr Response, bool bWasSuccessful)
-	// 	{
-	// 		if (!Response)
-	// 		{
-	// 			if (bWasSuccessful)
-	// 			{
-	// 				UCPM_UtilityLibrary::CPM_LogMessage(TEXT("HTTP request succeded - But response pointer is invalid"), ECPM_LogLevel::Error);
-	// 			}
-	// 			else
-	// 			{
-	// 				UCPM_UtilityLibrary::CPM_LogMessage(TEXT("HTTP request failed - Response pointer is invalid"), ECPM_LogLevel::Error);
-	// 			}
-	//
-	// 			OnFailure.Broadcast(0.f);
-	// 			return;
-	// 		}
-	// 		if (!bWasSuccessful || Response->GetResponseCode() < 200 || Response->GetResponseCode() > 299)
-	// 		{
-	// 			UCPM_UtilityLibrary::CPM_LogMessage(FString::Printf(TEXT("HTTP request failed with code %d, and with response:%s"),
-	// 				Response->GetResponseCode(), *Response->GetContentAsString()), ECPM_LogLevel::Error);
-	// 			OnFailure.Broadcast(0.f);
-	// 			return;
-	// 		}
-	// 		
-	// 		OnSuccess.Broadcast(100.f);
-	// 	});
-	//
-	// HttpRequest->OnRequestProgress().BindLambda(
-	// [&](FConvaihttpRequestPtr Request, uint64 BytesSent, uint64 BytesReceived)
-	// {
-	// 	uint64 TotalBytes = Request->GetContentLength();
-	// 	float UploadProgress = TotalBytes > 0 ? (float)BytesSent / (float)TotalBytes : 0.0f;
-	//
-	// 	OnProgress.Broadcast(UploadProgress);
-	// });
-	//
-	// HttpRequest->ProcessRequest();
+	HttpRequest->OnProcessRequestComplete().BindLambda(
+		[&](FConvaihttpRequestPtr Request, FConvaihttpResponsePtr Response, bool bWasSuccessful)
+		{
+			if (!Response)
+			{
+				if (bWasSuccessful)
+				{
+					UCPM_UtilityLibrary::CPM_LogMessage(TEXT("HTTP request succeded - But response pointer is invalid"), ECPM_LogLevel::Error);
+				}
+				else
+				{
+					UCPM_UtilityLibrary::CPM_LogMessage(TEXT("HTTP request failed - Response pointer is invalid"), ECPM_LogLevel::Error);
+				}
+	
+				OnFailure.Broadcast(0.f);
+				return;
+			}
+			if (!bWasSuccessful || Response->GetResponseCode() < 200 || Response->GetResponseCode() > 299)
+			{
+				UCPM_UtilityLibrary::CPM_LogMessage(FString::Printf(TEXT("HTTP request failed with code %d, and with response:%s"),
+					Response->GetResponseCode(), *Response->GetContentAsString()), ECPM_LogLevel::Error);
+				OnFailure.Broadcast(0.f);
+				return;
+			}
+			
+			OnSuccess.Broadcast(100.f);
+		});
+	
+	HttpRequest->OnRequestProgress().BindLambda(
+	[&](FConvaihttpRequestPtr Request, uint64 BytesSent, uint64 BytesReceived)
+	{
+		uint64 TotalBytes = Request->GetContentLength();
+		float UploadProgress = TotalBytes > 0 ? (float)BytesSent / (float)TotalBytes : 0.0f;
+	
+		OnProgress.Broadcast(UploadProgress);
+	});
+	
+	HttpRequest->ProcessRequest();
 }
 
 
