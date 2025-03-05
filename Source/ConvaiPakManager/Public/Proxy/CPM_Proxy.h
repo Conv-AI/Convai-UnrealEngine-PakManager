@@ -3,7 +3,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Interfaces/IHttpRequest.h"
 #include "RestAPI/ConvaiAPIBase.h"
 #include "Utility/CPM_Utils.h"
 #include "CPM_Proxy.generated.h"
@@ -33,8 +32,8 @@ public:
 	static UCPM_CreatePakAssetProxy* CreatePakAssetProxy(const FCPM_CreatePakAssetParams& Params);
 
 protected:
-	virtual bool ConfigureRequest(TSharedRef<IHttpRequest> Request, const TCHAR* Verb) override;
-	virtual bool AddContentToRequest(TArray<uint8>& DataToSend, const FString& Boundary)  override;
+	virtual bool ConfigureRequest(TSharedRef<IConvaihttpRequest> Request, const TCHAR* Verb) override;
+	virtual bool AddContentToRequest(TArray64<uint8>& DataToSend, const FString& Boundary)  override;
 	virtual bool AddContentToRequestAsString(TSharedPtr<FJsonObject>& ObjectToSend) override { return false; }
 	virtual void HandleSuccess() override;
 	virtual void HandleFailure() override;
@@ -42,6 +41,7 @@ protected:
 private:
 	FCPM_CreatePakAssetParams M_Params;
 };
+
 
 
 UCLASS()
@@ -91,8 +91,8 @@ public:
 	static UCPM_GetAssetMetaDataProxy* GetAssetProxy(UObject* WorldContextObject, FString AssetID);
 
 protected:
-	virtual bool ConfigureRequest(TSharedRef<IHttpRequest> Request, const TCHAR* Verb) override;
-	virtual bool AddContentToRequest(TArray<uint8>& DataToSend, const FString& Boundary)  override { return false; }
+	virtual bool ConfigureRequest(TSharedRef<IConvaihttpRequest> Request, const TCHAR* Verb) override;
+	virtual bool AddContentToRequest(TArray64<uint8>& DataToSend, const FString& Boundary)  override { return false; }
 	virtual bool AddContentToRequestAsString(TSharedPtr<FJsonObject>& ObjectToSend) override;
 	virtual void HandleSuccess() override;
 	virtual void HandleFailure() override;

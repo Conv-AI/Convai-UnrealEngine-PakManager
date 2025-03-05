@@ -2,7 +2,7 @@
 
 
 #include "Proxy/CPM_Proxy.h"
-#include "HttpModule.h"
+#include "ConvaihttpModule.h"
 #include "HAL/PlatformFileManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -24,7 +24,7 @@ UCPM_CreatePakAssetProxy* UCPM_CreatePakAssetProxy::CreatePakAssetProxy(const FC
 	return Proxy;
 }
 
-bool UCPM_CreatePakAssetProxy::ConfigureRequest(TSharedRef<IHttpRequest> Request, const TCHAR* Verb)
+bool UCPM_CreatePakAssetProxy::ConfigureRequest(TSharedRef<IConvaihttpRequest> Request, const TCHAR* Verb)
 {
 	if (!Super::ConfigureRequest(Request, ConvaiHttpConstants::POST))
 	{
@@ -34,7 +34,7 @@ bool UCPM_CreatePakAssetProxy::ConfigureRequest(TSharedRef<IHttpRequest> Request
 	return true;
 }
 
-bool UCPM_CreatePakAssetProxy::AddContentToRequest(TArray<uint8>& DataToSend, const FString& Boundary)
+bool UCPM_CreatePakAssetProxy::AddContentToRequest(TArray64<uint8>& DataToSend, const FString& Boundary)
 {
 	if (URL.IsEmpty())
 	{
@@ -135,23 +135,23 @@ void UCPM_UploadPakAssetProxy::Activate()
 		return;
 	}
 	
-	TArray<uint8> FileContent;
+	TArray64<uint8> FileContent;
 	if (!FFileHelper::LoadFileToArray(FileContent, *M_PakFilePath))
 	{
 		UCPM_UtilityLibrary::CPM_LogMessage(FString::Printf(TEXT("Failed to load file: %s"), *M_PakFilePath), ECPM_LogLevel::Error);
 		return;
 	}
-
-	const TSharedRef<IHttpRequest> HttpRequest = FHttpModule::Get().CreateRequest();
+	
+	TSharedRef<IConvaihttpRequest> HttpRequest = FConvaihttpModule::Get().CreateRequest();
 	HttpRequest->SetVerb("PUT");
 	HttpRequest->SetURL(URL);
 	HttpRequest->SetHeader(TEXT("Content-Type"), TEXT("application/octet-stream"));
 	HttpRequest->SetHeader(TEXT("access-control-allow-origin"), TEXT("*"));
 	HttpRequest->SetHeader(TEXT("x-goog-content-length-range"), TEXT("0,10485760000"));
 	HttpRequest->SetContent(FileContent);
-
+	
 	HttpRequest->OnProcessRequestComplete().BindLambda(
-		[&](FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful)
+		[&](FConvaihttpRequestPtr Request, FConvaihttpResponsePtr Response, bool bWasSuccessful)
 		{
 			if (!Response)
 			{
@@ -163,7 +163,7 @@ void UCPM_UploadPakAssetProxy::Activate()
 				{
 					UCPM_UtilityLibrary::CPM_LogMessage(TEXT("HTTP request failed - Response pointer is invalid"), ECPM_LogLevel::Error);
 				}
-
+	
 				OnFailure.Broadcast(0.f);
 				return;
 			}
@@ -177,13 +177,13 @@ void UCPM_UploadPakAssetProxy::Activate()
 			
 			OnSuccess.Broadcast(100.f);
 		});
-
+	
 	HttpRequest->OnRequestProgress().BindLambda(
-	[&](FHttpRequestPtr Request, int32 BytesSent, int32 BytesReceived)
+	[&](FConvaihttpRequestPtr Request, uint64 BytesSent, uint64 BytesReceived)
 	{
-		int32 TotalBytes = Request->GetContentLength();
+		uint64 TotalBytes = Request->GetContentLength();
 		float UploadProgress = TotalBytes > 0 ? (float)BytesSent / (float)TotalBytes : 0.0f;
-
+	
 		OnProgress.Broadcast(UploadProgress);
 	});
 	
@@ -201,7 +201,7 @@ UCPM_GetAssetMetaDataProxy* UCPM_GetAssetMetaDataProxy::GetAssetProxy(UObject* W
     return Proxy;
 }
 
-bool UCPM_GetAssetMetaDataProxy::ConfigureRequest(TSharedRef<IHttpRequest> Request, const TCHAR* Verb)
+bool UCPM_GetAssetMetaDataProxy::ConfigureRequest(TSharedRef<IConvaihttpRequest> Request, const TCHAR* Verb)
 {
     if (!Super::ConfigureRequest(Request, ConvaiHttpConstants::POST))
     {
