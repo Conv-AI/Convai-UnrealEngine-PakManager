@@ -8,6 +8,10 @@
 #include "Misc/Paths.h"
 #include "Utility/CPM_UtilityLibrary.h"
 #include "ConvaiUtils.h"
+#include "Chaos/AABB.h"
+#include "Chaos/AABB.h"
+#include "Chaos/AABB.h"
+#include "Chaos/AABB.h"
 
 namespace
 {
@@ -18,7 +22,7 @@ namespace
 }
 
 
-bool UCPM_CreateUpdatePakAssetBaseProxy::ConfigureRequest(TSharedRef<IConvaihttpRequest> Request, const TCHAR* Verb)
+bool UCPM_CreateUpdatePakAssetBaseProxy::ConfigureRequest(TSharedRef<CONVAI_HTTP_REQUEST_INTERFACE> Request, const TCHAR* Verb)
 {
 	if (!Super::ConfigureRequest(Request, ConvaiHttpConstants::POST))
 	{
@@ -28,7 +32,7 @@ bool UCPM_CreateUpdatePakAssetBaseProxy::ConfigureRequest(TSharedRef<IConvaihttp
 	return true;
 }
 
-bool UCPM_CreateUpdatePakAssetBaseProxy::AddContentToRequest(TArray64<uint8>& DataToSend, const FString& Boundary)
+bool UCPM_CreateUpdatePakAssetBaseProxy::AddContentToRequest(CONVAI_HTTP_PAYLOAD_ARRAY_TYPE& DataToSend, const FString& Boundary)
 {
 	if (URL.IsEmpty())
 	{
@@ -203,14 +207,14 @@ void UCPM_UploadPakAssetProxy::Activate()
 		return;
 	}
 	
-	TArray64<uint8> FileContent;
+	CONVAI_HTTP_PAYLOAD_ARRAY_TYPE FileContent;
 	if (!FFileHelper::LoadFileToArray(FileContent, *M_PakFilePath))
 	{
 		UCPM_UtilityLibrary::CPM_LogMessage(FString::Printf(TEXT("Failed to load file: %s"), *M_PakFilePath), ECPM_LogLevel::Error);
 		return;
 	}
 	
-	TSharedRef<IConvaihttpRequest> HttpRequest = FConvaihttpModule::Get().CreateRequest();
+	TSharedRef<CONVAI_HTTP_REQUEST_INTERFACE> HttpRequest = CONVAI_HTTP_MODULE::Get().CreateRequest();
 	HttpRequest->SetVerb("PUT");
 	HttpRequest->SetURL(URL);
 	HttpRequest->SetHeader(TEXT("Content-Type"), TEXT("application/octet-stream"));
@@ -219,7 +223,7 @@ void UCPM_UploadPakAssetProxy::Activate()
 	HttpRequest->SetContent(FileContent);
 	
 	HttpRequest->OnProcessRequestComplete().BindLambda(
-		[&](FConvaihttpRequestPtr Request, FConvaihttpResponsePtr Response, bool bWasSuccessful)
+		[&](CONVAI_HTTP_REQUEST_PTR Request, CONVAI_HTTP_RESPONSE_PTR Response, bool bWasSuccessful)
 		{
 			if (!Response)
 			{
@@ -247,7 +251,7 @@ void UCPM_UploadPakAssetProxy::Activate()
 		});
 	
 	HttpRequest->OnRequestProgress().BindLambda(
-	[&](FConvaihttpRequestPtr Request, uint64 BytesSent, uint64 BytesReceived)
+	[&](CONVAI_HTTP_REQUEST_PTR Request, uint64 BytesSent, uint64 BytesReceived)
 	{
 		uint64 TotalBytes = Request->GetContentLength();
 		float UploadProgress = TotalBytes > 0 ? (float)BytesSent / (float)TotalBytes : 0.0f;
@@ -269,7 +273,7 @@ UCPM_GetAssetMetaDataProxy* UCPM_GetAssetMetaDataProxy::GetAssetProxy(UObject* W
     return Proxy;
 }
 
-bool UCPM_GetAssetMetaDataProxy::ConfigureRequest(TSharedRef<IConvaihttpRequest> Request, const TCHAR* Verb)
+bool UCPM_GetAssetMetaDataProxy::ConfigureRequest(TSharedRef<CONVAI_HTTP_REQUEST_INTERFACE> Request, const TCHAR* Verb)
 {
     if (!Super::ConfigureRequest(Request, ConvaiHttpConstants::POST))
     {
