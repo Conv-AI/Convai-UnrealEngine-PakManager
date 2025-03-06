@@ -9,12 +9,30 @@
 
 struct FCPM_CreatedAssets;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FCPM_AssetCreateDelegate, const FCPM_CreatedAssets&, Response, float, Progress);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_AssetCreateDelegate, const FCPM_CreatedAssets&, Response);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_GetAssetsHttpResponseCallbackDelegate, const FCPM_AssetResponse&, AssetData);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_AssetUploadDelegate, float, Progress);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_StringResponseDelegate, const FString&, ResponseString);
 
+/* Create and update base proxy*/
 UCLASS()
-class UCPM_CreatePakAssetProxy : public UConvaiAPIBaseProxy
+class UCPM_CreateUpdatePakAssetBaseProxy : public UConvaiAPIBaseProxy
+{
+	GENERATED_BODY()
+	
+protected:
+	virtual bool ConfigureRequest(TSharedRef<IConvaihttpRequest> Request, const TCHAR* Verb) override;
+	virtual bool AddContentToRequest(TArray64<uint8>& DataToSend, const FString& Boundary)  override;
+	virtual bool AddContentToRequestAsString(TSharedPtr<FJsonObject>& ObjectToSend) override { return false; }
+	
+	FCPM_CreatePakAssetParams M_Params;
+	bool M_bUpdateAsset = false;
+	FString M_AssetId;
+};
+
+/* Create Proxy */
+UCLASS()
+class UCPM_CreatePakAssetProxy : public UCPM_CreateUpdatePakAssetBaseProxy
 {
 	GENERATED_BODY()
 
@@ -24,25 +42,38 @@ public:
 
 	UPROPERTY(BlueprintAssignable)
 	FCPM_AssetCreateDelegate OnFailure;
-
-	UPROPERTY(BlueprintAssignable)
-	FCPM_AssetCreateDelegate OnProgress;
 	
 	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", DisplayName = "Convai Create Pak Asset"), Category = "Convai|PakManager")
 	static UCPM_CreatePakAssetProxy* CreatePakAssetProxy(const FCPM_CreatePakAssetParams& Params);
 
 protected:
-	virtual bool ConfigureRequest(TSharedRef<IConvaihttpRequest> Request, const TCHAR* Verb) override;
-	virtual bool AddContentToRequest(TArray64<uint8>& DataToSend, const FString& Boundary)  override;
-	virtual bool AddContentToRequestAsString(TSharedPtr<FJsonObject>& ObjectToSend) override { return false; }
 	virtual void HandleSuccess() override;
 	virtual void HandleFailure() override;
+};
 
-private:
-	FCPM_CreatePakAssetParams M_Params;
+/* Update Proxy */
+UCLASS()
+class UCPM_UpdatePakAssetProxy : public UCPM_CreateUpdatePakAssetBaseProxy
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY(BlueprintAssignable)
+	FCPM_StringResponseDelegate OnSuccess;
+
+	UPROPERTY(BlueprintAssignable)
+	FCPM_StringResponseDelegate OnFailure;
+	
+	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", DisplayName = "Convai Update Pak Asset"), Category = "Convai|PakManager")
+	static UCPM_UpdatePakAssetProxy* UpdatePakAssetProxy(const FString& AssetID, const FCPM_CreatePakAssetParams& Params);
+
+protected:
+	virtual void HandleSuccess() override;
+	virtual void HandleFailure() override;
 };
 
 
+//-------------------------------------------Upload proxy-------------------------------------------
 
 UCLASS()
 class UCPM_UploadPakAssetProxy : public UOnlineBlueprintCallProxyBase

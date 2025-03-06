@@ -12,19 +12,13 @@
 namespace
 {
 	const FString CreatePakAssetURL = TEXT("http://35.239.167.143:8089/assets/upload");
+	const FString UpdatePakAssetURL = TEXT("http://35.239.167.143:8089/assets/update");
 	const FString GetAssetURL = TEXT("http://35.239.167.143:8089/assets/get");
 	//const FString GetAssetURL = TEXT("https://beta.convai.com/assets/get");
 }
 
-UCPM_CreatePakAssetProxy* UCPM_CreatePakAssetProxy::CreatePakAssetProxy(const FCPM_CreatePakAssetParams& Params)
-{
-	UCPM_CreatePakAssetProxy* Proxy = NewObject<UCPM_CreatePakAssetProxy>();
-	Proxy->M_Params = Params;
-	Proxy->URL = CreatePakAssetURL;
-	return Proxy;
-}
 
-bool UCPM_CreatePakAssetProxy::ConfigureRequest(TSharedRef<IConvaihttpRequest> Request, const TCHAR* Verb)
+bool UCPM_CreateUpdatePakAssetBaseProxy::ConfigureRequest(TSharedRef<IConvaihttpRequest> Request, const TCHAR* Verb)
 {
 	if (!Super::ConfigureRequest(Request, ConvaiHttpConstants::POST))
 	{
@@ -34,28 +28,30 @@ bool UCPM_CreatePakAssetProxy::ConfigureRequest(TSharedRef<IConvaihttpRequest> R
 	return true;
 }
 
-bool UCPM_CreatePakAssetProxy::AddContentToRequest(TArray64<uint8>& DataToSend, const FString& Boundary)
+bool UCPM_CreateUpdatePakAssetBaseProxy::AddContentToRequest(TArray64<uint8>& DataToSend, const FString& Boundary)
 {
 	if (URL.IsEmpty())
 	{
 		UE_LOG(LogTemp, Error, TEXT("Invalid file path or URL"));
-		OnFailure.Broadcast(FCPM_CreatedAssets(), 0.f);
 		return false;
 	}
-	
-	TArray<TSharedPtr<FJsonValue>> JsonTagsArray;
-	for (const FString& Tag : M_Params.Tags)
+
+	if (M_Params.Tags.Num() > 0)
 	{
-		JsonTagsArray.Add(MakeShareable(new FJsonValueString(Tag)));
+		TArray<TSharedPtr<FJsonValue>> JsonTagsArray;
+		for (const FString& Tag : M_Params.Tags)
+		{
+			JsonTagsArray.Add(MakeShareable(new FJsonValueString(Tag)));
+		}
+		FString TagsJson;
+		const TSharedRef<TJsonWriter<>> TagsWriter = TJsonWriterFactory<>::Create(&TagsJson);
+		FJsonSerializer::Serialize(JsonTagsArray, TagsWriter);
+
+		// Append tags JSON array directly to form data
+		const FString TagsField = FString::Printf(TEXT("\r\n------%s\r\nContent-Disposition: form-data; name=\"tags\"\r\n\r\n%s"), *Boundary, *TagsJson);
+		DataToSend.Append(reinterpret_cast<uint8*>(TCHAR_TO_UTF8(*TagsField)), TagsField.Len());
 	}
-	FString TagsJson;
-	TSharedRef<TJsonWriter<>> TagsWriter = TJsonWriterFactory<>::Create(&TagsJson);
-	FJsonSerializer::Serialize(JsonTagsArray, TagsWriter);
-
-	// Append tags JSON array directly to form data
-	FString TagsField = FString::Printf(TEXT("\r\n------%s\r\nContent-Disposition: form-data; name=\"tags\"\r\n\r\n%s"), *Boundary, *TagsJson);
-	DataToSend.Append((uint8*)TCHAR_TO_UTF8(*TagsField), TagsField.Len());
-
+	
 	if (!M_Params.MetaData.IsEmpty())
 	{
 		const FString MetaDataField = FString::Printf(TEXT("\r\n------%s\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n%s"),
@@ -70,11 +66,31 @@ bool UCPM_CreatePakAssetProxy::AddContentToRequest(TArray64<uint8>& DataToSend, 
 		DataToSend.Append(reinterpret_cast<uint8*>(TCHAR_TO_UTF8(*VersionField)), VersionField.Len());
 	}
 
-	if (!M_Params.Entity_Type.IsEmpty())
+	if (M_bUpdateAsset)
 	{
-		const FString EntityTypeField = FString::Printf(TEXT("\r\n------%s\r\nContent-Disposition: form-data; name=\"entity_type\"\r\n\r\n%s"),
-			*Boundary, *M_Params.Entity_Type);
-		DataToSend.Append(reinterpret_cast<uint8*>(TCHAR_TO_UTF8(*EntityTypeField)), EntityTypeField.Len());
+		if (!M_AssetId.IsEmpty())
+		{
+			const FString AssetIDField = FString::Printf(TEXT("\r\n------%s\r\nContent-Disposition: form-data; name=\"asset_id\"\r\n\r\n%s"),
+				*Boundary, *M_AssetId);
+			DataToSend.Append(reinterpret_cast<uint8*>(TCHAR_TO_UTF8(*AssetIDField)), AssetIDField.Len());
+		}
+		else
+		{
+			UCPM_UtilityLibrary::CPM_LogMessage(TEXT("Empty Asset"), ECPM_LogLevel::Error);
+		}
+	}
+	else
+	{
+		if (!M_Params.Entity_Type.IsEmpty())
+		{
+			const FString EntityTypeField = FString::Printf(TEXT("\r\n------%s\r\nContent-Disposition: form-data; name=\"entity_type\"\r\n\r\n%s"),
+				*Boundary, *M_Params.Entity_Type);
+			DataToSend.Append(reinterpret_cast<uint8*>(TCHAR_TO_UTF8(*EntityTypeField)), EntityTypeField.Len());
+		}
+		else
+		{
+			UCPM_UtilityLibrary::CPM_LogMessage(TEXT("Empty Type"), ECPM_LogLevel::Error);
+		}
 	}
 
 	if(M_Params.Thumbnail)
@@ -94,26 +110,78 @@ bool UCPM_CreatePakAssetProxy::AddContentToRequest(TArray64<uint8>& DataToSend, 
 	return true;
 }
 
+
+UCPM_CreatePakAssetProxy* UCPM_CreatePakAssetProxy::CreatePakAssetProxy(const FCPM_CreatePakAssetParams& Params)
+{
+	UCPM_CreatePakAssetProxy* Proxy = NewObject<UCPM_CreatePakAssetProxy>();
+	Proxy->M_Params = Params;
+	Proxy->URL = CreatePakAssetURL;
+	return Proxy;
+}
+
 void UCPM_CreatePakAssetProxy::HandleSuccess()
 {
 	Super::HandleSuccess();
 	FCPM_CreatedAssets CreatedAssets;
+	
 	if (UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(ResponseString, CreatedAssets))
 	{
 		if (UCPM_UtilityLibrary::SaveConvaiAssetData(ResponseString))
 		{
-			OnSuccess.Broadcast(CreatedAssets, 100.f);
+			OnSuccess.Broadcast(CreatedAssets);
 			return;
 		}
 	}
 	
-	OnFailure.Broadcast(CreatedAssets, 0.f);
+	OnFailure.Broadcast(CreatedAssets);
 }
 
 void UCPM_CreatePakAssetProxy::HandleFailure()
 {
 	Super::HandleFailure();
-	OnFailure.Broadcast(FCPM_CreatedAssets(), 0.f);
+	OnFailure.Broadcast(FCPM_CreatedAssets());
+}
+
+
+UCPM_UpdatePakAssetProxy* UCPM_UpdatePakAssetProxy::UpdatePakAssetProxy(const FString& AssetID,
+	const FCPM_CreatePakAssetParams& UpdateParams)
+{
+	UCPM_UpdatePakAssetProxy* Proxy = NewObject<UCPM_UpdatePakAssetProxy>();
+	Proxy->M_Params = UpdateParams;
+	Proxy->URL = UpdatePakAssetURL;
+	Proxy->M_AssetId = AssetID;
+	Proxy->M_bUpdateAsset = true;
+	return Proxy;
+}
+
+void UCPM_UpdatePakAssetProxy::HandleSuccess()
+{
+	Super::HandleSuccess();
+
+	TSharedPtr<FJsonObject> JsonObject;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResponseString);
+
+	if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid())
+	{
+		const TSharedPtr<FJsonObject>* UploadUrlsObject;
+		if (JsonObject->TryGetObjectField(TEXT("upload_urls"), UploadUrlsObject))
+		{
+			for (const auto& Pair : (*UploadUrlsObject)->Values)
+			{
+				const FString FirstUploadURL = Pair.Value->AsString();
+				OnSuccess.Broadcast(FirstUploadURL);
+				return;
+			}
+		}
+	}
+
+	OnFailure.Broadcast(ResponseString);
+}
+
+void UCPM_UpdatePakAssetProxy::HandleFailure()
+{
+	Super::HandleFailure();
+	OnFailure.Broadcast(ResponseString);
 }
 
 

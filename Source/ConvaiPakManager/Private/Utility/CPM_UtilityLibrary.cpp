@@ -266,7 +266,12 @@ bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FC
             OutCreatedAssets.Assets.Add(ParsedAsset);
         }
     }
-    return true;
+	else
+	{
+		return false;
+	}
+	
+	return true;
 }
 
 FString UCPM_UtilityLibrary::GetPakMetaDataFilePath()
