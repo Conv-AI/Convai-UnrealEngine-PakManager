@@ -16,6 +16,7 @@ public class ConvaiPakManager : ModuleRules
 				"PakFile", 
 				"ImageWrapper",
 				"Convai",
+				"HTTP"
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
