@@ -93,6 +93,13 @@ bool UCPM_CreateUpdatePakAssetBaseProxy::AddContentToRequest(CONVAI_HTTP_PAYLOAD
 		}
 	}
 
+	if (!M_Params.Visiblity.IsEmpty())
+	{
+		const FString VisiblityField = FString::Printf(TEXT("\r\n------%s\r\nContent-Disposition: form-data; name=\"visibility\"\r\n\r\n%s"),
+			*Boundary, *M_Params.Visiblity);
+		DataToSend.Append(reinterpret_cast<uint8*>(TCHAR_TO_UTF8(*VisiblityField)), VisiblityField.Len());
+	}
+	
 	if(M_Params.Thumbnail)
 	{
 		TArray<uint8> CompressedData;

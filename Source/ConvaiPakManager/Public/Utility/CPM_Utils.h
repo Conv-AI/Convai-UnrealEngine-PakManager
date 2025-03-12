@@ -25,6 +25,9 @@ struct FCPM_CreatePakAssetParams
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Convai|PakManager")
 	UTexture2D* Thumbnail;
 
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Convai|PakManager")
+	FString Visiblity;
+
 	FCPM_CreatePakAssetParams()
 		: MetaData(TEXT("")),
 		  Version(TEXT("")),
