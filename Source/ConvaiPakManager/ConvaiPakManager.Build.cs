@@ -28,12 +28,17 @@ public class ConvaiPakManager : ModuleRules
 				"Engine",
 				"Slate",
 				"SlateCore",
-				"DesktopPlatform",
 				"Json", 
 				"JsonUtilities",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
+			
+		// Only include DesktopPlatform for editor builds, not for shipping builds
+		if (Target.Type == TargetType.Editor)
+		{
+			PrivateDependencyModuleNames.Add("DesktopPlatform");
+		}
 		
 		const bool bEnableLogging = true;
 		PublicDefinitions.Add("CONVAI_PAK_MANAGER_LOG=" + (bEnableLogging ? "1" : "0"));
