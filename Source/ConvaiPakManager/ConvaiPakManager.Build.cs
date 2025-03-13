@@ -11,30 +11,27 @@ public class ConvaiPakManager : ModuleRules
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"Core", 
-				"CONVAIHTTP",
-				"PakFile", 
-				"ImageWrapper",
-				"Convai",
-				"HTTP"
-				// ... add other public dependencies that you statically link with here ...
-			}
+				"Core", "PakFile", "ImageWrapper", "Convai", }
 			);
 		
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"CoreUObject",
-				"Engine",
-				"Slate",
-				"SlateCore",
-				"Json", 
-				"JsonUtilities",
-				// ... add private dependencies that you statically link with here ...	
-			}
+				"CoreUObject", "Engine", "Slate", "SlateCore", "Json", "JsonUtilities", }
 			);
 			
-		// Only include DesktopPlatform for editor builds, not for shipping builds
+		/* Use ConvaiHTTP plugin*/
+		const bool bEnableConvaiHTTP = true;
+		PublicDefinitions.AddRange(new string[] { "USE_CONVAI_HTTP=0" + (bEnableConvaiHTTP ? "1" : "0")});
+		if (bEnableConvaiHTTP)
+		{
+			PublicDependencyModuleNames.AddRange(new string[] { "CONVAIHTTP", "HTTP" });
+		}
+		else
+		{
+			PublicDependencyModuleNames.AddRange(new string[] { "HTTP" });
+		}
+		
 		if (Target.Type == TargetType.Editor)
 		{
 			PrivateDependencyModuleNames.Add("DesktopPlatform");
