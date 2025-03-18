@@ -76,7 +76,7 @@ protected:
 //-------------------------------------------Upload proxy-------------------------------------------
 
 UCLASS()
-class UCPM_UploadPakAssetProxy : public UOnlineBlueprintCallProxyBase
+class UCPM_UploadPakAssetProxy : public UConvaiAPIBaseProxy
 {
 	GENERATED_BODY()
 
@@ -93,10 +93,14 @@ public:
 	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", DisplayName = "Convai Upload Pak Asset"), Category = "Convai|PakManager")
 	static UCPM_UploadPakAssetProxy* UploadPakAssetProxy(const FString& UploadURL, const FString& PakFilePath);
 
-	virtual void Activate() override;
+protected:
+	virtual bool ConfigureRequest(TSharedRef<CONVAI_HTTP_REQUEST_INTERFACE> Request, const TCHAR* Verb) override;
+	virtual bool AddContentToRequest(CONVAI_HTTP_PAYLOAD_ARRAY_TYPE& DataToSend, const FString& Boundary)  override;
+	virtual bool AddContentToRequestAsString(TSharedPtr<FJsonObject>& ObjectToSend) override { return false; }
+	virtual void HandleSuccess() override;
+	virtual void HandleFailure() override;
 	
 private:
-	FString URL;
 	FString M_PakFilePath;
 };
 
