@@ -20,17 +20,7 @@ public class ConvaiPakManager : ModuleRules
 				"CoreUObject", "Engine", "Slate", "SlateCore", "Json", "JsonUtilities", }
 			);
 			
-		/* Use ConvaiHTTP plugin*/
-		const bool bEnableConvaiHTTP = true;
-		PublicDefinitions.AddRange(new string[] { "USE_CONVAI_HTTP=0" + (bEnableConvaiHTTP ? "1" : "0")});
-		if (bEnableConvaiHTTP)
-		{
-			PublicDependencyModuleNames.AddRange(new string[] { "CONVAIHTTP", "HTTP" });
-		}
-		else
-		{
-			PublicDependencyModuleNames.AddRange(new string[] { "HTTP" });
-		}
+		
 		
 		if (Target.Type == TargetType.Editor)
 		{
