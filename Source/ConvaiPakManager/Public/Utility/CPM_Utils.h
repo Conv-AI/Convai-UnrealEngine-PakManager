@@ -201,8 +201,6 @@ enum class ECPM_LogLevel : uint8
 	Error UMETA(DisplayName = "Error"),
 };
 
-
-
 USTRUCT(BlueprintType)
 struct FCPM_AssetData
 {
@@ -242,3 +240,16 @@ struct FCPM_AssetResponse
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Response")
 	TArray<FCPM_AssetData> assets;
 };
+
+USTRUCT(BlueprintType)
+struct FCPM_ModdingMetadata
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Response")
+	FString ProjectName;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Response")
+	FString PluginName;
+};
+
