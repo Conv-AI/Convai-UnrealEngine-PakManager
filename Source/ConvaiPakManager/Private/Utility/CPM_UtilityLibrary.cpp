@@ -153,6 +153,30 @@ bool UCPM_UtilityLibrary::LoadConvaiAssetData(FCPM_CreatedAssets& OutData)
 	return GetCreatedAssetsFromJSON(FileContent, OutData);
 }
 
+bool UCPM_UtilityLibrary::GetModdingMetadata(FCPM_ModdingMetadata& OutData)
+{
+	const FString FilePath = FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("ModdingMetaData")) + TEXT(".txt");
+	FString FileContent;
+
+	if (!FFileHelper::LoadFileToString(FileContent, *FilePath))
+	{
+		CPM_LogMessage(TEXT("Failed to read ModdingMetaData.txt"), ECPM_LogLevel::Error);
+		return false;
+	}
+
+	TSharedPtr<FJsonObject> JsonObject;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(FileContent);
+	if (!FJsonSerializer::Deserialize(Reader, JsonObject) || !JsonObject.IsValid())
+	{
+		return false;
+	}
+
+	JsonObject->TryGetStringField(TEXT("project_name"), OutData.ProjectName);
+	JsonObject->TryGetStringField(TEXT("plugin_name"), OutData.PluginName);
+
+	return true;
+}
+
 bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FCPM_CreatedAssets& OutCreatedAssets)
 {
 	TSharedPtr<FJsonObject> JsonObject;
