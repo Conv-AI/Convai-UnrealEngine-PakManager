@@ -132,7 +132,10 @@ void UCPM_CreatePakAssetProxy::HandleSuccess()
 	
 	if (UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(ResponseString, CreatedAssets))
 	{
-		if (UCPM_UtilityLibrary::SaveConvaiAssetData(ResponseString))
+		const FString PakMetaData = CreatedAssets.Assets.IsValidIndex(0) ? CreatedAssets.Assets[0].Asset.MetadataString : FString();
+		UCPM_UtilityLibrary::SaveConvaiAssetMetadata(PakMetaData);
+		
+		if (UCPM_UtilityLibrary::SaveConvaiCreateAssetData(ResponseString))
 		{
 			OnSuccess.Broadcast(CreatedAssets);
 			return;

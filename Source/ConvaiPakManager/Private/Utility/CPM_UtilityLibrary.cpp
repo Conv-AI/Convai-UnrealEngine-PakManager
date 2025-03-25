@@ -117,7 +117,7 @@ bool UCPM_UtilityLibrary::ValidatePakFile(const FString& PakFilePath)
 void UCPM_UtilityLibrary::GetAssetID(FString& AssetID)
 {
 	FCPM_CreatedAssets OutData;
-	if(LoadConvaiAssetData(OutData))
+	if(LoadConvaiCreateAssetData(OutData))
 	{
 		AssetID = OutData.Assets.Num() > 0 ? OutData.Assets[0].Asset.AssetId : TEXT(""); 
 		return;
@@ -126,9 +126,9 @@ void UCPM_UtilityLibrary::GetAssetID(FString& AssetID)
 	CPM_LogMessage(TEXT("Failed to get asset id from PakMetaData.txt"), ECPM_LogLevel::Error);
 }
 
-bool UCPM_UtilityLibrary::SaveConvaiAssetData(const FString& ResponseString)
+bool UCPM_UtilityLibrary::SaveConvaiCreateAssetData(const FString& ResponseString)
 {
-	FString FilePath = GetPakMetaDataFilePath();
+	FString FilePath = GetCreateAssetDataFilePath();
 	
 	if (FFileHelper::SaveStringToFile(ResponseString, *FilePath))
 	{
@@ -139,9 +139,9 @@ bool UCPM_UtilityLibrary::SaveConvaiAssetData(const FString& ResponseString)
 	return false;
 }
 
-bool UCPM_UtilityLibrary::LoadConvaiAssetData(FCPM_CreatedAssets& OutData)
+bool UCPM_UtilityLibrary::LoadConvaiCreateAssetData(FCPM_CreatedAssets& OutData)
 {
-	const FString FilePath = GetPakMetaDataFilePath();
+	const FString FilePath = GetCreateAssetDataFilePath();
 	FString FileContent;
 
 	if (!FFileHelper::LoadFileToString(FileContent, *FilePath))
@@ -153,45 +153,27 @@ bool UCPM_UtilityLibrary::LoadConvaiAssetData(FCPM_CreatedAssets& OutData)
 	return GetCreatedAssetsFromJSON(FileContent, OutData);
 }
 
+bool UCPM_UtilityLibrary::SaveConvaiAssetMetadata(const FString& ResponseString)
+{
+	FString FilePath = GetPakMetadataFilePath();
+	
+	if (FFileHelper::SaveStringToFile(ResponseString, *FilePath))
+	{
+		return true;
+	}
+	
+	CPM_LogMessage(FString::Printf(TEXT("Failed to save asset data to %s"), *FilePath), ECPM_LogLevel::Error);
+	return false;
+}
+
 void UCPM_UtilityLibrary::GetAssetMetaDataString(FString& MetaData)
 {
-	const FString FilePath = GetPakMetaDataFilePath();
-	FString FileContent;
+	FFileHelper::LoadFileToString(MetaData, *GetPakMetadataFilePath());
+}
 
-	if (!FFileHelper::LoadFileToString(FileContent, *FilePath))
-	{
-		return;
-	}
-
-	TSharedPtr<FJsonObject> JsonObject;
-	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(FileContent);
-
-	if (!FJsonSerializer::Deserialize(Reader, JsonObject) || !JsonObject.IsValid())
-	{
-		return;
-	}
-
-	const TArray<TSharedPtr<FJsonValue>>* AssetsArray;
-	if (JsonObject->TryGetArrayField(TEXT("assets"), AssetsArray))
-	{
-		for (const TSharedPtr<FJsonValue>& AssetValue : *AssetsArray)
-		{
-			const TSharedPtr<FJsonObject>* AssetEntryObject;
-			if (!AssetValue->TryGetObject(AssetEntryObject))
-				continue;
-			
-			const TSharedPtr<FJsonObject>* AssetDetailsObj;
-			if ((*AssetEntryObject)->TryGetObjectField(TEXT("asset"), AssetDetailsObj))
-			{
-				const TSharedPtr<FJsonObject>* MetadataObj;
-				if ((*AssetDetailsObj)->TryGetObjectField(TEXT("metadata"), MetadataObj))
-				{
-					const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&MetaData);
-					FJsonSerializer::Serialize(MetadataObj->ToSharedRef(), Writer);
-				}
-			}
-		}
-	}
+FString UCPM_UtilityLibrary::GetPakMetadataFilePath()
+{
+	return FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("PakMetaData")) + TEXT(".json");
 }
 
 void UCPM_UtilityLibrary::GetModdingMetadata(FCPM_ModdingMetadata& OutData)
@@ -293,8 +275,10 @@ bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FC
                     {
                         (*EntityDataObj)->TryGetStringField(TEXT("scene_name"), ParsedAsset.Asset.Metadata.EntityData.SceneName);
                         (*EntityDataObj)->TryGetStringField(TEXT("scene_description"), ParsedAsset.Asset.Metadata.EntityData.SceneDescription);
-                        // If there's SceneMetadata, handle it accordingly here.
                     }
+
+                	TSharedRef<TJsonWriter<>> MetadataWriter = TJsonWriterFactory<>::Create(&ParsedAsset.Asset.MetadataString);
+                	FJsonSerializer::Serialize(MetadataObj->ToSharedRef(), MetadataWriter);
                 }
             }
 
@@ -338,9 +322,9 @@ bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FC
 	return true;
 }
 
-FString UCPM_UtilityLibrary::GetPakMetaDataFilePath()
+FString UCPM_UtilityLibrary::GetCreateAssetDataFilePath()
 {
-	return FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("PakMetaData")) + TEXT(".txt");
+	return FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("CreateAssetData")) + TEXT(".json");
 }
 
 bool UCPM_UtilityLibrary::ShouldCreateAsset()

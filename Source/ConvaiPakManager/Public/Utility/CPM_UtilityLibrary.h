@@ -28,24 +28,34 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static void GetAssetID(FString& AssetID);
 
+	// Create asset utility functions
 	UFUNCTION(BlueprintCallable, Category="Convai|PakManager")
-	static bool SaveConvaiAssetData(const FString& ResponseString);
+	static bool SaveConvaiCreateAssetData(const FString& ResponseString);
 
 	UFUNCTION(BlueprintCallable, Category="Convai|PakManager")
-	static bool LoadConvaiAssetData(FCPM_CreatedAssets& OutData);
+	static bool LoadConvaiCreateAssetData(FCPM_CreatedAssets& OutData);
 
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static FString GetCreateAssetDataFilePath();
+	// END Create asset utility functions
+
+	// Asset metadata utility functions
+	UFUNCTION(BlueprintCallable, Category="Convai|PakManager")
+	static bool SaveConvaiAssetMetadata(const FString& ResponseString);
+	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Convai|PakManager")
 	static void GetAssetMetaDataString(FString& MetaData);
 
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static FString GetPakMetadataFilePath();
+	// END Asset metadata utility functions
+	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Convai|PakManager")
 	static void GetModdingMetadata(FCPM_ModdingMetadata& OutData);
 	
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static bool GetCreatedAssetsFromJSON(const FString& JsonString, FCPM_CreatedAssets& OutCreatedAssets);
-
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static FString GetPakMetaDataFilePath();
-
+		
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static bool ShouldCreateAsset();
 
