@@ -153,7 +153,48 @@ bool UCPM_UtilityLibrary::LoadConvaiAssetData(FCPM_CreatedAssets& OutData)
 	return GetCreatedAssetsFromJSON(FileContent, OutData);
 }
 
-bool UCPM_UtilityLibrary::GetModdingMetadata(FCPM_ModdingMetadata& OutData)
+void UCPM_UtilityLibrary::GetAssetMetaDataString(FString& MetaData)
+{
+	const FString FilePath = GetPakMetaDataFilePath();
+	FString FileContent;
+
+	if (!FFileHelper::LoadFileToString(FileContent, *FilePath))
+	{
+		return;
+	}
+
+	TSharedPtr<FJsonObject> JsonObject;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(FileContent);
+
+	if (!FJsonSerializer::Deserialize(Reader, JsonObject) || !JsonObject.IsValid())
+	{
+		return;
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* AssetsArray;
+	if (JsonObject->TryGetArrayField(TEXT("assets"), AssetsArray))
+	{
+		for (const TSharedPtr<FJsonValue>& AssetValue : *AssetsArray)
+		{
+			const TSharedPtr<FJsonObject>* AssetEntryObject;
+			if (!AssetValue->TryGetObject(AssetEntryObject))
+				continue;
+			
+			const TSharedPtr<FJsonObject>* AssetDetailsObj;
+			if ((*AssetEntryObject)->TryGetObjectField(TEXT("asset"), AssetDetailsObj))
+			{
+				const TSharedPtr<FJsonObject>* MetadataObj;
+				if ((*AssetDetailsObj)->TryGetObjectField(TEXT("metadata"), MetadataObj))
+				{
+					const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&MetaData);
+					FJsonSerializer::Serialize(MetadataObj->ToSharedRef(), Writer);
+				}
+			}
+		}
+	}
+}
+
+void UCPM_UtilityLibrary::GetModdingMetadata(FCPM_ModdingMetadata& OutData)
 {
 	const FString FilePath = FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("ModdingMetaData")) + TEXT(".txt");
 	FString FileContent;
@@ -161,20 +202,19 @@ bool UCPM_UtilityLibrary::GetModdingMetadata(FCPM_ModdingMetadata& OutData)
 	if (!FFileHelper::LoadFileToString(FileContent, *FilePath))
 	{
 		CPM_LogMessage(TEXT("Failed to read ModdingMetaData.txt"), ECPM_LogLevel::Error);
-		return false;
+		return;
 	}
 
 	TSharedPtr<FJsonObject> JsonObject;
 	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(FileContent);
 	if (!FJsonSerializer::Deserialize(Reader, JsonObject) || !JsonObject.IsValid())
 	{
-		return false;
+		return;
 	}
 
 	JsonObject->TryGetStringField(TEXT("project_name"), OutData.ProjectName);
 	JsonObject->TryGetStringField(TEXT("plugin_name"), OutData.PluginName);
-
-	return true;
+	JsonObject->TryGetStringField(TEXT("asset_type"), OutData.AssetType);
 }
 
 bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FCPM_CreatedAssets& OutCreatedAssets)

@@ -35,9 +35,12 @@ public:
 	static bool LoadConvaiAssetData(FCPM_CreatedAssets& OutData);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Convai|PakManager")
-	static bool GetModdingMetadata(FCPM_ModdingMetadata& OutData);
+	static void GetAssetMetaDataString(FString& MetaData);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Convai|PakManager")
+	static void GetModdingMetadata(FCPM_ModdingMetadata& OutData);
 	
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static bool GetCreatedAssetsFromJSON(const FString& JsonString, FCPM_CreatedAssets& OutCreatedAssets);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
