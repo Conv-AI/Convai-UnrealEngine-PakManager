@@ -294,7 +294,7 @@ void UCPM_GetAssetMetaDataProxy::HandleSuccess()
     
     if (UCPM_UtilityLibrary::ExtractAssetListFromResponseString(ResponseString, AssetResponse))
     {
-        OnSuccess.Broadcast(AssetResponse);
+        OnSuccess.Broadcast(AssetResponse, ResponseString);
     }
     else
     {
@@ -306,5 +306,5 @@ void UCPM_GetAssetMetaDataProxy::HandleSuccess()
 void UCPM_GetAssetMetaDataProxy::HandleFailure()
 {
     Super::HandleFailure();
-    OnFailure.Broadcast(FCPM_AssetResponse());
+    OnFailure.Broadcast(FCPM_AssetResponse(), ResponseString);
 }

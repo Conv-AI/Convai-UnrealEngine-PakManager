@@ -10,7 +10,7 @@
 struct FCPM_CreatedAssets;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_AssetCreateDelegate, const FCPM_CreatedAssets&, Response);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_GetAssetsHttpResponseCallbackDelegate, const FCPM_AssetResponse&, AssetData);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FCPM_GetAssetsHttpResponseCallbackDelegate, const FCPM_AssetResponse&, AssetData, const FString&, ResponseString);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_AssetUploadDelegate, float, Progress);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_StringResponseDelegate, const FString&, ResponseString);
 
