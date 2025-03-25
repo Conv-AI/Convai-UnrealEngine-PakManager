@@ -115,6 +115,9 @@ struct FCPM_AssetDetails
 	FCPM_AssetMetadata Metadata;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Convai|PakManager")
+	FString MetadataString;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Convai|PakManager")
 	TArray<FString> Versions;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Convai|PakManager")
@@ -251,5 +254,7 @@ struct FCPM_ModdingMetadata
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Response")
 	FString PluginName;
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Response")
+    FString AssetType;
 };
-
