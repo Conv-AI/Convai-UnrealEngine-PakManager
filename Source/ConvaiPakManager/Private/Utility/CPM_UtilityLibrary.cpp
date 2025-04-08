@@ -353,6 +353,11 @@ void UCPM_UtilityLibrary::CPM_LogMessage(const FString& Message, const ECPM_LogL
 	}
 }
 
+FString UCPM_UtilityLibrary::GetPythonScriptDirectory()
+{
+	return FPaths::Combine(FPaths::ProjectDir(),TEXT("Plugins"), TEXT("ConvaiPakManager"), TEXT("Scripts/"));
+}
+
 bool UCPM_UtilityLibrary::Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height,
                                             TArray<FColor>& Pixels)
 {
