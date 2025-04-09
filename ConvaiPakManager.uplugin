@@ -40,6 +40,10 @@
 		{
 			"Name": "JsonBlueprintUtilities",
 			"Enabled": true
+		},
+		{
+			"Name": "ConvAI",
+			"Enabled": true
 		}
 	]
 }
