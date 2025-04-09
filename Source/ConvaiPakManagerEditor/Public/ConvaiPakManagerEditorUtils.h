@@ -15,6 +15,9 @@ class CONVAIPAKMANAGEREDITOR_API UConvaiPakManagerEditorUtils : public UBlueprin
 public:
 	/** Marks the given asset as dirty so it can be saved */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
-	static void CPM_MarkAssetDirty(UObject* Asset);	
+	static void CPM_MarkAssetDirty(UObject* Asset);
+
+	UFUNCTION(BlueprintCallable, Category = "Editor Utility", meta = (CallInEditor = "true"))
+	static void CPM_TogglePlayMode();
 };
  
