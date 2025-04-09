@@ -6,6 +6,7 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "ConvaiPakManagerEditorUtils.generated.h"
 
+DECLARE_DYNAMIC_DELEGATE_TwoParams(FOnPackagingCompleted, const FString&, Result, double, Runtime);
 
 UCLASS()
 class CONVAIPAKMANAGEREDITOR_API UConvaiPakManagerEditorUtils : public UBlueprintFunctionLibrary
@@ -21,7 +22,7 @@ public:
 	static void CPM_TogglePlayMode();
 
 	UFUNCTION(BlueprintCallable, Category = "Editor Utility")
-	static void CPM_PackageProject();
+	static void CPM_PackageProject(FOnPackagingCompleted OnPackagingCompleted);
 
 	UFUNCTION(BlueprintCallable, Category = "Editor Utility")
 	static void CPM_ToggleLiveCoding(const bool Enable = false);

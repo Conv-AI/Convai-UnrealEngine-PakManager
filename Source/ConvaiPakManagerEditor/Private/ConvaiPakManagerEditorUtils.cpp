@@ -75,6 +75,7 @@ void UConvaiPakManagerEditorUtils::CPM_TogglePlayMode()
 
 
 void PackageProjectUsingUATHelper(const FString& ProjectFilePath, const FString& OutputDirectory,
+								  const FOnPackagingCompleted& OnPackagingCompleted,
                                   const FString& Platform = TEXT("Win64"),
                                   const FString& Configuration = TEXT("Shipping"))
 {
@@ -109,9 +110,9 @@ void PackageProjectUsingUATHelper(const FString& ProjectFilePath, const FString&
         FText::FromString(TEXT("Packaging")),          // TaskShortName
         nullptr,                                       // TaskIcon (optionally supply a valid FSlateBrush*)
         /*OptionalAnalyticsParamArray=*/ nullptr,       // Analytics parameter added in UE 5.3
-        [](FString Result, double Runtime)
+        [&](FString Result, double Runtime)
         {
-            UE_LOG(LogTemp, Log, TEXT("Packaging result: %s, runtime: %f seconds"), *Result, Runtime);
+        	OnPackagingCompleted.ExecuteIfBound(Result, Runtime);
         },
         FString()                                      // ResultLocation (default empty)
     );
@@ -122,9 +123,9 @@ void PackageProjectUsingUATHelper(const FString& ProjectFilePath, const FString&
         FText::FromString(TEXT("Packaging Project")),  // TaskName
         FText::FromString(TEXT("Packaging")),          // TaskShortName
         nullptr,                                       // TaskIcon
-        [](FString Result, double Runtime)
+        [&](FString Result, double Runtime)
         {
-            UE_LOG(LogTemp, Log, TEXT("Packaging result: %s, runtime: %f seconds"), *Result, Runtime);
+        	OnPackagingCompleted.ExecuteIfBound(Result, Runtime);
         },
         FString()                                      // ResultLocation
     );
@@ -135,9 +136,9 @@ void PackageProjectUsingUATHelper(const FString& ProjectFilePath, const FString&
 #endif
 }
 
-void UConvaiPakManagerEditorUtils::CPM_PackageProject()
+void UConvaiPakManagerEditorUtils::CPM_PackageProject(const FOnPackagingCompleted OnPackagingCompleted)
 {
-	PackageProjectUsingUATHelper(FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath()),  FPaths::Combine(FPaths::ProjectDir(), TEXT("PackagedApp")));
+	PackageProjectUsingUATHelper(FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath()),  FPaths::Combine(FPaths::ProjectDir(), TEXT("PackagedApp")), OnPackagingCompleted);
 }
 
 void UConvaiPakManagerEditorUtils::CPM_ToggleLiveCoding(const bool Enable)
