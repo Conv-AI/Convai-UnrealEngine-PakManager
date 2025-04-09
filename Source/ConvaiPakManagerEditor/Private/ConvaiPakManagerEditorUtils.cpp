@@ -72,8 +72,9 @@ void UConvaiPakManagerEditorUtils::CPM_TogglePlayMode()
 #endif
 }
 
-void PackageProjectUsingUATHelper(const FString& ProjectFilePath, const FString& OutputDirectory, 
-                                  const FString& Platform = TEXT("Win64"), 
+
+void PackageProjectUsingUATHelper(const FString& ProjectFilePath, const FString& OutputDirectory,
+                                  const FString& Platform = TEXT("Win64"),
                                   const FString& Configuration = TEXT("Shipping"))
 {
 #if WITH_EDITOR
@@ -83,12 +84,10 @@ void PackageProjectUsingUATHelper(const FString& ProjectFilePath, const FString&
         return;
     }
 
-    // Retrieve the current executable path to pass to UAT (similar to the "-unrealexe" flag in PackageProject.bat).
     const FString UnrealExe = FPlatformProcess::ExecutablePath();
     const FString ExtraParams = FString::Printf(TEXT(" -unrealexe=\"%s\""), *UnrealExe);
-    
-    // Construct the BuildCookRun command line.
-    const FString CommandLine = FString::Printf(
+
+    FString CommandLine = FString::Printf(
         TEXT("BuildCookRun -project=\"%s\" -noP4 -platform=%s -clientconfig=%s -serverconfig=%s -cook -build -stage -pak -archive -archivedirectory=\"%s\"%s"),
         *ProjectFilePath,
         *Platform,
@@ -100,18 +99,36 @@ void PackageProjectUsingUATHelper(const FString& ProjectFilePath, const FString&
 
     UE_LOG(LogTemp, Log, TEXT("Packaging command line: %s"), *CommandLine);
 
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3)
+    // In UE 5.3, use the new signature:
     IUATHelperModule::Get().CreateUatTask(
         CommandLine,
-        FText::FromString(Platform),                   // Display name (target platform)
-        FText::FromString(TEXT("Packaging Project")),  // Full task name for notifications
-        FText::FromString(TEXT("Packaging")),          // Short task name
-        nullptr,                                       // Task icon (optional)
+        FText::FromString(Platform),                   // PlatformDisplayName
+        FText::FromString(TEXT("Packaging Project")),  // TaskName
+        FText::FromString(TEXT("Packaging")),          // TaskShortName
+        nullptr,                                       // TaskIcon (optionally supply a valid FSlateBrush*)
+        /*OptionalAnalyticsParamArray=*/ nullptr,       // Analytics parameter added in UE 5.3
         [](FString Result, double Runtime)
         {
-            // Callback when packaging task completes.
             UE_LOG(LogTemp, Log, TEXT("Packaging result: %s, runtime: %f seconds"), *Result, Runtime);
-        }
+        },
+        FString()                                      // ResultLocation (default empty)
     );
+#else
+    IUATHelperModule::Get().CreateUatTask(
+        CommandLine,
+        FText::FromString(Platform),                   // PlatformDisplayName
+        FText::FromString(TEXT("Packaging Project")),  // TaskName
+        FText::FromString(TEXT("Packaging")),          // TaskShortName
+        nullptr,                                       // TaskIcon
+        [](FString Result, double Runtime)
+        {
+            UE_LOG(LogTemp, Log, TEXT("Packaging result: %s, runtime: %f seconds"), *Result, Runtime);
+        },
+        FString()                                      // ResultLocation
+    );
+#endif
+
 #else
     UE_LOG(LogTemp, Warning, TEXT("Packaging can only be executed in the Editor."));
 #endif
