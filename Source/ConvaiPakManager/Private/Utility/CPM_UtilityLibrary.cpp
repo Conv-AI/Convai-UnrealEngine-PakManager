@@ -176,6 +176,11 @@ FString UCPM_UtilityLibrary::GetPakMetadataFilePath()
 	return FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("PakMetaData")) + TEXT(".json");
 }
 
+FString UCPM_UtilityLibrary::GetPakFilePathFromChunkID(const FString& ChunkID)
+{
+	return FPaths::Combine(FPaths::ProjectDir(), TEXT("PackagedApp"), TEXT("Windows"), GetProjectName(), TEXT("Content"), TEXT("Paks"), FString::Printf(TEXT("pakchunk%s-Windows"), *ChunkID)) + TEXT(".pak");
+}
+
 void UCPM_UtilityLibrary::GetModdingMetadata(FCPM_ModdingMetadata& OutData)
 {
 	const FString FilePath = FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("ModdingMetaData")) + TEXT(".txt");

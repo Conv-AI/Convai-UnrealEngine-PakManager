@@ -49,6 +49,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static FString GetPakMetadataFilePath();
 	// END Asset metadata utility functions
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static FString GetPakFilePathFromChunkID(const FString& ChunkID);
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Convai|PakManager")
 	static void GetModdingMetadata(FCPM_ModdingMetadata& OutData);
