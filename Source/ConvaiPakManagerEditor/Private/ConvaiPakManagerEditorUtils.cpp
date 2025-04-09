@@ -6,6 +6,7 @@
 #include "Misc/PackageName.h"
 #include "UObject/Package.h"
 #include "Editor.h"                  
+#include "ILiveCodingModule.h"
 #include "LevelEditor.h"              
 #include "Modules/ModuleManager.h"
 #include "Framework/Application/SlateApplication.h"
@@ -137,4 +138,18 @@ void PackageProjectUsingUATHelper(const FString& ProjectFilePath, const FString&
 void UConvaiPakManagerEditorUtils::CPM_PackageProject()
 {
 	PackageProjectUsingUATHelper(FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath()),  FPaths::Combine(FPaths::ProjectDir(), TEXT("PackagedApp")));
+}
+
+void UConvaiPakManagerEditorUtils::CPM_ToggleLiveCoding(const bool Enable)
+{
+	if (ILiveCodingModule* LiveCoding = FModuleManager::GetModulePtr<ILiveCodingModule>(LIVE_CODING_MODULE_NAME))
+	{
+		LiveCoding->EnableByDefault(!LiveCoding->IsEnabledByDefault());
+
+		if (LiveCoding->IsEnabledByDefault() && !LiveCoding->IsEnabledForSession())
+		{
+			FMessageDialog::Open(EAppMsgType::Ok,
+				FText::FromString(TEXT("NoEnableLiveCodingAfterHotReloadLive Coding cannot be enabled while hot-reloaded modules are active. Please close the editor and build from your IDE before restarting.")));
+		}
+	}
 }

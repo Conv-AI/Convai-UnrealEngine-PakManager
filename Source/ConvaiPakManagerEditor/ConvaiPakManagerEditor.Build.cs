@@ -51,7 +51,7 @@ public class ConvaiPakManagerEditor : ModuleRules
                 "ContentBrowser",
                 "AssetTools",
                 "DesktopPlatform", 
-                "UATHelper"
+                "UATHelper", "LiveCoding"
                 // ... add private dependencies that you statically link with here ...	
 			}
 			);
