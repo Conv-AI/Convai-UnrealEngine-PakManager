@@ -19,5 +19,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Editor Utility", meta = (CallInEditor = "true"))
 	static void CPM_TogglePlayMode();
+
+	UFUNCTION(BlueprintCallable, Category = "Editor Utility")
+	static void CPM_PackageProject();
 };
  

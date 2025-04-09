@@ -50,8 +50,9 @@ public class ConvaiPakManagerEditor : ModuleRules
                 "EditorSubsystem",
                 "ContentBrowser",
                 "AssetTools",
-                "DesktopPlatform"
-				// ... add private dependencies that you statically link with here ...	
+                "DesktopPlatform", 
+                "UATHelper"
+                // ... add private dependencies that you statically link with here ...	
 			}
 			);
 		
