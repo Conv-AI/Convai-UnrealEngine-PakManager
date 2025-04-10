@@ -12,6 +12,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "PlayInEditorDataTypes.h"    
 #include "IUATHelperModule.h"
+#include "Async/Async.h"
 #include "Misc/Paths.h"
 #include "Logging/LogMacros.h"
 
@@ -73,13 +74,14 @@ void UConvaiPakManagerEditorUtils::CPM_TogglePlayMode()
 #endif
 }
 
-
-void PackageProjectUsingUATHelper(const FString& ProjectFilePath, const FString& OutputDirectory,
-								  const FOnPackagingCompleted& OnPackagingCompleted,
-                                  const FString& Platform = TEXT("Win64"),
-                                  const FString& Configuration = TEXT("Shipping"))
+void UConvaiPakManagerEditorUtils::CPM_PackageProject(FOnPackagingCompleted OnPackagingCompleted)
 {
-#if WITH_EDITOR
+	const FString ProjectFilePath = FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
+	const FString OutputDirectory = FPaths::Combine(FPaths::ProjectDir(), TEXT("PackagedApp"));
+	const FString Platform = TEXT("Win64");
+	const FString Configuration = TEXT("Shipping");
+
+	#if WITH_EDITOR
     if (ProjectFilePath.IsEmpty() || OutputDirectory.IsEmpty())
     {
         UE_LOG(LogTemp, Error, TEXT("Project file or output directory is empty."));
@@ -110,9 +112,12 @@ void PackageProjectUsingUATHelper(const FString& ProjectFilePath, const FString&
         FText::FromString(TEXT("Packaging")),          // TaskShortName
         nullptr,                                       // TaskIcon (optionally supply a valid FSlateBrush*)
         /*OptionalAnalyticsParamArray=*/ nullptr,       // Analytics parameter added in UE 5.3
-        [&](FString Result, double Runtime)
+        [=](FString Result, double Runtime)
         {
-        	OnPackagingCompleted.ExecuteIfBound(Result, Runtime);
+        	AsyncTask(ENamedThreads::Type::GameThread, [=]()
+			{
+				(void)OnPackagingCompleted.ExecuteIfBound(Result, Runtime);	
+			});
         },
         FString()                                      // ResultLocation (default empty)
     );
@@ -123,9 +128,12 @@ void PackageProjectUsingUATHelper(const FString& ProjectFilePath, const FString&
         FText::FromString(TEXT("Packaging Project")),  // TaskName
         FText::FromString(TEXT("Packaging")),          // TaskShortName
         nullptr,                                       // TaskIcon
-        [&](FString Result, double Runtime)
+        [=](FString Result, double Runtime)
         {
-        	OnPackagingCompleted.ExecuteIfBound(Result, Runtime);
+        	AsyncTask(ENamedThreads::Type::GameThread, [=]()
+        	{
+        		(void)OnPackagingCompleted.ExecuteIfBound(Result, Runtime);	
+        	});        	
         },
         FString()                                      // ResultLocation
     );
@@ -134,11 +142,6 @@ void PackageProjectUsingUATHelper(const FString& ProjectFilePath, const FString&
 #else
     UE_LOG(LogTemp, Warning, TEXT("Packaging can only be executed in the Editor."));
 #endif
-}
-
-void UConvaiPakManagerEditorUtils::CPM_PackageProject(const FOnPackagingCompleted OnPackagingCompleted)
-{
-	PackageProjectUsingUATHelper(FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath()),  FPaths::Combine(FPaths::ProjectDir(), TEXT("PackagedApp")), OnPackagingCompleted);
 }
 
 void UConvaiPakManagerEditorUtils::CPM_ToggleLiveCoding(const bool Enable)
