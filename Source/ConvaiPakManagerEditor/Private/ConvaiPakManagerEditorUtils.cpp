@@ -145,7 +145,7 @@ void UConvaiPakManagerEditorUtils::CPM_ToggleLiveCoding(const bool Enable)
 {
 	if (ILiveCodingModule* LiveCoding = FModuleManager::GetModulePtr<ILiveCodingModule>(LIVE_CODING_MODULE_NAME))
 	{
-		LiveCoding->EnableByDefault(!LiveCoding->IsEnabledByDefault());
+		LiveCoding->EnableByDefault(Enable);
 
 		if (LiveCoding->IsEnabledByDefault() && !LiveCoding->IsEnabledForSession())
 		{
