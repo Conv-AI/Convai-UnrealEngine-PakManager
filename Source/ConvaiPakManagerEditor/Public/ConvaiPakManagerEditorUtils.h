@@ -26,4 +26,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Editor Utility")
 	static void CPM_ToggleLiveCoding(const bool Enable = false);
+
+	UFUNCTION(BlueprintCallable, Category = "Editor Utility")
+	static void CPM_ShowPluginContent(const bool bEnable = false);
 };

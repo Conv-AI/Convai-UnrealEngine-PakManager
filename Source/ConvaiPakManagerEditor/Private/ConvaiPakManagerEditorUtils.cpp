@@ -15,6 +15,7 @@
 #include "Async/Async.h"
 #include "Misc/Paths.h"
 #include "Logging/LogMacros.h"
+#include "Settings/ContentBrowserSettings.h"
 
 void UConvaiPakManagerEditorUtils::CPM_MarkAssetDirty(UObject* Asset)
 {
@@ -157,3 +158,13 @@ void UConvaiPakManagerEditorUtils::CPM_ToggleLiveCoding(const bool Enable)
 		}
 	}
 }
+
+void UConvaiPakManagerEditorUtils::CPM_ShowPluginContent(const bool bEnable)
+{
+	GetMutableDefault<UContentBrowserSettings>()->SetDisplayPluginFolders(bEnable);
+	GetMutableDefault<UContentBrowserSettings>()->SetDisplayPluginFolders(bEnable, /*bOverride=*/true);
+	
+	GetMutableDefault<UContentBrowserSettings>()->PostEditChange();
+	GetMutableDefault<UContentBrowserSettings>()->SaveConfig();
+}
+

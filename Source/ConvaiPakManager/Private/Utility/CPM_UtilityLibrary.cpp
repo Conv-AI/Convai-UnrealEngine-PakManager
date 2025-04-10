@@ -120,10 +120,7 @@ void UCPM_UtilityLibrary::GetAssetID(FString& AssetID)
 	if(LoadConvaiCreateAssetData(OutData))
 	{
 		AssetID = OutData.Assets.Num() > 0 ? OutData.Assets[0].Asset.AssetId : TEXT(""); 
-		return;
 	}
-	
-	CPM_LogMessage(TEXT("Failed to get asset id from PakMetaData.txt"), ECPM_LogLevel::Error);
 }
 
 bool UCPM_UtilityLibrary::SaveConvaiCreateAssetData(const FString& ResponseString)
