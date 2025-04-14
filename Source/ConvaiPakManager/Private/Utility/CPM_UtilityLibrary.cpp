@@ -362,6 +362,15 @@ FString UCPM_UtilityLibrary::GetPythonScriptDirectory()
 
 UClass* UCPM_UtilityLibrary::CPM_LoadClassByPath(const FString& ClassPath)
 {
+	FString ObjectPath = ClassPath;
+	ObjectPath.RemoveFromEnd(TEXT("_C"));	
+	
+	const FString PackageName = FPackageName::ObjectPathToPackageName(ObjectPath);
+	if (!FPackageName::DoesPackageExist(PackageName))
+	{
+		return nullptr;
+	}
+	
 	return StaticLoadClass(UObject::StaticClass(), nullptr, *ClassPath);
 }
 
