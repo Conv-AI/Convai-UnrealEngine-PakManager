@@ -262,20 +262,25 @@ struct FCPM_ModdingMetadata
 UENUM(BlueprintType)
 enum class ECPM_AssetManagerStatus : uint8
 {
+	Max					UMETA(DisplayName = "None"),
+	
 	Packaging_Begin     UMETA(DisplayName = "Packaging Started"),
 	Packaging_Success   UMETA(DisplayName = "Packaging Completed"),
 	Packaging_Failed    UMETA(DisplayName = "Packaging Failed"),
 
 	Create_Begin        UMETA(DisplayName = "Creating Asset"),
-	Create_Success      UMETA(DisplayName = "Asset Created"),
+	Create_Success      UMETA(DisplayName = "Created Asset"),
 	Create_Failed       UMETA(DisplayName = "Create Asset Failed"),
 
 	Update_Begin        UMETA(DisplayName = "Updating Asset"),
-	Update_Success      UMETA(DisplayName = "Asset Updated"),
+	Update_Success      UMETA(DisplayName = "Updated Asset"),
 	Update_Failed       UMETA(DisplayName = "Update Asset Failed"),
 
+	UploadPak_Begin        UMETA(DisplayName = "Uploading Asset"),
+	UploadPak_Success      UMETA(DisplayName = "Uploaded Asset"),
+	UploadPak_Failed       UMETA(DisplayName = "Upload Asset Failed"),
+	
 	Delete_Begin        UMETA(DisplayName = "Deleting Asset"),
-	Delete_Success      UMETA(DisplayName = "Asset Deleted"),
-	Delete_Failed       UMETA(DisplayName = "Delete Asset Failed"),
-	Max					UMETA(DisplayName = "Max")
+	Delete_Success      UMETA(DisplayName = "Deleted Asset"),
+	Delete_Failed       UMETA(DisplayName = "Delete Asset Failed")
 };
