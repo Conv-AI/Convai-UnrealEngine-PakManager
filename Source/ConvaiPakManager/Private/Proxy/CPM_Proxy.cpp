@@ -13,7 +13,7 @@ namespace
 	const FString CreatePakAssetURL = TEXT("http://35.239.167.143:8089/assets/upload");
 	const FString UpdatePakAssetURL = TEXT("http://35.239.167.143:8089/assets/update");
 	const FString GetAssetURL = TEXT("http://35.239.167.143:8089/assets/get");
-	//const FString GetAssetURL = TEXT("https://beta.convai.com/assets/get");
+	const FString DeleteAssetURL = TEXT("http://35.239.167.143:8089/assets/delete");
 }
 
 
@@ -311,3 +311,51 @@ void UCPM_GetAssetMetaDataProxy::HandleFailure()
     Super::HandleFailure();
     OnFailure.Broadcast(FCPM_AssetResponse(), ResponseString);
 }
+
+
+// Delete asset
+UCPM_DeleteAssetProxy* UCPM_DeleteAssetProxy::DeleteAssetProxy(FString AssetID)
+{
+	UCPM_DeleteAssetProxy* Proxy = NewObject<UCPM_DeleteAssetProxy>();
+	Proxy->URL = DeleteAssetURL;
+	Proxy->AssociatedAssetIdD = AssetID;
+	return Proxy;
+}
+
+bool UCPM_DeleteAssetProxy::ConfigureRequest(TSharedRef<CONVAI_HTTP_REQUEST_INTERFACE> Request, const TCHAR* Verb)
+{
+	if (!Super::ConfigureRequest(Request, ConvaiHttpConstants::POST))
+	{
+		return false;
+	}
+
+	return true; 
+}
+
+bool UCPM_DeleteAssetProxy::AddContentToRequestAsString(TSharedPtr<FJsonObject>& ObjectToSend)
+{
+	Super::AddContentToRequestAsString(ObjectToSend);
+
+	if (!UConvaiFormValidation::ValidateInputText(AssociatedAssetIdD))
+	{
+		HandleFailure();
+		return false;
+	}
+
+	ObjectToSend->SetStringField(TEXT("asset_id"), AssociatedAssetIdD);
+
+	return true;
+}
+
+void UCPM_DeleteAssetProxy::HandleSuccess()
+{
+	Super::HandleSuccess();
+	OnSuccess.Broadcast(ResponseString);
+}
+
+void UCPM_DeleteAssetProxy::HandleFailure()
+{
+	Super::HandleFailure();
+	OnFailure.Broadcast(TEXT("Http req failed"));
+}
+// END Delete asset

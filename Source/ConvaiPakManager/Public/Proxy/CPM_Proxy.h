@@ -136,3 +136,34 @@ public:
 	FString AssociatedAssetIdD;
 	FCPM_AssetResponse AssetResponse;
 };
+
+//--------------------------------------------------------------------------------------------------
+
+//-------------------------------------------Delete Asset-------------------------------------------
+
+/** Delete Asset*/
+UCLASS()
+class UCPM_DeleteAssetProxy : public UConvaiAPIBaseProxy
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY(BlueprintAssignable)
+	FCPM_StringResponseDelegate OnSuccess;
+
+	UPROPERTY(BlueprintAssignable)
+	FCPM_StringResponseDelegate OnFailure;
+
+	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", DisplayName = "Convai Delete Asset"), Category = "Convai|PakManager")
+	static UCPM_DeleteAssetProxy* DeleteAssetProxy(FString AssetID);
+		
+protected:
+	virtual bool ConfigureRequest(TSharedRef<CONVAI_HTTP_REQUEST_INTERFACE> Request, const TCHAR* Verb) override;
+	virtual bool AddContentToRequest(CONVAI_HTTP_PAYLOAD_ARRAY_TYPE& DataToSend, const FString& Boundary)  override { return false; }
+	virtual bool AddContentToRequestAsString(TSharedPtr<FJsonObject>& ObjectToSend) override;
+	virtual void HandleSuccess() override;
+	virtual void HandleFailure() override;
+		
+	FString AssociatedAssetIdD;
+};
+
+//--------------------------------------------------------------------------------------------------
