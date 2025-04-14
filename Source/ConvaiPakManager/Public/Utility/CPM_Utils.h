@@ -258,3 +258,24 @@ struct FCPM_ModdingMetadata
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Response")
     FString AssetType;
 };
+
+UENUM(BlueprintType)
+enum class ECPM_AssetManagerStatus : uint8
+{
+	Packaging_Begin     UMETA(DisplayName = "Packaging Started"),
+	Packaging_Success   UMETA(DisplayName = "Packaging Completed"),
+	Packaging_Failed    UMETA(DisplayName = "Packaging Failed"),
+
+	Create_Begin        UMETA(DisplayName = "Creating Asset"),
+	Create_Success      UMETA(DisplayName = "Asset Created"),
+	Create_Failed       UMETA(DisplayName = "Create Asset Failed"),
+
+	Update_Begin        UMETA(DisplayName = "Updating Asset"),
+	Update_Success      UMETA(DisplayName = "Asset Updated"),
+	Update_Failed       UMETA(DisplayName = "Update Asset Failed"),
+
+	Delete_Begin        UMETA(DisplayName = "Deleting Asset"),
+	Delete_Success      UMETA(DisplayName = "Asset Deleted"),
+	Delete_Failed       UMETA(DisplayName = "Delete Asset Failed"),
+	Max					UMETA(DisplayName = "Max")
+};
