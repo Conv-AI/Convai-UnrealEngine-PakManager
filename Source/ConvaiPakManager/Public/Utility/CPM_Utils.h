@@ -284,3 +284,11 @@ enum class ECPM_AssetManagerStatus : uint8
 	Delete_Success      UMETA(DisplayName = "Deleted Asset"),
 	Delete_Failed       UMETA(DisplayName = "Delete Asset Failed")
 };
+
+UENUM(BlueprintType)
+enum class ECPM_AssetType : uint8
+{
+	Max					UMETA(DisplayName = "None"),
+	Avatar				UMETA(DisplayName = "Avatar"),
+	Scene				UMETA(DisplayName = "Scene"),
+};
