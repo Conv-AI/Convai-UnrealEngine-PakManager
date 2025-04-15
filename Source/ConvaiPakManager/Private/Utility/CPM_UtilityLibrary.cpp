@@ -123,6 +123,19 @@ void UCPM_UtilityLibrary::GetAssetID(FString& AssetID)
 	}
 }
 
+ECPM_AssetType UCPM_UtilityLibrary::GetAssetType()
+{
+	static const TMap<FString, ECPM_AssetType> StringToAssetTypeMap = {
+		{TEXT("Avatar"), ECPM_AssetType::Avatar},
+		{TEXT("Scene"),  ECPM_AssetType::Scene},
+	};
+
+	FCPM_ModdingMetadata OutData;
+	GetModdingMetadata(OutData);	
+	const ECPM_AssetType* FoundType = StringToAssetTypeMap.Find(OutData.AssetType);
+	return FoundType ? *FoundType : ECPM_AssetType::Max;
+}
+
 bool UCPM_UtilityLibrary::SaveConvaiCreateAssetData(const FString& ResponseString)
 {
 	FString FilePath = GetCreateAssetDataFilePath();
@@ -363,7 +376,8 @@ FString UCPM_UtilityLibrary::GetPythonScriptDirectory()
 UClass* UCPM_UtilityLibrary::CPM_LoadClassByPath(const FString& ClassPath)
 {
 	FString ObjectPath = ClassPath;
-	ObjectPath.RemoveFromEnd(TEXT("_C"));	
+	if (ObjectPath.EndsWith(TEXT("_C")))
+		ObjectPath.RemoveFromEnd(TEXT("_C"));	
 	
 	const FString PackageName = FPackageName::ObjectPathToPackageName(ObjectPath);
 	if (!FPackageName::DoesPackageExist(PackageName))
@@ -372,6 +386,16 @@ UClass* UCPM_UtilityLibrary::CPM_LoadClassByPath(const FString& ClassPath)
 	}
 	
 	return StaticLoadClass(UObject::StaticClass(), nullptr, *ClassPath);
+}
+
+UObject* UCPM_UtilityLibrary::CPM_LoadAssetByPath(const FString& AssetPath)
+{
+	return StaticLoadObject(UObject::StaticClass(), nullptr, *AssetPath);
+}
+
+bool UCPM_UtilityLibrary::CPM_DeleteFileByPath(const FString& FilePath)
+{
+	return FPlatformFileManager::Get().GetPlatformFile().DeleteFile(*FilePath);
 }
 
 bool UCPM_UtilityLibrary::Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height,

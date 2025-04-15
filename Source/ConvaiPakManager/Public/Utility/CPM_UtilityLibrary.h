@@ -28,6 +28,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static void GetAssetID(FString& AssetID);
 
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static ECPM_AssetType GetAssetType();
+	
 	// Create asset utility functions
 	UFUNCTION(BlueprintCallable, Category="Convai|PakManager")
 	static bool SaveConvaiCreateAssetData(const FString& ResponseString);
@@ -70,6 +73,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static UClass* CPM_LoadClassByPath(const FString& ClassPath);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static UObject* CPM_LoadAssetByPath(const FString& AssetPath);
+
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
+	static bool CPM_DeleteFileByPath(const FString& FilePath);
 	
 	static bool Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height, TArray<FColor>& Pixels);
 	static bool Texture2DToBytes(UTexture2D* Texture2D, const EImageFormat ImageFormat, TArray<uint8>& ByteArray, const int32 CompressionQuality);
