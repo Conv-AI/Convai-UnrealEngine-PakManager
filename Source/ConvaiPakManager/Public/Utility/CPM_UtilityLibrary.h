@@ -77,6 +77,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static UObject* CPM_LoadAssetByPath(const FString& AssetPath);
 
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static FAssetData CPM_LoadAssetDataByPath(const FString& AssetPath);
+
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static bool CPM_DeleteFileByPath(const FString& FilePath);
 	

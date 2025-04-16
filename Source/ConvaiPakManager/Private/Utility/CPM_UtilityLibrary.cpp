@@ -5,6 +5,7 @@
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
 #include "IPlatformFilePak.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Misc/FileHelper.h"
 #include "HAL/PlatformFilemanager.h"
 #include "Framework/Application/SlateApplication.h"
@@ -391,6 +392,20 @@ UClass* UCPM_UtilityLibrary::CPM_LoadClassByPath(const FString& ClassPath)
 UObject* UCPM_UtilityLibrary::CPM_LoadAssetByPath(const FString& AssetPath)
 {
 	return StaticLoadObject(UObject::StaticClass(), nullptr, *AssetPath);
+}
+
+FAssetData UCPM_UtilityLibrary::CPM_LoadAssetDataByPath(const FString& AssetPath)
+{
+	const FString ObjectPath = AssetPath + TEXT(".") + FPackageName::GetShortName(AssetPath);
+	const IAssetRegistry* AssetRegistry = IAssetRegistry::Get();
+	if (!AssetRegistry)
+	{
+		UE_LOG(LogTemp, Error, TEXT("AssetRegistry is not available."));
+		return FAssetData();
+	}
+
+	const FSoftObjectPath SoftPath(ObjectPath);
+	return AssetRegistry->GetAssetByObjectPath(SoftPath);
 }
 
 bool UCPM_UtilityLibrary::CPM_DeleteFileByPath(const FString& FilePath)
