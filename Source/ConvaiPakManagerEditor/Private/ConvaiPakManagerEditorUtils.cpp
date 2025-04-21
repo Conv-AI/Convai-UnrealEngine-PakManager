@@ -162,7 +162,7 @@ void UConvaiPakManagerEditorUtils::CPM_ToggleLiveCoding(const bool Enable)
 void UConvaiPakManagerEditorUtils::CPM_ShowPluginContent(const bool bEnable)
 {
 	GetMutableDefault<UContentBrowserSettings>()->SetDisplayPluginFolders(bEnable);
-	GetMutableDefault<UContentBrowserSettings>()->SetDisplayPluginFolders(bEnable, /*bOverride=*/true);
+	GetMutableDefault<UContentBrowserSettings>()->SetDisplayPluginFolders(bEnable);
 	
 	GetMutableDefault<UContentBrowserSettings>()->PostEditChange();
 	GetMutableDefault<UContentBrowserSettings>()->SaveConfig();
