@@ -16,6 +16,7 @@
 #include "Utility/CPM_Utils.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
+#include "Engine/TextureRenderTarget2D.h"
 #include "Serialization/JsonWriter.h"
 #include "Utility/CPM_Log.h"
 
@@ -187,9 +188,14 @@ FString UCPM_UtilityLibrary::GetPakMetadataFilePath()
 	return FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("PakMetaData")) + TEXT(".json");
 }
 
+FString UCPM_UtilityLibrary::GetPackageDirectory()
+{
+	return FPaths::Combine(FPaths::ProjectDir(), TEXT("PackagedApp"));
+}
+
 FString UCPM_UtilityLibrary::GetPakFilePathFromChunkID(const FString& ChunkID)
 {
-	return FPaths::Combine(FPaths::ProjectDir(), TEXT("PackagedApp"), TEXT("Windows"), GetProjectName(), TEXT("Content"), TEXT("Paks"), FString::Printf(TEXT("pakchunk%s-Windows"), *ChunkID)) + TEXT(".pak");
+	return FPaths::Combine(GetPackageDirectory(), TEXT("Windows"), GetProjectName(), TEXT("Content"), TEXT("Paks"), FString::Printf(TEXT("pakchunk%s-Windows"), *ChunkID)) + TEXT(".pak");
 }
 
 void UCPM_UtilityLibrary::GetModdingMetadata(FCPM_ModdingMetadata& OutData)
@@ -410,7 +416,52 @@ FAssetData UCPM_UtilityLibrary::CPM_LoadAssetDataByPath(const FString& AssetPath
 
 bool UCPM_UtilityLibrary::CPM_DeleteFileByPath(const FString& FilePath)
 {
-	return FPlatformFileManager::Get().GetPlatformFile().DeleteFile(*FilePath);
+	return FPlatformFileManager::Get().GetPlatformFile().FileExists(*FilePath) ?
+		   FPlatformFileManager::Get().GetPlatformFile().DeleteFile(*FilePath) : false;
+}
+
+bool UCPM_UtilityLibrary::CPM_DeleteDirectory(const FString& DirectoryPath)
+{
+	return  FPlatformFileManager::Get().GetPlatformFile().DirectoryExists(*DirectoryPath) ?
+		    FPlatformFileManager::Get().GetPlatformFile().DeleteDirectoryRecursively(*DirectoryPath) : false;
+}
+
+bool UCPM_UtilityLibrary::CPM_IsThumbnailValid(UTexture2D* Texture, float MinValidRatio, int32 SampleStep)
+{
+	// Must have a valid source (imported or explicitly set)
+	if (!Texture || !Texture->Source.IsValid() || Texture->Source.GetNumMips() == 0)
+	{
+		return false;
+	}
+
+	// Lock the SOURCE mip (returns const void*)
+	const void* RawData = Texture->Source.LockMip(0);
+	if (!RawData)
+	{
+		return false;
+	}
+
+	const int32 Width  = Texture->Source.GetSizeX();
+	const int32 Height = Texture->Source.GetSizeY();
+	const int32 Total  = Width * Height;
+	const FColor* Colors = static_cast<const FColor*>(RawData);
+
+	const int32 Step    = FMath::Max(1, SampleStep);
+	const int32 Sampled = (Total + Step - 1) / Step;
+	int32 ValidCount    = 0;
+
+	for (int32 Index = 0; Index < Total; Index += Step)
+	{
+		const FColor& C = Colors[Index];
+		if (C.A > 0 && (C.R > 5 || C.G > 5 || C.B > 5))
+		{
+			++ValidCount;
+		}
+	}
+
+	Texture->Source.UnlockMip(0);
+
+	return static_cast<float>(ValidCount) / static_cast<float>(Sampled) >= MinValidRatio;
 }
 
 bool UCPM_UtilityLibrary::Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height,

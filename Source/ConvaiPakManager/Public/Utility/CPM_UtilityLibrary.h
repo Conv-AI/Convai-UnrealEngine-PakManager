@@ -54,6 +54,9 @@ public:
 	// END Asset metadata utility functions
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static FString GetPackageDirectory();
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static FString GetPakFilePathFromChunkID(const FString& ChunkID);
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Convai|PakManager")
@@ -82,6 +85,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static bool CPM_DeleteFileByPath(const FString& FilePath);
+
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
+	static bool CPM_DeleteDirectory(const FString& DirectoryPath);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static bool CPM_IsThumbnailValid(UTexture2D* Texture, float MinValidRatio = 0.01f, int32 SampleStep = 1);
 	
 	static bool Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height, TArray<FColor>& Pixels);
 	static bool Texture2DToBytes(UTexture2D* Texture2D, const EImageFormat ImageFormat, TArray<uint8>& ByteArray, const int32 CompressionQuality);
