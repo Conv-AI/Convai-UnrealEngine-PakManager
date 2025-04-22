@@ -30,7 +30,7 @@ public class ConvaiPakManagerEditor : ModuleRules
 				"Engine",
 				"InputCore",
 				"UMG",
-				"UMGEditor",
+				"UMGEditor", "ConvaiPakManager", 
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "Utility/CPM_Utils.h"
 #include "ConvaiPakManagerEditorUtils.generated.h"
 
 DECLARE_DYNAMIC_DELEGATE_TwoParams(FOnPackagingCompleted, const FString&, Result, double, Runtime);
@@ -15,18 +16,21 @@ class CONVAIPAKMANAGEREDITOR_API UConvaiPakManagerEditorUtils : public UBlueprin
 
 public:
 	/** Marks the given asset as dirty so it can be saved */
-	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManagerEditor")
 	static void CPM_MarkAssetDirty(UObject* Asset);
 
-	UFUNCTION(BlueprintCallable, Category = "Editor Utility", meta = (CallInEditor = "true"))
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManagerEditor", meta = (CallInEditor = "true"))
 	static void CPM_TogglePlayMode();
 
-	UFUNCTION(BlueprintCallable, Category = "Editor Utility")
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManagerEditor")
 	static void CPM_PackageProject(FOnPackagingCompleted OnPackagingCompleted);
 
-	UFUNCTION(BlueprintCallable, Category = "Editor Utility")
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManagerEditor")
 	static void CPM_ToggleLiveCoding(const bool Enable = false);
 
-	UFUNCTION(BlueprintCallable, Category = "Editor Utility")
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManagerEditor")
 	static void CPM_ShowPluginContent(const bool bEnable = false);
+
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManagerEditor")
+	static void CPM_SetEngineScalability(ECPM_CustomScalabilityLevel Level);
 };

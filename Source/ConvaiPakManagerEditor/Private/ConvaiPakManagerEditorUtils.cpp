@@ -168,3 +168,44 @@ void UConvaiPakManagerEditorUtils::CPM_ShowPluginContent(const bool bEnable)
 	GetMutableDefault<UContentBrowserSettings>()->SaveConfig();
 }
 
+void UConvaiPakManagerEditorUtils::CPM_SetEngineScalability(ECPM_CustomScalabilityLevel Level)
+{
+	using namespace Scalability;
+
+	FQualityLevels NewLevels;
+
+	switch (Level)
+	{
+	case ECPM_CustomScalabilityLevel::Low:
+		// Low maps to absolute index 0 :contentReference[oaicite:2]{index=2}&#8203;:contentReference[oaicite:3]{index=3}
+		NewLevels.SetFromSingleQualityLevel(0);
+		break;
+
+	case ECPM_CustomScalabilityLevel::Medium:
+		// Medium maps to relative index 3 (i.e. Max–3 => 1) :contentReference[oaicite:4]{index=4}&#8203;:contentReference[oaicite:5]{index=5}
+		NewLevels.SetFromSingleQualityLevelRelativeToMax(3);
+		break;
+
+	case ECPM_CustomScalabilityLevel::High:
+		NewLevels.SetFromSingleQualityLevelRelativeToMax(2);
+		break;
+
+	case ECPM_CustomScalabilityLevel::Epic:
+		NewLevels.SetFromSingleQualityLevelRelativeToMax(1);
+		break;
+
+	case ECPM_CustomScalabilityLevel::Cinematic:
+		NewLevels.SetFromSingleQualityLevelRelativeToMax(0);
+		break;
+	default:
+		return;
+	}
+
+	SetQualityLevels(NewLevels);
+	SaveState(GEditorSettingsIni);
+	if (GEditor)
+	{
+		GEditor->RedrawAllViewports();
+	}
+}
+
