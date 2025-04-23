@@ -16,7 +16,6 @@
 #include "Utility/CPM_Utils.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
-#include "Engine/TextureRenderTarget2D.h"
 #include "Serialization/JsonWriter.h"
 #include "Utility/CPM_Log.h"
 
@@ -428,19 +427,20 @@ bool UCPM_UtilityLibrary::CPM_DeleteDirectory(const FString& DirectoryPath)
 
 bool UCPM_UtilityLibrary::CPM_IsThumbnailValid(UTexture2D* Texture, float MinValidRatio, int32 SampleStep)
 {
+#if WITH_EDITOR
 	// Must have a valid source (imported or explicitly set)
 	if (!Texture || !Texture->Source.IsValid() || Texture->Source.GetNumMips() == 0)
 	{
 		return false;
 	}
-
+	
 	// Lock the SOURCE mip (returns const void*)
 	const void* RawData = Texture->Source.LockMip(0);
 	if (!RawData)
 	{
 		return false;
 	}
-
+	
 	const int32 Width  = Texture->Source.GetSizeX();
 	const int32 Height = Texture->Source.GetSizeY();
 	const int32 Total  = Width * Height;
@@ -462,6 +462,9 @@ bool UCPM_UtilityLibrary::CPM_IsThumbnailValid(UTexture2D* Texture, float MinVal
 	Texture->Source.UnlockMip(0);
 
 	return static_cast<float>(ValidCount) / static_cast<float>(Sampled) >= MinValidRatio;
+#else
+	return false;
+#endif
 }
 
 bool UCPM_UtilityLibrary::Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height,

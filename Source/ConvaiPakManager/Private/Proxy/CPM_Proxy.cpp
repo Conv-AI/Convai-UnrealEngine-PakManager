@@ -10,10 +10,10 @@
 
 namespace
 {
-	const FString CreatePakAssetURL = TEXT("http://35.239.167.143:8089/assets/upload");
-	const FString UpdatePakAssetURL = TEXT("http://35.239.167.143:8089/assets/update");
-	const FString GetAssetURL = TEXT("http://35.239.167.143:8089/assets/get");
-	const FString DeleteAssetURL = TEXT("http://35.239.167.143:8089/assets/delete");
+	const FString CreatePakAssetURL = TEXT("https://beta.convai.com/assets/upload");
+	const FString UpdatePakAssetURL = TEXT("https://beta.convai.com/assets/update");
+	const FString GetAssetURL = TEXT("https://beta.convai.com/assets/get");
+	const FString DeleteAssetURL = TEXT("https://beta.convai.com/assets/delete");
 }
 
 
