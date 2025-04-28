@@ -7,7 +7,7 @@
 #include "IPlatformFilePak.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Misc/FileHelper.h"
-#include "HAL/PlatformFilemanager.h"
+#include "HAL/PlatformFileManager.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Misc/App.h"
 #include "Serialization/JsonReader.h"
