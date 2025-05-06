@@ -467,6 +467,66 @@ bool UCPM_UtilityLibrary::CPM_IsThumbnailValid(UTexture2D* Texture, float MinVal
 #endif
 }
 
+UTexture2D* UCPM_UtilityLibrary::CPM_LoadTexture2DFromDisk(const FString& FilePath, bool bGenerateMips)
+{
+	 // 1) Check file exists and load bytes
+    if (!FPaths::FileExists(FilePath))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Image file not found: %s"), *FilePath);
+        return nullptr;
+    }
+
+    TArray<uint8> FileData;
+    if (!FFileHelper::LoadFileToArray(FileData, *FilePath) || FileData.Num() == 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Failed to read or empty file: %s"), *FilePath);
+        return nullptr;
+    }
+
+    // 2) Detect image format by content
+    IImageWrapperModule& ImgWrapperMod = FModuleManager::LoadModuleChecked<IImageWrapperModule>("ImageWrapper");
+    EImageFormat DetectedFormat = ImgWrapperMod.DetectImageFormat(FileData.GetData(), FileData.Num());
+    if (DetectedFormat == EImageFormat::Invalid)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Unknown or unsupported image format: %s"), *FilePath);
+        return nullptr;
+    }
+
+    // 3) Create wrapper and feed it
+    TSharedPtr<IImageWrapper> ImgWrapper = ImgWrapperMod.CreateImageWrapper(DetectedFormat);
+    if (!ImgWrapper.IsValid() ||
+        !ImgWrapper->SetCompressed(FileData.GetData(), FileData.Num()))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Unsupported or corrupt image data: %s"), *FilePath);
+        return nullptr;
+    }
+
+    // 4) Decompress into raw BGRA8
+    TArray<uint8> RawRGBA;
+    if (!ImgWrapper->GetRaw(ERGBFormat::BGRA, 8, RawRGBA))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Failed to decompress image: %s"), *FilePath);
+        return nullptr;
+    }
+
+    // 5) Create and fill the transient texture
+    int32 Width  = ImgWrapper->GetWidth();
+    int32 Height = ImgWrapper->GetHeight();
+
+    UTexture2D* Texture = UTexture2D::CreateTransient(Width, Height, PF_B8G8R8A8);
+    if (!Texture) return nullptr;
+
+    Texture->MipGenSettings = bGenerateMips ? TMGS_FromTextureGroup : TMGS_NoMipmaps;
+    Texture->SRGB           = true;
+
+    void* TextureData = Texture->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
+    FMemory::Memcpy(TextureData, RawRGBA.GetData(), RawRGBA.Num());
+    Texture->GetPlatformData()->Mips[0].BulkData.Unlock();
+
+    Texture->UpdateResource();
+    return Texture;
+}
+
 bool UCPM_UtilityLibrary::Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height,
                                             TArray<FColor>& Pixels)
 {

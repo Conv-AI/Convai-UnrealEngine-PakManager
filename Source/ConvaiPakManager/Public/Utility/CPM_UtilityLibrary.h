@@ -91,6 +91,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static bool CPM_IsThumbnailValid(UTexture2D* Texture, float MinValidRatio = 0.01f, int32 SampleStep = 1);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static UTexture2D* CPM_LoadTexture2DFromDisk(const FString& FilePath, bool bGenerateMips = true);
 	
 	static bool Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height, TArray<FColor>& Pixels);
 	static bool Texture2DToBytes(UTexture2D* Texture2D, const EImageFormat ImageFormat, TArray<uint8>& ByteArray, const int32 CompressionQuality);
