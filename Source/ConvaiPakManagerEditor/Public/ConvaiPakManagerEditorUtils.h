@@ -33,4 +33,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManagerEditor")
 	static void CPM_SetEngineScalability(ECPM_CustomScalabilityLevel Level);
+	
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
+	static bool CPM_TakeViewportScreenshot(const FString& FilePath);
 };

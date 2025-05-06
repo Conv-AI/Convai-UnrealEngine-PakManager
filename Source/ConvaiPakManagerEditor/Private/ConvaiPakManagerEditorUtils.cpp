@@ -16,6 +16,11 @@
 #include "Misc/Paths.h"
 #include "Logging/LogMacros.h"
 #include "Settings/ContentBrowserSettings.h"
+#include "EditorViewportClient.h"               
+#include "ImageUtils.h"
+#include "Slate/SceneViewport.h"
+#include "UObject/SavePackage.h"
+
 
 void UConvaiPakManagerEditorUtils::CPM_MarkAssetDirty(UObject* Asset)
 {
@@ -207,5 +212,80 @@ void UConvaiPakManagerEditorUtils::CPM_SetEngineScalability(ECPM_CustomScalabili
 	{
 		GEditor->RedrawAllViewports();
 	}
+}
+
+bool UConvaiPakManagerEditorUtils::CPM_TakeViewportScreenshot(const FString& FilePath)
+{
+	if (FilePath.IsEmpty()) return false;
+	
+	if (!GEditor)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("GEditor is null."));
+		return false;
+	}
+
+	const FViewport* RawViewport = GEditor->GetActiveViewport();
+	if (!RawViewport)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("No active viewport."));
+		return false;
+	}
+
+	FEditorViewportClient* EditorViewportClient = static_cast<FEditorViewportClient*>(RawViewport->GetClient());
+	if (!EditorViewportClient)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Viewport client is invalid."));
+		return false;
+	}
+
+	FSceneViewport* SceneViewport = static_cast<FSceneViewport*>(EditorViewportClient->Viewport);
+	if (!SceneViewport)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Scene viewport is null."));
+		return false;
+	}
+
+	// Store current game view mode
+	const bool bWasGameView = EditorViewportClient->IsInGameView();
+
+	// Enter game view (hides gizmos and overlays)
+	EditorViewportClient->SetGameView(true);
+
+	// Resize viewport to 1920x1080
+	constexpr uint32 TargetX = 1920;
+	constexpr uint32 TargetY = 1080;
+	SceneViewport->SetFixedViewportSize(TargetX, TargetY);
+	SceneViewport->UpdateViewportRHI(false, TargetX, TargetY, EWindowMode::Windowed, PF_Unknown);
+	SceneViewport->Invalidate();
+
+	// Force redraw
+	SceneViewport->Draw(false);
+	FlushRenderingCommands(); // Ensure rendering has completed
+
+	// Read pixels
+	TArray<FColor> Bitmap;
+	if (!SceneViewport->ReadPixels(Bitmap) || Bitmap.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Failed to read pixels."));
+		return false;
+	}
+	
+	// Restore previous state
+	EditorViewportClient->SetGameView(bWasGameView);
+	SceneViewport->SetFixedViewportSize(0, 0); // Reset size
+	const FIntPoint OriginalSize = SceneViewport->GetSizeXY();
+	SceneViewport->UpdateViewportRHI(false, OriginalSize.X, OriginalSize.Y, EWindowMode::Windowed, PF_Unknown);
+	
+	FPlatformFileManager::Get().GetPlatformFile().CreateDirectoryTree(*FPaths::GetPath(FilePath));
+	TArray<uint8> Compressed;
+	FImageUtils::ThumbnailCompressImageArray(TargetX, TargetY, Bitmap, Compressed);
+	if (!FFileHelper::SaveArrayToFile(Compressed, *FilePath))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Failed to save screenshot to %s"), *FilePath);
+		return false;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("Clean screenshot saved to: %s"), *FilePath);
+	return true;
 }
 
