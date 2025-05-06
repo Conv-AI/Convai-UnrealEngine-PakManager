@@ -516,9 +516,10 @@ UTexture2D* UCPM_UtilityLibrary::CPM_LoadTexture2DFromDisk(const FString& FilePa
     UTexture2D* Texture = UTexture2D::CreateTransient(Width, Height, PF_B8G8R8A8);
     if (!Texture) return nullptr;
 
+#if WITH_EDITORONLY_DATA
     Texture->MipGenSettings = bGenerateMips ? TMGS_FromTextureGroup : TMGS_NoMipmaps;
     Texture->SRGB           = true;
-
+#endif
     void* TextureData = Texture->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
     FMemory::Memcpy(TextureData, RawRGBA.GetData(), RawRGBA.Num());
     Texture->GetPlatformData()->Mips[0].BulkData.Unlock();
