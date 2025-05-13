@@ -340,4 +340,20 @@ bool UConvaiPakManagerEditorUtils::CPM_CreateZip(const FString& ZipFilePath, con
 	return true;
 }
 
+void UConvaiPakManagerEditorUtils::CPM_CreateZipAsync(const FString& ZipFilePath, const TArray<FString>& Files,
+	const TArray<FString>& Directories, const FOnUatTaskResultCallack OnZippingCompleted)
+{
+	Async(EAsyncExecution::Thread, [=]()
+	{
+		const double StartTime = FPlatformTime::Seconds();
+		CPM_CreateZip(ZipFilePath, Files, Directories);
+		const double Runtime = FPlatformTime::Seconds() - StartTime;
+
+		AsyncTask(ENamedThreads::GameThread, [=]()
+		{
+			OnZippingCompleted.ExecuteIfBound(TEXT("Success"), Runtime);
+		});
+	});
+}
+
 

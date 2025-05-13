@@ -40,4 +40,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static bool CPM_CreateZip(const FString& ZipFilePath, const TArray<FString>& Files, const TArray<FString>& Directories);
+
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
+	static void CPM_CreateZipAsync(const FString& ZipFilePath, const TArray<FString>& Files, const TArray<FString>& Directories, FOnUatTaskResultCallack OnZippingCompleted);
 };
