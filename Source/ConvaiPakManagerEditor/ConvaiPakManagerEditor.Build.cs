@@ -40,8 +40,8 @@ public class ConvaiPakManagerEditor : ModuleRules
                 "DesktopPlatform", 
                 "UATHelper", 
                 "LiveCoding",
-                "RenderCore"
-                
+                "RenderCore",
+                "FileUtilities"
 			}
 			);
 		

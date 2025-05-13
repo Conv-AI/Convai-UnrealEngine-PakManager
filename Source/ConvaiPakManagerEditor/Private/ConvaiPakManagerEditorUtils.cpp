@@ -19,8 +19,7 @@
 #include "EditorViewportClient.h"               
 #include "ImageUtils.h"
 #include "Slate/SceneViewport.h"
-#include "UObject/SavePackage.h"
-
+#include "FileUtilities/ZipArchiveWriter.h"
 
 void UConvaiPakManagerEditorUtils::CPM_MarkAssetDirty(UObject* Asset)
 {
@@ -80,14 +79,13 @@ void UConvaiPakManagerEditorUtils::CPM_TogglePlayMode()
 #endif
 }
 
-void UConvaiPakManagerEditorUtils::CPM_PackageProject(FOnPackagingCompleted OnPackagingCompleted)
+void UConvaiPakManagerEditorUtils::CPM_PackageProject(FOnUatTaskResultCallack OnPackagingCompleted)
 {
 	const FString ProjectFilePath = FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
 	const FString OutputDirectory = FPaths::Combine(FPaths::ProjectDir(), TEXT("PackagedApp"));
 	const FString Platform = TEXT("Win64");
 	const FString Configuration = TEXT("Shipping");
-
-	#if WITH_EDITOR
+	
     if (ProjectFilePath.IsEmpty() || OutputDirectory.IsEmpty())
     {
         UE_LOG(LogTemp, Error, TEXT("Project file or output directory is empty."));
@@ -144,10 +142,6 @@ void UConvaiPakManagerEditorUtils::CPM_PackageProject(FOnPackagingCompleted OnPa
         FString()                                      // ResultLocation
     );
 #endif
-
-#else
-    UE_LOG(LogTemp, Warning, TEXT("Packaging can only be executed in the Editor."));
-#endif
 }
 
 void UConvaiPakManagerEditorUtils::CPM_ToggleLiveCoding(const bool Enable)
@@ -173,7 +167,7 @@ void UConvaiPakManagerEditorUtils::CPM_ShowPluginContent(const bool bEnable)
 	GetMutableDefault<UContentBrowserSettings>()->SaveConfig();
 }
 
-void UConvaiPakManagerEditorUtils::CPM_SetEngineScalability(ECPM_CustomScalabilityLevel Level)
+void UConvaiPakManagerEditorUtils::CPM_SetEngineScalability(const ECPM_CustomScalabilityLevel Level)
 {
 	using namespace Scalability;
 
@@ -288,4 +282,62 @@ bool UConvaiPakManagerEditorUtils::CPM_TakeViewportScreenshot(const FString& Fil
 	UE_LOG(LogTemp, Log, TEXT("Clean screenshot saved to: %s"), *FilePath);
 	return true;
 }
+
+bool UConvaiPakManagerEditorUtils::CPM_CreateZip(const FString& ZipFilePath, const TArray<FString>& Files, const TArray<FString>& Directories)
+{
+	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+	IFileHandle* FileHandle = PlatformFile.OpenWrite(*ZipFilePath);
+	if (!FileHandle)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Failed to create zip file: %s"), *ZipFilePath);
+		return false;
+	}
+
+	FZipArchiveWriter ZipWriter(FileHandle);
+
+	for (const FString& Directory : Directories)
+	{
+		if (!PlatformFile.DirectoryExists(*Directory))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Directory not found: %s"), *Directory);
+			continue;
+		}
+
+		TArray<FString> L_Files;
+		PlatformFile.FindFilesRecursively(L_Files, *Directory, nullptr);
+
+		for (const FString& FilePath : L_Files)
+		{
+			FString RelativePath = FilePath;
+			FPaths::MakePathRelativeTo(RelativePath, *FPaths::ProjectDir());			
+			
+			TArray<uint8> FileData;
+			if (!FFileHelper::LoadFileToArray(FileData, *FilePath))
+			{
+				UE_LOG(LogTemp, Error, TEXT("Failed to read file: %s"), *FilePath);
+				continue;
+			}
+			
+			ZipWriter.AddFile(RelativePath, FileData, PlatformFile.GetTimeStamp(*FilePath));
+		}
+	}
+
+	for (const FString& FilePath : Files)
+	{
+		FString RelativePath = FilePath;
+		FPaths::MakePathRelativeTo(RelativePath, *FPaths::ProjectDir());			
+			
+		TArray<uint8> FileData;
+		if (!FFileHelper::LoadFileToArray(FileData, *FilePath))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Failed to read file: %s"), *FilePath);
+			continue;
+		}
+			
+		ZipWriter.AddFile(RelativePath, FileData, PlatformFile.GetTimeStamp(*FilePath));
+	}
+	
+	return true;
+}
+
 

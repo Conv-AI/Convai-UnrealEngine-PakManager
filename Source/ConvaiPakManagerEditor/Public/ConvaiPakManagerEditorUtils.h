@@ -7,7 +7,8 @@
 #include "Utility/CPM_Utils.h"
 #include "ConvaiPakManagerEditorUtils.generated.h"
 
-DECLARE_DYNAMIC_DELEGATE_TwoParams(FOnPackagingCompleted, const FString&, Result, double, Runtime);
+//Used to callback into calling code when a UAT task completes. First param is the result type, second param is the runtime in sec.
+DECLARE_DYNAMIC_DELEGATE_TwoParams(FOnUatTaskResultCallack, const FString&, Result, double, Runtime);
 
 UCLASS()
 class CONVAIPAKMANAGEREDITOR_API UConvaiPakManagerEditorUtils : public UBlueprintFunctionLibrary
@@ -23,7 +24,7 @@ public:
 	static void CPM_TogglePlayMode();
 
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManagerEditor")
-	static void CPM_PackageProject(FOnPackagingCompleted OnPackagingCompleted);
+	static void CPM_PackageProject(FOnUatTaskResultCallack OnPackagingCompleted);
 
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManagerEditor")
 	static void CPM_ToggleLiveCoding(const bool Enable = false);
@@ -36,4 +37,7 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static bool CPM_TakeViewportScreenshot(const FString& FilePath);
+
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
+	static bool CPM_CreateZip(const FString& ZipFilePath, const TArray<FString>& Files, const TArray<FString>& Directories);
 };
