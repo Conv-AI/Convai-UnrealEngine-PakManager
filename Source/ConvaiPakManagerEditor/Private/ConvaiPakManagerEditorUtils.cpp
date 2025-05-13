@@ -2,6 +2,8 @@
 
 
 #include "ConvaiPakManagerEditorUtils.h"
+
+#include "CPM_Defination.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Misc/PackageName.h"
 #include "UObject/Package.h"
@@ -79,69 +81,59 @@ void UConvaiPakManagerEditorUtils::CPM_TogglePlayMode()
 #endif
 }
 
-void UConvaiPakManagerEditorUtils::CPM_PackageProject(FOnUatTaskResultCallack OnPackagingCompleted)
+void UConvaiPakManagerEditorUtils::CPM_PackageProject(const FCPM_PackageParam& PackageParam, const FOnUatTaskResultCallack OnPackagingCompleted)
 {
-	const FString ProjectFilePath = FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
-	const FString OutputDirectory = FPaths::Combine(FPaths::ProjectDir(), TEXT("PackagedApp"));
-	const FString Platform = TEXT("Win64");
-	const FString Configuration = TEXT("Shipping");
-	
-    if (ProjectFilePath.IsEmpty() || OutputDirectory.IsEmpty())
+	if (!PackageParam.IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("Project file or output directory is empty."));
+        UE_LOG(LogTemp, Error, TEXT("PackageParam is not valid"));
         return;
     }
 
+    const FString ProjectFilePath = FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
+    const FString ProjectName = FPaths::GetBaseFilename(ProjectFilePath);
     const FString UnrealExe = FPlatformProcess::ExecutablePath();
-    const FString ExtraParams = FString::Printf(TEXT(" -unrealexe=\"%s\""), *UnrealExe);
 
-    FString CommandLine = FString::Printf(
-        TEXT("BuildCookRun -project=\"%s\" -noP4 -platform=%s -clientconfig=%s -serverconfig=%s -cook -build -stage -pak -archive -archivedirectory=\"%s\"%s"),
-        *ProjectFilePath,
-        *Platform,
-        *Configuration,
-        *Configuration,
-        *OutputDirectory,
-        *ExtraParams
+    const FString CommandLine = FString::Printf(
+        TEXT(
+          "-ScriptsForProject=\"%s\" "
+          "Turnkey -command=VerifySdk -platform=%s -UpdateIfNeeded "
+          "-EditorIO -EditorIOPort=55342 "
+          "-project=\"%s\" "
+          "BuildCookRun "
+            "-nop4 -utf8output -nocompileeditor -skipbuildeditor "
+            "-cook -project=\"%s\" -target=%s "
+            "-unrealexe=\"%s\" -platform=%s -installed "
+            "-stage -archive -package -build -pak -compressed -prereqs "
+            "-archivedirectory=\"%s\" -manifests "
+            "-clientconfig=%s -nodebuginfo"
+        ),
+        *ProjectFilePath,              // -ScriptsForProject
+        *PackageParam.Platform,        // -platform=Win64
+        *ProjectFilePath,              // first -project for VerifySdk
+        *ProjectFilePath,              // second -project for BuildCookRun
+        *ProjectName,                  // -target=Blank_53
+        *UnrealExe,                    // -unrealexe="...Editor-Cmd.exe"
+        *PackageParam.Platform,        // -platform=Win64
+        *PackageParam.OutputDirectory, // -archivedirectory="D:/UEProjects/..."
+        *PackageParam.Configuration    // -clientconfig=Shipping
     );
 
-    UE_LOG(LogTemp, Log, TEXT("Packaging command line: %s"), *CommandLine);
-
-#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3)
-    // In UE 5.3, use the new signature:
     IUATHelperModule::Get().CreateUatTask(
         CommandLine,
-        FText::FromString(Platform),                   // PlatformDisplayName
-        FText::FromString(TEXT("Packaging Project")),  // TaskName
-        FText::FromString(TEXT("Packaging")),          // TaskShortName
-        nullptr,                                       // TaskIcon (optionally supply a valid FSlateBrush*)
-        /*OptionalAnalyticsParamArray=*/ nullptr,       // Analytics parameter added in UE 5.3
+        FText::FromString(PackageParam.Platform),                   // PlatformDisplayName
+        FText::FromString(TEXT("Packaging Project")),              // TaskName
+        FText::FromString(TEXT("Packaging")),                      // TaskShortName
+        nullptr,                                                    // TaskIcon
+        /*OptionalAnalyticsParamArray=*/ nullptr,                   // Analytics params (UE5.3+)
         [=](FString Result, double Runtime)
         {
-        	AsyncTask(ENamedThreads::Type::GameThread, [=]()
-			{
-				(void)OnPackagingCompleted.ExecuteIfBound(Result, Runtime);	
-			});
+            AsyncTask(ENamedThreads::GameThread, [=]()
+            {
+                OnPackagingCompleted.ExecuteIfBound(Result, Runtime);
+            });
         },
-        FString()                                      // ResultLocation (default empty)
+        FString()                                                   // ResultLocation
     );
-#else
-    IUATHelperModule::Get().CreateUatTask(
-        CommandLine,
-        FText::FromString(Platform),                   // PlatformDisplayName
-        FText::FromString(TEXT("Packaging Project")),  // TaskName
-        FText::FromString(TEXT("Packaging")),          // TaskShortName
-        nullptr,                                       // TaskIcon
-        [=](FString Result, double Runtime)
-        {
-        	AsyncTask(ENamedThreads::Type::GameThread, [=]()
-        	{
-        		(void)OnPackagingCompleted.ExecuteIfBound(Result, Runtime);	
-        	});        	
-        },
-        FString()                                      // ResultLocation
-    );
-#endif
 }
 
 void UConvaiPakManagerEditorUtils::CPM_ToggleLiveCoding(const bool Enable)

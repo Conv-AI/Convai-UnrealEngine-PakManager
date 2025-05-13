@@ -7,6 +7,8 @@
 #include "Utility/CPM_Utils.h"
 #include "ConvaiPakManagerEditorUtils.generated.h"
 
+struct FCPM_PackageParam;
+
 //Used to callback into calling code when a UAT task completes. First param is the result type, second param is the runtime in sec.
 DECLARE_DYNAMIC_DELEGATE_TwoParams(FOnUatTaskResultCallack, const FString&, Result, double, Runtime);
 
@@ -24,7 +26,7 @@ public:
 	static void CPM_TogglePlayMode();
 
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManagerEditor")
-	static void CPM_PackageProject(FOnUatTaskResultCallack OnPackagingCompleted);
+	static void CPM_PackageProject(const FCPM_PackageParam& PackageParam, FOnUatTaskResultCallack OnPackagingCompleted);
 
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManagerEditor")
 	static void CPM_ToggleLiveCoding(const bool Enable = false);
