@@ -284,8 +284,10 @@ bool UCPM_GetAssetMetaDataProxy::AddContentToRequestAsString(TSharedPtr<FJsonObj
 		HandleFailure();
 		return false;
 	}
+
+	if (AuthHeaderAndKey.Key == ConvaiConstants::Auth_Token_Header)
+		ObjectToSend->SetStringField(TEXT("experience_session_id"), AuthKey);
 	
-	ObjectToSend->SetStringField(TEXT("experience_session_id"), AuthKey);
 	ObjectToSend->SetStringField(TEXT("asset_id"), AssociatedAssetIdD);
 	
     return true;
