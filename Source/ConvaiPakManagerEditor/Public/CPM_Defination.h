@@ -10,7 +10,7 @@ struct FCPM_PackageParam
 	GENERATED_BODY()
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Convai|PakManager")
-	FString Platform;
+	ECPM_Platform Platform;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Convai|PakManager")
 	FString Configuration;
@@ -20,8 +20,21 @@ struct FCPM_PackageParam
 
 	bool IsValid() const
 	{		
-		return !Platform.IsEmpty()
+		return !GetPlatform().IsEmpty()
 			&& !Configuration.IsEmpty()
 			&& !OutputDirectory.IsEmpty();
+	}
+
+	FString GetPlatform() const
+	{
+		switch (Platform)
+		{
+		case ECPM_Platform::Windows:
+			return FString(TEXT("Win64"));
+		case ECPM_Platform::Linux:
+			return FString(TEXT("Linux"));
+		default:
+			return FString();
+		}
 	}
 };

@@ -108,21 +108,21 @@ void UConvaiPakManagerEditorUtils::CPM_PackageProject(const FCPM_PackageParam& P
             "-clientconfig=%s -nodebuginfo"
         ),
         *ProjectFilePath,              // -ScriptsForProject
-        *PackageParam.Platform,        // -platform=Win64
+        *PackageParam.GetPlatform(),        // -platform=Win64
         *ProjectFilePath,              // first -project for VerifySdk
         *ProjectFilePath,              // second -project for BuildCookRun
         *ProjectName,                  // -target=Blank_53
         *UnrealExe,                    // -unrealexe="...Editor-Cmd.exe"
-        *PackageParam.Platform,        // -platform=Win64
+        *PackageParam.GetPlatform(),        // -platform=Win64
         *PackageParam.OutputDirectory, // -archivedirectory="D:/UEProjects/..."
         *PackageParam.Configuration    // -clientconfig=Shipping
     );
 
     IUATHelperModule::Get().CreateUatTask(
         CommandLine,
-        FText::FromString(PackageParam.Platform),                   // PlatformDisplayName
-        FText::FromString(TEXT("Packaging Project")),              // TaskName
-        FText::FromString(TEXT("Packaging")),                      // TaskShortName
+        FText::FromString(PackageParam.GetPlatform()),              // PlatformDisplayName
+        FText::FromString(TEXT("Packaging Project")),               // TaskName
+        FText::FromString(TEXT("Packaging")),                       // TaskShortName
         nullptr,                                                    // TaskIcon
         /*OptionalAnalyticsParamArray=*/ nullptr,                   // Analytics params (UE5.3+)
         [=](FString Result, double Runtime)

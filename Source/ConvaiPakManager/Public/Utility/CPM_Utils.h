@@ -302,3 +302,10 @@ enum class ECPM_CustomScalabilityLevel : uint8
 	Epic        UMETA(DisplayName = "Epic"),
 	Cinematic   UMETA(DisplayName = "Cinematic")
 };
+
+UENUM(BlueprintType)
+enum class ECPM_Platform : uint8
+{
+	Windows         UMETA(DisplayName = "Windows"),
+	Linux			UMETA(DisplayName = "Linux"),
+};

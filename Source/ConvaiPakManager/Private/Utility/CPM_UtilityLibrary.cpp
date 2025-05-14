@@ -192,9 +192,22 @@ FString UCPM_UtilityLibrary::GetPackageDirectory()
 	return FPaths::Combine(FPaths::ProjectDir(), TEXT("PackagedApp"));
 }
 
-FString UCPM_UtilityLibrary::GetPakFilePathFromChunkID(const FString& Platform, const FString& ChunkID)
+FString UCPM_UtilityLibrary::GetPakFilePathFromChunkID(const ECPM_Platform Platform, const FString& ChunkID)
 {
-	return FPaths::Combine(GetPackageDirectory(), Platform, GetProjectName(), TEXT("Content"), TEXT("Paks"), FString::Printf(TEXT("pakchunk%s-%s"), *ChunkID, *Platform)) + TEXT(".pak");
+	FString PlatformString;
+	switch (Platform)
+	{
+	case ECPM_Platform::Windows:
+		PlatformString= TEXT("Windows");
+		break;
+	case ECPM_Platform::Linux:
+		PlatformString= TEXT("Linux");
+		break;
+	default:
+		return FString();
+	}
+	
+	return FPaths::Combine(GetPackageDirectory(), PlatformString, GetProjectName(), TEXT("Content"), TEXT("Paks"), FString::Printf(TEXT("pakchunk%s-%s"), *ChunkID, *PlatformString)) + TEXT(".pak");
 }
 
 void UCPM_UtilityLibrary::GetModdingMetadata(FCPM_ModdingMetadata& OutData)

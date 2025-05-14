@@ -57,7 +57,7 @@ public:
 	static FString GetPackageDirectory();
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static FString GetPakFilePathFromChunkID(const FString& Platform, const FString& ChunkID);
+	static FString GetPakFilePathFromChunkID(const ECPM_Platform Platform, const FString& ChunkID);
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Convai|PakManager")
 	static void GetModdingMetadata(FCPM_ModdingMetadata& OutData);
