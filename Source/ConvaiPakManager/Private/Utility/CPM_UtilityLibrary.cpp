@@ -187,6 +187,16 @@ FString UCPM_UtilityLibrary::GetPakMetadataFilePath()
 	return FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("PakMetaData")) + TEXT(".json");
 }
 
+FString UCPM_UtilityLibrary::CPM_GetCacheDirectory()
+{
+	return FPaths::Combine(FPaths::ProjectDir(), TEXT("Saved"), TEXT("ConvaiAssetCache/"));
+}
+
+FString UCPM_UtilityLibrary::CPM_GetRawProjectZipPath()
+{
+	return FPaths::Combine(CPM_GetCacheDirectory(), GetProjectName()) + TEXT(".zip");
+}
+
 FString UCPM_UtilityLibrary::GetPackageDirectory()
 {
 	return FPaths::Combine(FPaths::ProjectDir(), TEXT("PackagedApp"));
@@ -792,4 +802,118 @@ bool UCPM_UtilityLibrary::ExtractAssetListFromResponseString(const FString& Resp
         return true;
     }
     return false;
+}
+
+TArray<FString> UCPM_UtilityLibrary::GetProjectDirectoriesToZip()
+{
+    TArray<FString> DirectoriesToZip;
+    const FString ProjectDir = FPaths::ProjectDir();
+    
+    // Core project directories that can be zipped directly
+    TArray<FString> CoreDirectories = {
+        TEXT("Config"),
+        TEXT("Content"), 
+        TEXT("Source")
+    };
+    
+    // Add core directories if they exist
+    for (const FString& CoreDir : CoreDirectories)
+    {
+        FString FullPath = FPaths::Combine(ProjectDir, CoreDir);
+        if (FPaths::DirectoryExists(FullPath))
+        {
+            DirectoriesToZip.Add(FullPath);
+        }
+    }
+    
+    // Handle Plugins directory specially - we need to be selective for each plugin
+    FString PluginsDir = FPaths::Combine(ProjectDir, TEXT("Plugins"));
+    if (FPaths::DirectoryExists(PluginsDir))
+    {
+        TArray<FString> PluginFolders;
+        IFileManager& FileManager = IFileManager::Get();
+        FileManager.FindFiles(PluginFolders, *FPaths::Combine(PluginsDir, TEXT("*")), false, true);
+        
+        for (const FString& PluginFolder : PluginFolders)
+        {
+            FString PluginPath = FPaths::Combine(PluginsDir, PluginFolder);
+            
+            // For each plugin, add only specific subdirectories
+            TArray<FString> PluginSubDirs = {
+                TEXT("Source"),
+                TEXT("Content"),
+                TEXT("Config"),
+                TEXT("Resources"),
+                TEXT("Scripts")
+            };
+            
+            for (const FString& SubDir : PluginSubDirs)
+            {
+                FString SubDirPath = FPaths::Combine(PluginPath, SubDir);
+                if (FPaths::DirectoryExists(SubDirPath))
+                {
+                    DirectoriesToZip.Add(SubDirPath);
+                }
+            }
+        }
+    }
+    
+    return DirectoriesToZip;
+}
+
+TArray<FString> UCPM_UtilityLibrary::GetProjectFilesToZip()
+{
+    TArray<FString> FilesToZip;
+    const FString ProjectDir = FPaths::ProjectDir();
+    IFileManager& FileManager = IFileManager::Get();
+    
+    // Get project files (.uproject) - Essential for project to work
+    TArray<FString> ProjectFiles;
+    FileManager.FindFiles(ProjectFiles, *FPaths::Combine(ProjectDir, TEXT("*.uproject")), true, false);
+    
+    for (const FString& ProjectFile : ProjectFiles)
+    {
+        FilesToZip.Add(FPaths::Combine(ProjectDir, ProjectFile));
+    }
+    
+    // Add all files from ConvaiEssentials directory (excluding .zip files)
+    FString ConvaiEssentialsDir = FPaths::Combine(ProjectDir, TEXT("ConvaiEssentials"));
+    if (FPaths::DirectoryExists(ConvaiEssentialsDir))
+    {
+        TArray<FString> ConvaiEssentialsFiles;
+        FileManager.FindFilesRecursive(ConvaiEssentialsFiles, *ConvaiEssentialsDir, TEXT("*"), true, false);
+        
+        for (const FString& EssentialFile : ConvaiEssentialsFiles)
+        {
+            // Skip .zip files
+            if (!EssentialFile.EndsWith(TEXT(".zip"), ESearchCase::IgnoreCase))
+            {
+                FilesToZip.Add(EssentialFile);
+            }
+        }
+    }
+    
+    // Add plugin .uplugin files - Essential for plugins to work
+    FString PluginsDir = FPaths::Combine(ProjectDir, TEXT("Plugins"));
+    if (FPaths::DirectoryExists(PluginsDir))
+    {
+        TArray<FString> PluginFolders;
+        FileManager.FindFiles(PluginFolders, *FPaths::Combine(PluginsDir, TEXT("*")), false, true);
+        
+        for (const FString& PluginFolder : PluginFolders)
+        {
+            FString PluginPath = FPaths::Combine(PluginsDir, PluginFolder);
+            
+            // Find .uplugin files in each plugin directory
+            TArray<FString> UPluginFiles;
+            FileManager.FindFiles(UPluginFiles, *FPaths::Combine(PluginPath, TEXT("*.uplugin")), true, false);
+            
+            for (const FString& UPluginFile : UPluginFiles)
+            {
+                FilesToZip.Add(FPaths::Combine(PluginPath, UPluginFile));
+            }
+        }
+    }
+    
+    return FilesToZip;
 }

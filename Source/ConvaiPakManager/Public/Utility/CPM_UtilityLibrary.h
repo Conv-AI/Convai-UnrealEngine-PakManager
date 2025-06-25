@@ -54,6 +54,12 @@ public:
 	// END Asset metadata utility functions
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static FString CPM_GetCacheDirectory();
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static FString CPM_GetRawProjectZipPath();
+	
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static FString GetPackageDirectory();
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
@@ -94,6 +100,14 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static UTexture2D* CPM_LoadTexture2DFromDisk(const FString& FilePath, bool bGenerateMips = true);
+
+	// Project Zipping utility functions
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static TArray<FString> GetProjectDirectoriesToZip();
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static TArray<FString> GetProjectFilesToZip();
+	// END Project Zipping utility functions
 	
 	static bool Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height, TArray<FColor>& Pixels);
 	static bool Texture2DToBytes(UTexture2D* Texture2D, const EImageFormat ImageFormat, TArray<uint8>& ByteArray, const int32 CompressionQuality);
