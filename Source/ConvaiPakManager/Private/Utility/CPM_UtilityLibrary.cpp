@@ -194,7 +194,16 @@ FString UCPM_UtilityLibrary::CPM_GetCacheDirectory()
 
 FString UCPM_UtilityLibrary::CPM_GetRawProjectZipPath()
 {
-	return FPaths::Combine(CPM_GetCacheDirectory(), GetProjectName()) + TEXT(".zip");
+	FString ZipPath = FPaths::Combine(CPM_GetCacheDirectory(), GetProjectName()) + TEXT(".zip");
+    
+        // Ensure the directory exists
+        const FString Directory = FPaths::GetPath(ZipPath);
+        if (!IFileManager::Get().DirectoryExists(*Directory))
+        {
+            IFileManager::Get().MakeDirectory(*Directory, true);
+        }
+    
+        return ZipPath;
 }
 
 FString UCPM_UtilityLibrary::GetPackageDirectory()
