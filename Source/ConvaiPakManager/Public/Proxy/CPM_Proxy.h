@@ -154,7 +154,7 @@ public:
 	FCPM_StringResponseDelegate OnFailure;
 
 	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", DisplayName = "Convai Delete Asset"), Category = "Convai|PakManager")
-	static UCPM_DeleteAssetProxy* DeleteAssetProxy(FString AssetID);
+	static UCPM_DeleteAssetProxy* DeleteAssetProxy(const FString& AssetID, const FString& Version);
 		
 protected:
 	virtual bool ConfigureRequest(TSharedRef<CONVAI_HTTP_REQUEST_INTERFACE> Request, const TCHAR* Verb) override;
@@ -164,6 +164,7 @@ protected:
 	virtual void HandleFailure() override;
 		
 	FString AssociatedAssetIdD;
+	FString AssociatedVersion;
 };
 
 //--------------------------------------------------------------------------------------------------

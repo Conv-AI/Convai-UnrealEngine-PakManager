@@ -316,11 +316,12 @@ void UCPM_GetAssetMetaDataProxy::HandleFailure()
 
 
 // Delete asset
-UCPM_DeleteAssetProxy* UCPM_DeleteAssetProxy::DeleteAssetProxy(FString AssetID)
+UCPM_DeleteAssetProxy* UCPM_DeleteAssetProxy::DeleteAssetProxy(const FString& AssetID, const FString& Version)
 {
 	UCPM_DeleteAssetProxy* Proxy = NewObject<UCPM_DeleteAssetProxy>();
 	Proxy->URL = DeleteAssetURL;
 	Proxy->AssociatedAssetIdD = AssetID;
+	Proxy->AssociatedVersion = Version;
 	return Proxy;
 }
 
@@ -346,6 +347,11 @@ bool UCPM_DeleteAssetProxy::AddContentToRequestAsString(TSharedPtr<FJsonObject>&
 
 	ObjectToSend->SetStringField(TEXT("asset_id"), AssociatedAssetIdD);
 
+	if (!AssociatedVersion.IsEmpty())
+	{
+		ObjectToSend->SetStringField(TEXT("version"), AssociatedVersion);
+	}
+	
 	return true;
 }
 
