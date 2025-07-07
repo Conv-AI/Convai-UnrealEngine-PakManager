@@ -5,6 +5,7 @@
 #include "HAL/PlatformFileManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Engine/Texture2D.h"
 #include "Utility/CPM_UtilityLibrary.h"
 #include "ConvaiUtils.h"
 

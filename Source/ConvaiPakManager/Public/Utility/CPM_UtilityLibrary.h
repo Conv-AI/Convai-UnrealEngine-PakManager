@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "CPM_Utils.h"
 #include "IImageWrapper.h"
+#include "AssetRegistry/AssetData.h"
+#include "Engine/Texture2D.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "CPM_UtilityLibrary.generated.h"
 

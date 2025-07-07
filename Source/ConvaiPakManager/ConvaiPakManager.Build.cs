@@ -11,7 +11,7 @@ public class ConvaiPakManager : ModuleRules
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"Core", "PakFile", "ImageWrapper", "Convai", }
+				"Core", "PakFile", "ImageWrapper", "Convai", "AssetRegistry" }
 			);
 		
 		PrivateDependencyModuleNames.AddRange(

@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "CPM_Utils.generated.h"
 
+class UTexture2D;
+
 USTRUCT(BlueprintType)
 struct FCPM_CreatePakAssetParams
 {
@@ -32,7 +34,8 @@ struct FCPM_CreatePakAssetParams
 		: MetaData(TEXT("")),
 		  Version(TEXT("")),
 		  Entity_Type(TEXT("")),
-		  Thumbnail(nullptr)
+		  Thumbnail(nullptr),
+		  Visiblity(TEXT(""))
 	{
 	}
 };
