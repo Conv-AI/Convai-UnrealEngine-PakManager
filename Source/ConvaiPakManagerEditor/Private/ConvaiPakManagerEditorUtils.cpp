@@ -286,7 +286,60 @@ bool UConvaiPakManagerEditorUtils::CPM_CreateZip(const FString& ZipFilePath, con
 	}
 
 	FZipArchiveWriter ZipWriter(FileHandle);
+	const FString ProjectDir = FPaths::ProjectDir();
 
+	// Helper function to safely create relative path and add to zip
+	auto SafeAddFileToZip = [&](const FString& FilePath) -> bool
+	{
+		// Validate file exists
+		if (!PlatformFile.FileExists(*FilePath))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("File not found: %s"), *FilePath);
+			return false;
+		}
+
+		// Create relative path
+		FString RelativePath = FilePath;
+		FPaths::MakePathRelativeTo(RelativePath, *ProjectDir);
+		
+		// Normalize path separators for zip compatibility
+		RelativePath = RelativePath.Replace(TEXT("\\"), TEXT("/"));
+		
+		// Remove any leading slashes
+		RelativePath = RelativePath.TrimStartAndEnd();
+		while (RelativePath.StartsWith(TEXT("/")))
+		{
+			RelativePath = RelativePath.RightChop(1);
+		}
+		
+		// Validate the relative path
+		if (RelativePath.IsEmpty() || RelativePath.Contains(TEXT("..")))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Invalid relative path for file: %s -> %s"), *FilePath, *RelativePath);
+			return false;
+		}
+
+		// Load file data
+		TArray<uint8> FileData;
+		if (!FFileHelper::LoadFileToArray(FileData, *FilePath))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Failed to read file: %s"), *FilePath);
+			return false;
+		}
+
+		// Validate file data
+		if (FileData.Num() == 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Empty file: %s"), *FilePath);
+			return false;
+		}
+
+		// Add to zip
+		ZipWriter.AddFile(RelativePath, FileData, PlatformFile.GetTimeStamp(*FilePath));
+		return true;
+	};
+
+	// Process directories
 	for (const FString& Directory : Directories)
 	{
 		if (!PlatformFile.DirectoryExists(*Directory))
@@ -300,33 +353,14 @@ bool UConvaiPakManagerEditorUtils::CPM_CreateZip(const FString& ZipFilePath, con
 
 		for (const FString& FilePath : L_Files)
 		{
-			FString RelativePath = FilePath;
-			FPaths::MakePathRelativeTo(RelativePath, *FPaths::ProjectDir());			
-			
-			TArray<uint8> FileData;
-			if (!FFileHelper::LoadFileToArray(FileData, *FilePath))
-			{
-				UE_LOG(LogTemp, Error, TEXT("Failed to read file: %s"), *FilePath);
-				continue;
-			}
-			
-			ZipWriter.AddFile(RelativePath, FileData, PlatformFile.GetTimeStamp(*FilePath));
+			SafeAddFileToZip(FilePath);
 		}
 	}
 
+	// Process individual files
 	for (const FString& FilePath : Files)
 	{
-		FString RelativePath = FilePath;
-		FPaths::MakePathRelativeTo(RelativePath, *FPaths::ProjectDir());			
-			
-		TArray<uint8> FileData;
-		if (!FFileHelper::LoadFileToArray(FileData, *FilePath))
-		{
-			UE_LOG(LogTemp, Error, TEXT("Failed to read file: %s"), *FilePath);
-			continue;
-		}
-			
-		ZipWriter.AddFile(RelativePath, FileData, PlatformFile.GetTimeStamp(*FilePath));
+		SafeAddFileToZip(FilePath);
 	}
 	
 	return true;
@@ -338,12 +372,13 @@ void UConvaiPakManagerEditorUtils::CPM_CreateZipAsync(const FString& ZipFilePath
 	Async(EAsyncExecution::Thread, [=]()
 	{
 		const double StartTime = FPlatformTime::Seconds();
-		CPM_CreateZip(ZipFilePath, Files, Directories);
+		const bool bSuccess = CPM_CreateZip(ZipFilePath, Files, Directories);
+		const FString ResultMessage = bSuccess ? TEXT("Success") : TEXT("Failed");
 		const double Runtime = FPlatformTime::Seconds() - StartTime;
 
 		AsyncTask(ENamedThreads::GameThread, [=]()
 		{
-			OnZippingCompleted.ExecuteIfBound(TEXT("Success"), Runtime);
+			OnZippingCompleted.ExecuteIfBound(ResultMessage, Runtime);
 		});
 	});
 }
