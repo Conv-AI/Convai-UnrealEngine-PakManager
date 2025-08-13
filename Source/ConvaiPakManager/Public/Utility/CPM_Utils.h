@@ -260,6 +260,9 @@ struct FCPM_ModdingMetadata
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Response")
     FString AssetType;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Response")
+	bool bIsMetahuman;
 };
 
 UENUM(BlueprintType)

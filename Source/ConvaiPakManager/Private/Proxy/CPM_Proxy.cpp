@@ -133,23 +133,21 @@ void UCPM_CreatePakAssetProxy::HandleSuccess()
 	
 	if (UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(ResponseString, CreatedAssets))
 	{
-		const FString PakMetaData = CreatedAssets.Assets.IsValidIndex(0) ? CreatedAssets.Assets[0].Asset.MetadataString : FString();
-		UCPM_UtilityLibrary::SaveConvaiAssetMetadata(PakMetaData);
-		
-		if (UCPM_UtilityLibrary::SaveConvaiCreateAssetData(ResponseString))
-		{
-			OnSuccess.Broadcast(CreatedAssets);
-			return;
-		}
+		//const FString PakMetaData = CreatedAssets.Assets.IsValidIndex(0) ? CreatedAssets.Assets[0].Asset.MetadataString : FString();
+		//UCPM_UtilityLibrary::SaveConvaiAssetMetadata(PakMetaData, TODO);
+		//UCPM_UtilityLibrary::SaveConvaiCreateAssetData(ResponseString, TODO)
+
+		OnSuccess.Broadcast(CreatedAssets, ResponseString);
+		return;
 	}
 	
-	OnFailure.Broadcast(CreatedAssets);
+	OnFailure.Broadcast(CreatedAssets, ResponseString);
 }
 
 void UCPM_CreatePakAssetProxy::HandleFailure()
 {
 	Super::HandleFailure();
-	OnFailure.Broadcast(FCPM_CreatedAssets());
+	OnFailure.Broadcast(FCPM_CreatedAssets(), ResponseString);
 }
 
 

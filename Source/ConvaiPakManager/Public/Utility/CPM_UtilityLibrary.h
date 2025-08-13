@@ -28,31 +28,31 @@ public:
 	static bool ValidatePakFile(const FString& PakFilePath);
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static void GetAssetID(FString& AssetID);
+	static void GetAssetID(FString& AssetID, const int32& ChunkId);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static ECPM_AssetType GetAssetType();
+	static ECPM_AssetType GetAssetType(const int32& ChunkId);
 	
 	// Create asset utility functions
 	UFUNCTION(BlueprintCallable, Category="Convai|PakManager")
-	static bool SaveConvaiCreateAssetData(const FString& ResponseString);
+	static bool SaveConvaiCreateAssetData(const FString& ResponseString, const int32& ChunkId);
 
 	UFUNCTION(BlueprintCallable, Category="Convai|PakManager")
-	static bool LoadConvaiCreateAssetData(FCPM_CreatedAssets& OutData);
+	static bool LoadConvaiCreateAssetData(FCPM_CreatedAssets& OutData, const int32& ChunkId);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static FString GetCreateAssetDataFilePath();
+	static FString GetCreateAssetDataFilePath(const int32& ChunkId);
 	// END Create asset utility functions
 
 	// Asset metadata utility functions
 	UFUNCTION(BlueprintCallable, Category="Convai|PakManager")
-	static bool SaveConvaiAssetMetadata(const FString& ResponseString);
+	static bool SaveConvaiAssetMetadata(const FString& ResponseString, const int32& ChunkId);
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Convai|PakManager")
-	static void GetAssetMetaDataString(FString& MetaData);
+	static void GetAssetMetaDataString(FString& MetaData, const int32& ChunkId);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static FString GetPakMetadataFilePath();
+	static FString GetPakMetadataFilePath(const int32& ChunkId);
 	// END Asset metadata utility functions
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
@@ -65,16 +65,22 @@ public:
 	static FString GetPackageDirectory();
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static FString GetPakFilePathFromChunkID(const ECPM_Platform Platform, const FString& ChunkID);
+	static FString GetPakFilePathFromChunkID(const ECPM_Platform Platform, const int32& ChunkID);
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Convai|PakManager")
-	static void GetModdingMetadata(FCPM_ModdingMetadata& OutData);
+	static void GetModdingMetadata(FCPM_ModdingMetadata& OutData, const int32& ChunkId);
+
+	UFUNCTION(BlueprintCallable, Category="Convai|PakManager")
+	static bool CreateModdingMetadata(const FCPM_ModdingMetadata& InData, const int32& ChunkId);
+	
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static FString GetModdingMetadataFilePath(const int32& ChunkId);
 	
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static bool GetCreatedAssetsFromJSON(const FString& JsonString, FCPM_CreatedAssets& OutCreatedAssets);
 		
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static bool ShouldCreateAsset();
+	static bool ShouldCreateAsset(const int32& ChunkId);
 
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "ConvaiPakManagerLog"), Category = "Convai|PakManager")
 	static void CPM_LogMessage(const FString& Message, ECPM_LogLevel Verbosity = ECPM_LogLevel::Log);
@@ -110,6 +116,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static TArray<FString> GetProjectFilesToZip();
 	// END Project Zipping utility functions
+
+	UFUNCTION(BlueprintCallable, BlueprintPure,Category = "Convai|PakManager")
+	static int32 GetPrimaryAssetLabelChunkId(const FString& AssetPath);
 	
 	static bool Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height, TArray<FColor>& Pixels);
 	static bool Texture2DToBytes(UTexture2D* Texture2D, const EImageFormat ImageFormat, TArray<uint8>& ByteArray, const int32 CompressionQuality);

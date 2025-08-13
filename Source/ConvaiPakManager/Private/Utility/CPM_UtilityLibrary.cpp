@@ -21,6 +21,7 @@
 #include "Utility/CPM_Utils.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
+#include "Engine/PrimaryAssetLabel.h"
 #include "Serialization/JsonWriter.h"
 #include "Utility/CPM_Log.h"
 #include "Interfaces/IPluginManager.h"
@@ -120,16 +121,16 @@ bool UCPM_UtilityLibrary::ValidatePakFile(const FString& PakFilePath)
 	return true;
 }
 
-void UCPM_UtilityLibrary::GetAssetID(FString& AssetID)
+void UCPM_UtilityLibrary::GetAssetID(FString& AssetID, const int32& ChunkId)
 {
 	FCPM_CreatedAssets OutData;
-	if(LoadConvaiCreateAssetData(OutData))
+	if(LoadConvaiCreateAssetData(OutData, ChunkId))
 	{
 		AssetID = OutData.Assets.Num() > 0 ? OutData.Assets[0].Asset.AssetId : TEXT(""); 
 	}
 }
 
-ECPM_AssetType UCPM_UtilityLibrary::GetAssetType()
+ECPM_AssetType UCPM_UtilityLibrary::GetAssetType(const int32& ChunkId)
 {
 	static const TMap<FString, ECPM_AssetType> StringToAssetTypeMap = {
 		{TEXT("Avatar"), ECPM_AssetType::Avatar},
@@ -137,14 +138,14 @@ ECPM_AssetType UCPM_UtilityLibrary::GetAssetType()
 	};
 
 	FCPM_ModdingMetadata OutData;
-	GetModdingMetadata(OutData);	
+	GetModdingMetadata(OutData, ChunkId);	
 	const ECPM_AssetType* FoundType = StringToAssetTypeMap.Find(OutData.AssetType);
 	return FoundType ? *FoundType : ECPM_AssetType::Max;
 }
 
-bool UCPM_UtilityLibrary::SaveConvaiCreateAssetData(const FString& ResponseString)
+bool UCPM_UtilityLibrary::SaveConvaiCreateAssetData(const FString& ResponseString, const int32& ChunkId)
 {
-	FString FilePath = GetCreateAssetDataFilePath();
+	const FString FilePath = GetCreateAssetDataFilePath(ChunkId);
 	
 	if (FFileHelper::SaveStringToFile(ResponseString, *FilePath))
 	{
@@ -155,9 +156,9 @@ bool UCPM_UtilityLibrary::SaveConvaiCreateAssetData(const FString& ResponseStrin
 	return false;
 }
 
-bool UCPM_UtilityLibrary::LoadConvaiCreateAssetData(FCPM_CreatedAssets& OutData)
+bool UCPM_UtilityLibrary::LoadConvaiCreateAssetData(FCPM_CreatedAssets& OutData, const int32& ChunkId)
 {
-	const FString FilePath = GetCreateAssetDataFilePath();
+	const FString FilePath = GetCreateAssetDataFilePath(ChunkId);
 	FString FileContent;
 
 	if (!FFileHelper::LoadFileToString(FileContent, *FilePath))
@@ -169,9 +170,9 @@ bool UCPM_UtilityLibrary::LoadConvaiCreateAssetData(FCPM_CreatedAssets& OutData)
 	return GetCreatedAssetsFromJSON(FileContent, OutData);
 }
 
-bool UCPM_UtilityLibrary::SaveConvaiAssetMetadata(const FString& ResponseString)
+bool UCPM_UtilityLibrary::SaveConvaiAssetMetadata(const FString& ResponseString, const int32& ChunkId)
 {
-	FString FilePath = GetPakMetadataFilePath();
+	FString FilePath = GetPakMetadataFilePath(ChunkId);
 	
 	if (FFileHelper::SaveStringToFile(ResponseString, *FilePath))
 	{
@@ -182,14 +183,14 @@ bool UCPM_UtilityLibrary::SaveConvaiAssetMetadata(const FString& ResponseString)
 	return false;
 }
 
-void UCPM_UtilityLibrary::GetAssetMetaDataString(FString& MetaData)
+void UCPM_UtilityLibrary::GetAssetMetaDataString(FString& MetaData, const int32& ChunkId)
 {
-	FFileHelper::LoadFileToString(MetaData, *GetPakMetadataFilePath());
+	FFileHelper::LoadFileToString(MetaData, *GetPakMetadataFilePath(ChunkId));
 }
 
-FString UCPM_UtilityLibrary::GetPakMetadataFilePath()
+FString UCPM_UtilityLibrary::GetPakMetadataFilePath(const int32& ChunkId)
 {
-	return FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("PakMetaData")) + TEXT(".json");
+	return FPaths::Combine(FPaths::ProjectDir(),TEXT("ConvaiEssentials"),FString::Printf(TEXT("PakMetaData_%d.json"), ChunkId));
 }
 
 FString UCPM_UtilityLibrary::CPM_GetCacheDirectory()
@@ -216,7 +217,7 @@ FString UCPM_UtilityLibrary::GetPackageDirectory()
 	return FPaths::Combine(FPaths::ProjectDir(), TEXT("PackagedApp"));
 }
 
-FString UCPM_UtilityLibrary::GetPakFilePathFromChunkID(const ECPM_Platform Platform, const FString& ChunkID)
+FString UCPM_UtilityLibrary::GetPakFilePathFromChunkID(const ECPM_Platform Platform, const int32& ChunkID)
 {
 	FString PlatformString;
 	switch (Platform)
@@ -231,15 +232,13 @@ FString UCPM_UtilityLibrary::GetPakFilePathFromChunkID(const ECPM_Platform Platf
 		return FString();
 	}
 	
-	return FPaths::Combine(GetPackageDirectory(), PlatformString, GetProjectName(), TEXT("Content"), TEXT("Paks"), FString::Printf(TEXT("pakchunk%s-%s"), *ChunkID, *PlatformString)) + TEXT(".pak");
+	return FPaths::Combine(GetPackageDirectory(), PlatformString, GetProjectName(), TEXT("Content"), TEXT("Paks"), FString::Printf(TEXT("pakchunk%d-%s"), ChunkID, *PlatformString)) + TEXT(".pak");
 }
 
-void UCPM_UtilityLibrary::GetModdingMetadata(FCPM_ModdingMetadata& OutData)
+void UCPM_UtilityLibrary::GetModdingMetadata(FCPM_ModdingMetadata& OutData, const int32& ChunkId)
 {
-	const FString FilePath = FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("ModdingMetaData")) + TEXT(".txt");
 	FString FileContent;
-
-	if (!FFileHelper::LoadFileToString(FileContent, *FilePath))
+	if (!FFileHelper::LoadFileToString(FileContent, *GetModdingMetadataFilePath(ChunkId)))
 	{
 		CPM_LogMessage(TEXT("Failed to read ModdingMetaData.txt"), ECPM_LogLevel::Error);
 		return;
@@ -255,6 +254,53 @@ void UCPM_UtilityLibrary::GetModdingMetadata(FCPM_ModdingMetadata& OutData)
 	JsonObject->TryGetStringField(TEXT("project_name"), OutData.ProjectName);
 	JsonObject->TryGetStringField(TEXT("plugin_name"), OutData.PluginName);
 	JsonObject->TryGetStringField(TEXT("asset_type"), OutData.AssetType);
+	JsonObject->TryGetBoolField(TEXT("is_metahuman"), OutData.bIsMetahuman);
+}
+
+bool UCPM_UtilityLibrary::CreateModdingMetadata(const FCPM_ModdingMetadata& InData, const int32& ChunkId)
+{
+	const FString FilePath = GetModdingMetadataFilePath(ChunkId);
+	
+	if (IFileManager::Get().FileExists(*FilePath))
+	{
+		CPM_LogMessage(TEXT("ModdingMetaData.txt already exists"), ECPM_LogLevel::Error);
+		return false;
+	}
+
+	const FString Dir = FPaths::GetPath(FilePath);
+	if (!IFileManager::Get().MakeDirectory(*Dir, /*Tree=*/true))
+	{
+		CPM_LogMessage(TEXT("Failed to create directory for ModdingMetaData.txt"), ECPM_LogLevel::Error);
+		return false;
+	}
+
+	const TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
+	if (!InData.ProjectName.IsEmpty()) Obj->SetStringField(TEXT("project_name"), InData.ProjectName);
+	if (!InData.PluginName.IsEmpty())  Obj->SetStringField(TEXT("plugin_name"),  InData.PluginName);
+	if (!InData.AssetType.IsEmpty())   Obj->SetStringField(TEXT("asset_type"),   InData.AssetType);
+	Obj->SetBoolField(TEXT("is_metahuman"), InData.bIsMetahuman);
+	Obj->SetNumberField(TEXT("chunk_id"), ChunkId);
+	
+	FString Output;
+	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Output);
+	if (!FJsonSerializer::Serialize(Obj, Writer))
+	{
+		CPM_LogMessage(TEXT("Failed to serialize ModdingMetaData JSON"), ECPM_LogLevel::Error);
+		return false;
+	}
+
+	if (!FFileHelper::SaveStringToFile(Output, *FilePath))
+	{
+		CPM_LogMessage(FString::Printf(TEXT("Failed to write ModdingMetaData to %s"), *FilePath), ECPM_LogLevel::Error);
+		return false;
+	}
+
+	return true;
+}
+
+FString UCPM_UtilityLibrary::GetModdingMetadataFilePath(const int32& ChunkId)
+{
+	return FPaths::Combine(FPaths::ProjectDir(),TEXT("ConvaiEssentials"),FString::Printf(TEXT("ModdingMetaData_%d.txt"), ChunkId));
 }
 
 bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FCPM_CreatedAssets& OutCreatedAssets)
@@ -380,15 +426,15 @@ bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FC
 	return true;
 }
 
-FString UCPM_UtilityLibrary::GetCreateAssetDataFilePath()
+FString UCPM_UtilityLibrary::GetCreateAssetDataFilePath(const int32& ChunkId)
 {
-	return FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("CreateAssetData")) + TEXT(".json");
+	return FPaths::Combine(FPaths::ProjectDir(),TEXT("ConvaiEssentials"),FString::Printf(TEXT("CreateAssetData_%d.json"), ChunkId));
 }
 
-bool UCPM_UtilityLibrary::ShouldCreateAsset()
+bool UCPM_UtilityLibrary::ShouldCreateAsset(const int32& ChunkId)
 {
 	FString AssetID;
-	GetAssetID(AssetID);
+	GetAssetID(AssetID, ChunkId);
 	return AssetID.IsEmpty();
 }
 
@@ -938,4 +984,36 @@ TArray<FString> UCPM_UtilityLibrary::GetProjectFilesToZip()
     }
     
     return FilesToZip;
+}
+
+int32 UCPM_UtilityLibrary::GetPrimaryAssetLabelChunkId(const FString& AssetPath)
+{
+	FString ObjectPath = AssetPath;
+	if (!AssetPath.Contains(TEXT(".")))
+	{
+		// Extract the last segment as the asset name
+		const FString AssetName = FPaths::GetCleanFilename(AssetPath);
+		ObjectPath = FString::Printf(TEXT("%s.%s"), *AssetPath, *AssetName);
+	}
+
+	// 2) Load the object (this will work for UPrimaryAssetLabel or any subclass thereof)
+	const UPrimaryAssetLabel* Label = Cast<UPrimaryAssetLabel>(
+		StaticLoadObject(
+			UPrimaryAssetLabel::StaticClass(),
+			nullptr,
+			*ObjectPath
+		)
+	);
+
+	if (!Label)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[MyPlugin] Failed to load PrimaryAssetLabel at path: %s"),
+			*ObjectPath
+		);
+		return INDEX_NONE;
+	}
+	
+	// 3) Read out the ChunkId from its rules
+	return Label->Rules.ChunkId;
 }
