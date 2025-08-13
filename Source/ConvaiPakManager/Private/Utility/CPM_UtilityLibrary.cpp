@@ -190,7 +190,7 @@ void UCPM_UtilityLibrary::GetAssetMetaDataString(FString& MetaData, const int32&
 
 FString UCPM_UtilityLibrary::GetPakMetadataFilePath(const int32& ChunkId)
 {
-	return FPaths::Combine(FPaths::ProjectDir(),TEXT("ConvaiEssentials"),FString::Printf(TEXT("PakMetaData_%d.json"), ChunkId));
+	return FPaths::Combine(FPaths::ProjectDir(),TEXT("ConvaiEssentials"),FString::Printf(TEXT("ChunkId_%d"), ChunkId), FString::Printf(TEXT("PakMetaData_%d.json"), ChunkId));
 }
 
 FString UCPM_UtilityLibrary::CPM_GetCacheDirectory()
@@ -300,7 +300,7 @@ bool UCPM_UtilityLibrary::CreateModdingMetadata(const FCPM_ModdingMetadata& InDa
 
 FString UCPM_UtilityLibrary::GetModdingMetadataFilePath(const int32& ChunkId)
 {
-	return FPaths::Combine(FPaths::ProjectDir(),TEXT("ConvaiEssentials"),FString::Printf(TEXT("ModdingMetaData_%d.txt"), ChunkId));
+	return FPaths::Combine(FPaths::ProjectDir(),TEXT("ConvaiEssentials"),FString::Printf(TEXT("ChunkId_%d"), ChunkId), FString::Printf(TEXT("ModdingMetaData_%d.txt"), ChunkId));
 }
 
 bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FCPM_CreatedAssets& OutCreatedAssets)
@@ -428,7 +428,7 @@ bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FC
 
 FString UCPM_UtilityLibrary::GetCreateAssetDataFilePath(const int32& ChunkId)
 {
-	return FPaths::Combine(FPaths::ProjectDir(),TEXT("ConvaiEssentials"),FString::Printf(TEXT("CreateAssetData_%d.json"), ChunkId));
+	return FPaths::Combine(FPaths::ProjectDir(),TEXT("ConvaiEssentials"),FString::Printf(TEXT("ChunkId_%d"), ChunkId), FString::Printf(TEXT("CreateAssetData_%d.json"), ChunkId));
 }
 
 bool UCPM_UtilityLibrary::ShouldCreateAsset(const int32& ChunkId)
