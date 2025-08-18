@@ -806,7 +806,8 @@ bool UCPM_UtilityLibrary::ExtractAssetListFromResponseString(const FString& Resp
                     AssetObject->TryGetStringField(TEXT("asset_id"), AssetData.asset_id);
                     AssetObject->TryGetStringField(TEXT("gcp_file_name"), AssetData.gcp_file_name);
                     AssetObject->TryGetStringField(TEXT("file_name"), AssetData.file_name);
-
+                	AssetObject->TryGetStringField(TEXT("visibility"), AssetData.visibility);
+				
                     // Parse tags array
                     const TArray<TSharedPtr<FJsonValue>>* TagsArray;
                     if (AssetObject->TryGetArrayField(TEXT("tags"), TagsArray))
