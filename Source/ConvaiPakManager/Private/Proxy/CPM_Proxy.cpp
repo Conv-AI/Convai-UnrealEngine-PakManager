@@ -11,10 +11,10 @@
 
 namespace
 {
-	const FString CreatePakAssetURL = TEXT("https://beta.convai.com/assets/upload");
-	const FString UpdatePakAssetURL = TEXT("https://beta.convai.com/assets/update");
-	const FString GetAssetURL = TEXT("https://beta.convai.com/assets/get");
-	const FString DeleteAssetURL = TEXT("https://beta.convai.com/assets/delete");
+    static FString CreatePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/upload"), true); }
+    static FString UpdatePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/update"), true); }
+    static FString GetPakAssetURL()    { return UConvaiURL::GetFullURL(TEXT("assets/get"), true); }
+    static FString DeletePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/delete"), true); }
 }
 
 
@@ -122,7 +122,7 @@ UCPM_CreatePakAssetProxy* UCPM_CreatePakAssetProxy::CreatePakAssetProxy(const FC
 {
 	UCPM_CreatePakAssetProxy* Proxy = NewObject<UCPM_CreatePakAssetProxy>();
 	Proxy->M_Params = Params;
-	Proxy->URL = CreatePakAssetURL;
+	Proxy->URL = CreatePakAssetURL();
 	return Proxy;
 }
 
@@ -158,7 +158,7 @@ UCPM_UpdatePakAssetProxy* UCPM_UpdatePakAssetProxy::UpdatePakAssetProxy(const FS
 {
 	UCPM_UpdatePakAssetProxy* Proxy = NewObject<UCPM_UpdatePakAssetProxy>();
 	Proxy->M_Params = UpdateParams;
-	Proxy->URL = UpdatePakAssetURL;
+	Proxy->URL = UpdatePakAssetURL();
 	Proxy->M_AssetId = AssetID;
 	Proxy->M_bUpdateAsset = true;
 	return Proxy;
@@ -260,7 +260,7 @@ void UCPM_UploadPakAssetProxy::HandleFailure()
 UCPM_GetAssetMetaDataProxy* UCPM_GetAssetMetaDataProxy::GetAssetProxy(UObject* WorldContextObject , FString AssetID)
 {
     UCPM_GetAssetMetaDataProxy* Proxy = NewObject<UCPM_GetAssetMetaDataProxy>();
-	Proxy->URL = GetAssetURL;
+	Proxy->URL = GetPakAssetURL();
     Proxy->AssociatedAssetIdD = AssetID;
     return Proxy;
 }
@@ -320,7 +320,7 @@ void UCPM_GetAssetMetaDataProxy::HandleFailure()
 UCPM_DeleteAssetProxy* UCPM_DeleteAssetProxy::DeleteAssetProxy(const FString& AssetID, const FString& Version)
 {
 	UCPM_DeleteAssetProxy* Proxy = NewObject<UCPM_DeleteAssetProxy>();
-	Proxy->URL = DeleteAssetURL;
+	Proxy->URL = DeletePakAssetURL();
 	Proxy->AssociatedAssetIdD = AssetID;
 	Proxy->AssociatedVersion = Version;
 	return Proxy;
