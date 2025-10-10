@@ -1053,3 +1053,77 @@ bool UCPM_UtilityLibrary::CPM_SetSystemEnvVar(const FString& VarName, const FStr
     return false;
 #endif
 }
+
+bool UCPM_UtilityLibrary::GetSystemEnvVar(const FString& VarName, FString& OutVarValue)
+{
+#if PLATFORM_WINDOWS
+	if (VarName.IsEmpty())
+	{
+		UE_LOG(LogTemp, Error, TEXT("GetSystemEnvVar: VarName is empty."));
+		return false;
+	}
+
+	HKEY hKey;
+	LONG Result = RegOpenKeyExW(
+		HKEY_LOCAL_MACHINE,
+		L"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+		0,
+		KEY_READ,
+		&hKey
+	);
+
+	if (Result != ERROR_SUCCESS)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Failed to open system environment registry key. Error=%ld"), Result);
+		return false;
+	}
+
+	DWORD DataSize = 0;
+	DWORD Type = 0;
+
+	// First, get size of data
+	Result = RegQueryValueExW(
+		hKey,
+		*VarName,
+		nullptr,
+		&Type,
+		nullptr,
+		&DataSize
+	);
+
+	if (Result != ERROR_SUCCESS || Type != REG_EXPAND_SZ && Type != REG_SZ)
+	{
+		RegCloseKey(hKey);
+		UE_LOG(LogTemp, Warning, TEXT("Variable %s does not exist or is not a string."), *VarName);
+		return false;
+	}
+
+	// Allocate buffer
+	TArray<wchar_t> Buffer;
+	Buffer.SetNum(DataSize / sizeof(wchar_t));
+
+	Result = RegQueryValueExW(
+		hKey,
+		*VarName,
+		nullptr,
+		nullptr,
+		reinterpret_cast<BYTE*>(Buffer.GetData()),
+		&DataSize
+	);
+
+	RegCloseKey(hKey);
+
+	if (Result != ERROR_SUCCESS)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Failed to read variable %s from registry. Error=%ld"), *VarName, Result);
+		return false;
+	}
+
+	// Convert to FString
+	OutVarValue = FString(Buffer.GetData());
+	return true;
+#else
+	UE_LOG(LogTemp, Warning, TEXT("GetSystemEnvVar is only implemented on Windows."));
+	return false;
+#endif
+}
