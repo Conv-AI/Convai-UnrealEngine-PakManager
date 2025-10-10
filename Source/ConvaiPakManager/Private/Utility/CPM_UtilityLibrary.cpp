@@ -25,6 +25,17 @@
 #include "Utility/CPM_Log.h"
 #include "Interfaces/IPluginManager.h"
 
+#include "Misc/Paths.h"
+#include "HAL/PlatformProcess.h"
+#include "Misc/ScopeExit.h"
+
+#if PLATFORM_WINDOWS
+#include "Windows/AllowWindowsPlatformTypes.h"
+#include <windows.h>
+#include <shellapi.h>
+#include "Windows/HideWindowsPlatformTypes.h"
+#endif
+
 FString UCPM_UtilityLibrary::OpenFileDialog(const TArray<FString>& Extensions)
 {
 	FString FilePath;
@@ -938,4 +949,107 @@ TArray<FString> UCPM_UtilityLibrary::GetProjectFilesToZip()
     }
     
     return FilesToZip;
+}
+
+bool UCPM_UtilityLibrary::CPM_SetSystemEnvVar(const FString& VarName, const FString& VarValue)
+{
+#if PLATFORM_WINDOWS
+	constexpr bool bWaitForExit = true;
+	
+    if (VarName.IsEmpty())
+    {
+        UE_LOG(LogTemp, Error, TEXT("SetSystemEnvVarElevated: VarName is empty."));
+        return false;
+    }
+
+    // Build a unique temporary bat filename in the user's temp folder
+    FString TempDir = FPlatformProcess::UserTempDir();
+    const FString SafeName = VarName.Replace(TEXT(" "), TEXT("_"));
+    const FString BatFilePath = FPaths::Combine(TempDir, FString::Printf(TEXT("UE_SetEnv_%s.bat"), *SafeName));
+
+    // Escape double-quotes in the value so the batch line is valid
+    const FString EscapedValue = VarValue.Replace(TEXT("\""), TEXT("\\\""));
+
+    // Batch content: setx /M and show result; ends with pause so user can see messages.
+    // CRLFs are used for Windows.
+	FString BatContent = FString::Printf(
+	TEXT("@echo off\r\n")
+	TEXT("echo Setting system environment variable %s...\r\n")
+	TEXT("echo Please wait, this may take a few seconds...\r\n")
+	TEXT("setx %s \"%s\" /M\r\n")
+	TEXT("if %%ERRORLEVEL%% EQU 0 (\r\n")
+	TEXT("  echo Successfully set %s=%s\r\n")
+	TEXT(") else (\r\n")
+	TEXT("  echo Failed to set %s (ERRORLEVEL=%%ERRORLEVEL%%)\r\n")
+	TEXT(")\r\n")
+	TEXT("echo.\r\n")
+	TEXT("echo Press any key to close this window...\r\n")
+	TEXT("pause >nul\r\n")
+	TEXT("exit\r\n"),   // <-- this line ensures the terminal closes after key press
+	*VarName,
+	*VarName, *EscapedValue,
+	*VarName, *EscapedValue,
+	*VarName
+	);
+
+    // Write the bat file (ForceAnsi makes the .bat plain ASCII-friendly)
+    if (!FFileHelper::SaveStringToFile(BatContent, *BatFilePath, FFileHelper::EEncodingOptions::ForceAnsi))
+    {
+        UE_LOG(LogTemp, Error, TEXT("Failed to write batch file to: %s"), *BatFilePath);
+        return false;
+    }
+
+    // Prepare ShellExecuteEx to run: cmd.exe /K "<bat>"
+    FString CmdParams = FString::Printf(TEXT("/K \"%s\""), *BatFilePath);
+
+    // Fill the SHELLEXECUTEINFOW structure
+    SHELLEXECUTEINFOW ExecInfo;
+    FMemory::Memzero(&ExecInfo, sizeof(ExecInfo));
+    ExecInfo.cbSize = sizeof(SHELLEXECUTEINFOW);
+    ExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS; // so we can wait on hProcess
+    ExecInfo.hwnd = nullptr;
+    ExecInfo.lpVerb = TEXT("runas");               // causes elevation (UAC)
+    ExecInfo.lpFile = TEXT("cmd.exe");             // launch cmd.exe
+    ExecInfo.lpParameters = *CmdParams;            // /K "<bat>"
+    ExecInfo.lpDirectory = nullptr;
+    ExecInfo.nShow = SW_SHOWNORMAL;
+
+    BOOL bExec = ShellExecuteExW(&ExecInfo);
+    if (!bExec)
+    {
+        DWORD Err = GetLastError();
+        UE_LOG(LogTemp, Error, TEXT("ShellExecuteExW failed (could not launch elevated process). GetLastError=%u"), Err);
+        // Optionally remove the temp file if we couldn't launch
+        IFileManager::Get().Delete(*BatFilePath);
+        return false;
+    }
+
+    // Optionally wait for the elevated process to exit (blocking)
+    if (bWaitForExit && ExecInfo.hProcess)
+    {
+        // Wait for the console window to close
+        WaitForSingleObject(ExecInfo.hProcess, INFINITE);
+
+        // Close handle and try to delete the temporary batch file
+        CloseHandle(ExecInfo.hProcess);
+
+        if (!IFileManager::Get().Delete(*BatFilePath))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Could not delete temp batch file: %s"), *BatFilePath);
+        }
+    }
+    else if (ExecInfo.hProcess)
+    {
+        // We launched successfully but are not waiting. Close the handle to avoid leaks.
+        CloseHandle(ExecInfo.hProcess);
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("Launched elevated batch to set system env var: %s = %s"), *VarName, *VarValue);
+    return true;
+
+#else
+    // Should not reach here, but keep cross-platform guard
+    UE_LOG(LogTemp, Warning, TEXT("SetSystemEnvVarElevated is only implemented on Windows."));
+    return false;
+#endif
 }
