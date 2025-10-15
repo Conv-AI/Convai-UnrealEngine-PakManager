@@ -954,7 +954,7 @@ TArray<FString> UCPM_UtilityLibrary::GetProjectFilesToZip()
 bool UCPM_UtilityLibrary::CPM_SetSystemEnvVar(const FString& VarName, const FString& VarValue)
 {
 #if PLATFORM_WINDOWS
-	constexpr bool bWaitForExit = true;
+    constexpr bool bWaitForExit = true;
 	
     if (VarName.IsEmpty())
     {
@@ -970,27 +970,25 @@ bool UCPM_UtilityLibrary::CPM_SetSystemEnvVar(const FString& VarName, const FStr
     // Escape double-quotes in the value so the batch line is valid
     const FString EscapedValue = VarValue.Replace(TEXT("\""), TEXT("\\\""));
 
-    // Batch content: setx /M and show result; ends with pause so user can see messages.
-    // CRLFs are used for Windows.
-	FString BatContent = FString::Printf(
-	TEXT("@echo off\r\n")
-	TEXT("echo Setting system environment variable %s...\r\n")
-	TEXT("echo Please wait, this may take a few seconds...\r\n")
-	TEXT("setx %s \"%s\" /M\r\n")
-	TEXT("if %%ERRORLEVEL%% EQU 0 (\r\n")
-	TEXT("  echo Successfully set %s=%s\r\n")
-	TEXT(") else (\r\n")
-	TEXT("  echo Failed to set %s (ERRORLEVEL=%%ERRORLEVEL%%)\r\n")
-	TEXT(")\r\n")
-	TEXT("echo.\r\n")
-	TEXT("echo Press any key to close this window...\r\n")
-	TEXT("pause >nul\r\n")
-	TEXT("exit\r\n"),   // <-- this line ensures the terminal closes after key press
-	*VarName,
-	*VarName, *EscapedValue,
-	*VarName, *EscapedValue,
-	*VarName
-	);
+    // Simpler, friendly messages and auto-close after 5 seconds
+    FString BatContent = FString::Printf(
+        TEXT("@echo off\r\n")
+        TEXT("echo ======================================\r\n")
+        TEXT("echo Updating system settings...\r\n")
+        TEXT("echo Please wait a moment.\r\n")
+        TEXT("echo ======================================\r\n")
+        TEXT("setx %s \"%s\" /M >nul\r\n")
+        TEXT("if %%ERRORLEVEL%% EQU 0 (\r\n")
+        TEXT("  echo Done! The new setting has been saved.\r\n")
+        TEXT(") else (\r\n")
+        TEXT("  echo Oops, something went wrong while saving.\r\n")
+        TEXT(")\r\n")
+        TEXT("echo This window will close automatically in 3 seconds...\r\n")
+        TEXT("timeout /t 3 >nul\r\n")
+        TEXT("exit\r\n"),
+        *VarName,
+        *EscapedValue
+    );
 
     // Write the bat file (ForceAnsi makes the .bat plain ASCII-friendly)
     if (!FFileHelper::SaveStringToFile(BatContent, *BatFilePath, FFileHelper::EEncodingOptions::ForceAnsi))
@@ -1002,15 +1000,14 @@ bool UCPM_UtilityLibrary::CPM_SetSystemEnvVar(const FString& VarName, const FStr
     // Prepare ShellExecuteEx to run: cmd.exe /K "<bat>"
     FString CmdParams = FString::Printf(TEXT("/K \"%s\""), *BatFilePath);
 
-    // Fill the SHELLEXECUTEINFOW structure
     SHELLEXECUTEINFOW ExecInfo;
     FMemory::Memzero(&ExecInfo, sizeof(ExecInfo));
     ExecInfo.cbSize = sizeof(SHELLEXECUTEINFOW);
-    ExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS; // so we can wait on hProcess
+    ExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
     ExecInfo.hwnd = nullptr;
-    ExecInfo.lpVerb = TEXT("runas");               // causes elevation (UAC)
-    ExecInfo.lpFile = TEXT("cmd.exe");             // launch cmd.exe
-    ExecInfo.lpParameters = *CmdParams;            // /K "<bat>"
+    ExecInfo.lpVerb = TEXT("runas");
+    ExecInfo.lpFile = TEXT("cmd.exe");
+    ExecInfo.lpParameters = *CmdParams;
     ExecInfo.lpDirectory = nullptr;
     ExecInfo.nShow = SW_SHOWNORMAL;
 
@@ -1019,18 +1016,13 @@ bool UCPM_UtilityLibrary::CPM_SetSystemEnvVar(const FString& VarName, const FStr
     {
         DWORD Err = GetLastError();
         UE_LOG(LogTemp, Error, TEXT("ShellExecuteExW failed (could not launch elevated process). GetLastError=%u"), Err);
-        // Optionally remove the temp file if we couldn't launch
         IFileManager::Get().Delete(*BatFilePath);
         return false;
     }
 
-    // Optionally wait for the elevated process to exit (blocking)
     if (bWaitForExit && ExecInfo.hProcess)
     {
-        // Wait for the console window to close
         WaitForSingleObject(ExecInfo.hProcess, INFINITE);
-
-        // Close handle and try to delete the temporary batch file
         CloseHandle(ExecInfo.hProcess);
 
         if (!IFileManager::Get().Delete(*BatFilePath))
@@ -1040,7 +1032,6 @@ bool UCPM_UtilityLibrary::CPM_SetSystemEnvVar(const FString& VarName, const FStr
     }
     else if (ExecInfo.hProcess)
     {
-        // We launched successfully but are not waiting. Close the handle to avoid leaks.
         CloseHandle(ExecInfo.hProcess);
     }
 
@@ -1048,13 +1039,12 @@ bool UCPM_UtilityLibrary::CPM_SetSystemEnvVar(const FString& VarName, const FStr
     return true;
 
 #else
-    // Should not reach here, but keep cross-platform guard
     UE_LOG(LogTemp, Warning, TEXT("SetSystemEnvVarElevated is only implemented on Windows."));
     return false;
 #endif
 }
 
-bool UCPM_UtilityLibrary::GetSystemEnvVar(const FString& VarName, FString& OutVarValue)
+bool UCPM_UtilityLibrary::CPM_GetSystemEnvVar(const FString& VarName, FString& OutVarValue)
 {
 #if PLATFORM_WINDOWS
 	if (VarName.IsEmpty())
