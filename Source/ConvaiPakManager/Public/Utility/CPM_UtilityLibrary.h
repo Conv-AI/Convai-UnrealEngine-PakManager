@@ -110,6 +110,12 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static TArray<FString> GetProjectFilesToZip();
 	// END Project Zipping utility functions
+
+	UFUNCTION(BlueprintCallable, Category = "Convai|System|Environment")
+	static bool CPM_SetSystemEnvVar(const FString& VarName, const FString& VarValue);
+
+	UFUNCTION(BlueprintCallable, Category = "Convai|System|Environment")
+	static bool CPM_GetSystemEnvVar(const FString& VarName, FString& OutVarValue);
 	
 	static bool Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height, TArray<FColor>& Pixels);
 	static bool Texture2DToBytes(UTexture2D* Texture2D, const EImageFormat ImageFormat, TArray<uint8>& ByteArray, const int32 CompressionQuality);
