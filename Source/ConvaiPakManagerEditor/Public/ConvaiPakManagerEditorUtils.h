@@ -45,4 +45,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static void CPM_CreateZipAsync(const FString& ZipFilePath, const TArray<FString>& Files, const TArray<FString>& Directories, FOnUatTaskResultCallack OnZippingCompleted);
+
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
+	static AActor* SpawnAndSnapActorToView(UClass* ActorClass);
 };
