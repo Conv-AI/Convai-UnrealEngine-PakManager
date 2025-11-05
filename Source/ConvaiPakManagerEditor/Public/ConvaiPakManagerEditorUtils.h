@@ -48,4 +48,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static AActor* SpawnAndSnapActorToView(UClass* ActorClass);
+
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
+	static bool GetPackageDependencies(const FName& PackageName,TSet<FName>& AllDependencies, TSet<FString>& ExternalObjectsPaths, TSet<FName>& ExcludedDependencies);
+
+	static void RecursiveGetDependencies(const FName& PackageName, TSet<FName>& AllDependencies, TSet<FString>& ExternalObjectsPaths, TSet<FName>& ExcludedDependencies, const TFunction<bool(FName)>& ShouldExcludeFromDependenciesSearch);
 };
