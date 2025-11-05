@@ -519,7 +519,7 @@ AActor* UConvaiPakManagerEditorUtils::SpawnAndSnapActorToView(UClass* ActorClass
     return SpawnedActor;
 }
 
-bool UConvaiPakManagerEditorUtils::GetPackageDependencies(const FName& PackageName,
+bool UConvaiPakManagerEditorUtils::GetPackageDependencies(const FName& PackageName, const TArray<FString>& FilterPaths, 
 	TSet<FName>& AllDependencies, TSet<FString>& ExternalObjectsPaths, TSet<FName>& ExcludedDependencies)
 {
 	if (PackageName.IsNone())
@@ -536,7 +536,18 @@ bool UConvaiPakManagerEditorUtils::GetPackageDependencies(const FName& PackageNa
 	const FString Root = TEXT("/") + MountPoint.ToString() + TEXT("/"); // e.g. "/ConvaiPluginContent/"
 
 	// We don't want to miss any violations, so never early-stop recursion.
-	auto NeverExclude = [](FName) -> bool { return false; };
+	auto NeverExclude = [FilterPaths](FName Dep) -> bool
+	{
+		const FString S = Dep.ToString();
+		for (const auto& It : FilterPaths)
+		{
+			if (!S.IsEmpty() && S.StartsWith(It))
+			{
+				return true;
+			}
+		}
+		return false;
+	};
 	
 	// Make sure outputs are clean before we fill them
 	// (comment out the Resets if you want to accumulate across multiple calls)
@@ -552,6 +563,18 @@ bool UConvaiPakManagerEditorUtils::GetPackageDependencies(const FName& PackageNa
 	);
 
 	// Check if every dependency sits under the same root
+	auto IsUnderAnyIgnoredRoot = [](const FString& PackagePath, const TArray<FString>& IgnoredRoots) -> bool
+	{
+		for (const FString& InRoot : IgnoredRoots)
+		{
+			if (!InRoot.IsEmpty() && PackagePath.StartsWith(InRoot))
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	
 	bool bAllInsideSameRoot = true;
 	for (const FName& Dep : AllDependencies)
 	{
