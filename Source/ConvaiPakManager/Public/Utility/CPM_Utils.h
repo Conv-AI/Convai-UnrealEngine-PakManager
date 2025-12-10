@@ -311,4 +311,6 @@ enum class ECPM_Platform : uint8
 {
 	Windows         UMETA(DisplayName = "Windows"),
 	Linux			UMETA(DisplayName = "Linux"),
+	Raw				UMETA(DisplayName = "Raw"),
+	None			UMETA(DisplayName = "None")
 };
