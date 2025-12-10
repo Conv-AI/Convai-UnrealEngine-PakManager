@@ -1117,3 +1117,13 @@ bool UCPM_UtilityLibrary::CPM_GetSystemEnvVar(const FString& VarName, FString& O
 	return false;
 #endif
 }
+
+int64 UCPM_UtilityLibrary::CPM_GetFileSize(const FString& FilePath)
+{
+	if (!FPaths::FileExists(FilePath))
+	{
+		return -1;
+	}
+
+	return IFileManager::Get().FileSize(*FilePath);
+}

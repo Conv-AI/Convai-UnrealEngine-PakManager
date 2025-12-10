@@ -117,6 +117,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|System|Environment")
 	static bool CPM_GetSystemEnvVar(const FString& VarName, FString& OutVarValue);
 	
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|System|Environment")
+	static int64 CPM_GetFileSize(const FString& FilePath);
+	
 	static bool Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height, TArray<FColor>& Pixels);
 	static bool Texture2DToBytes(UTexture2D* Texture2D, const EImageFormat ImageFormat, TArray<uint8>& ByteArray, const int32 CompressionQuality);
 	static bool PixelsToBytes(const int32 Width, const int32 Height, const TArray<FColor>& Pixels, const EImageFormat ImageFormat, TArray<uint8>& ByteArray, const int32 CompressionQuality);
