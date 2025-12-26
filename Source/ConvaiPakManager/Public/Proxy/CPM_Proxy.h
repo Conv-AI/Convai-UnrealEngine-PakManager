@@ -13,6 +13,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_AssetCreateDelegate, const FCPM
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FCPM_GetAssetsHttpResponseCallbackDelegate, const FCPM_AssetResponse&, AssetData, const FString&, ResponseString);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_AssetUploadDelegate, float, Progress);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_StringResponseDelegate, const FString&, ResponseString);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCPM_OnCancelledDelegate);
 
 /* Create and update base proxy*/
 UCLASS()
@@ -75,8 +76,8 @@ protected:
 
 //-------------------------------------------Upload proxy-------------------------------------------
 
-UCLASS()
-class UCPM_UploadPakAssetProxy : public UConvaiAPIBaseProxy
+UCLASS(BlueprintType)
+class CONVAIPAKMANAGER_API UCPM_UploadPakAssetProxy : public UConvaiAPIBaseProxy
 {
 	GENERATED_BODY()
 
@@ -89,9 +90,20 @@ public:
 
 	UPROPERTY(BlueprintAssignable)
 	FCPM_AssetUploadDelegate OnProgress;
+
+	UPROPERTY(BlueprintAssignable)
+	FCPM_OnCancelledDelegate OnCancelled;
 	
 	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", DisplayName = "Convai Upload Pak Asset"), Category = "Convai|PakManager")
-	static UCPM_UploadPakAssetProxy* UploadPakAssetProxy(const FString& UploadURL, const FString& PakFilePath);
+	static UCPM_UploadPakAssetProxy* UploadPakAssetProxy(const FString& UploadURL, const FString& PakFilePath, UCPM_UploadPakAssetProxy*& OutProxy);
+
+	/** Cancel the ongoing upload request */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
+	void CancelRequest();
+
+	/** Check if the upload request is currently in progress */
+	UFUNCTION(BlueprintPure, Category = "Convai|PakManager")
+	bool IsRequestInProgress() const;
 
 protected:
 	virtual bool ConfigureRequest(TSharedRef<CONVAI_HTTP_REQUEST_INTERFACE> Request, const TCHAR* Verb) override;
@@ -102,6 +114,12 @@ protected:
 	
 private:
 	FString M_PakFilePath;
+	
+	/** Stored reference to the active HTTP request for cancellation */
+	TSharedPtr<CONVAI_HTTP_REQUEST_INTERFACE> ActiveHttpRequest;
+	
+	/** Flag to track if the request is currently in progress */
+	bool bIsInProgress = false;
 };
 
 

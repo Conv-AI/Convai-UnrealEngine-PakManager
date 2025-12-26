@@ -196,11 +196,12 @@ void UCPM_UpdatePakAssetProxy::HandleFailure()
 
 
 
-UCPM_UploadPakAssetProxy* UCPM_UploadPakAssetProxy::UploadPakAssetProxy(const FString& UploadURL, const FString& PakFilePath)
+UCPM_UploadPakAssetProxy* UCPM_UploadPakAssetProxy::UploadPakAssetProxy(const FString& UploadURL, const FString& PakFilePath, UCPM_UploadPakAssetProxy*& OutProxy)
 {
 	UCPM_UploadPakAssetProxy* Proxy = NewObject<UCPM_UploadPakAssetProxy>();
 	Proxy->URL = UploadURL;
 	Proxy->M_PakFilePath = PakFilePath;
+	OutProxy = Proxy;
 	return Proxy;
 }
 
@@ -211,19 +212,46 @@ bool UCPM_UploadPakAssetProxy::ConfigureRequest(TSharedRef<CONVAI_HTTP_REQUEST_I
 		return false;
 	}
 
+	// Store the request reference for cancellation
+	ActiveHttpRequest = Request;
+	bIsInProgress = true;
+
 	Request->SetHeader(TEXT("access-control-allow-origin"), TEXT("*"));
 	Request->SetHeader(TEXT("x-goog-content-length-range"), TEXT("0,10485760000"));
 	
+	TWeakObjectPtr<UCPM_UploadPakAssetProxy> WeakThis(this);
 	Request->OnRequestProgress().BindLambda(
-	[&](CONVAI_HTTP_REQUEST_PTR InRequest, uint64 BytesSent, uint64 BytesReceived)
+	[WeakThis](CONVAI_HTTP_REQUEST_PTR InRequest, uint64 BytesSent, uint64 BytesReceived)
 	{
+		if (!WeakThis.IsValid())
+		{
+			return;
+		}
+		
 		uint64 TotalBytes = InRequest->GetContentLength();
 		float UploadProgress = TotalBytes > 0 ? (float)BytesSent / (float)TotalBytes : 0.0f;
 	
-		OnProgress.Broadcast(UploadProgress);
+		WeakThis->OnProgress.Broadcast(UploadProgress);
 	});
 		
 	return true;
+}
+
+void UCPM_UploadPakAssetProxy::CancelRequest()
+{
+	if (ActiveHttpRequest.IsValid() && bIsInProgress)
+	{
+		ActiveHttpRequest->CancelRequest();
+		bIsInProgress = false;
+		ActiveHttpRequest.Reset();
+		
+		OnCancelled.Broadcast();
+	}
+}
+
+bool UCPM_UploadPakAssetProxy::IsRequestInProgress() const
+{
+	return bIsInProgress;
 }
 
 bool UCPM_UploadPakAssetProxy::AddContentToRequest(CONVAI_HTTP_PAYLOAD_ARRAY_TYPE& DataToSend, const FString& Boundary)
@@ -246,12 +274,18 @@ bool UCPM_UploadPakAssetProxy::AddContentToRequest(CONVAI_HTTP_PAYLOAD_ARRAY_TYP
 
 void UCPM_UploadPakAssetProxy::HandleSuccess()
 {
+	bIsInProgress = false;
+	ActiveHttpRequest.Reset();
+	
 	Super::HandleSuccess();
 	OnSuccess.Broadcast(100.f);
 }
 
 void UCPM_UploadPakAssetProxy::HandleFailure()
 {
+	bIsInProgress = false;
+	ActiveHttpRequest.Reset();
+	
 	Super::HandleFailure();
 	OnFailure.Broadcast(0.f);
 }
