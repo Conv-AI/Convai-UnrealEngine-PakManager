@@ -11,10 +11,10 @@
 
 namespace
 {
-	const FString CreatePakAssetURL = TEXT("https://beta.convai.com/assets/upload");
-	const FString UpdatePakAssetURL = TEXT("https://beta.convai.com/assets/update");
-	const FString GetAssetURL = TEXT("https://beta.convai.com/assets/get");
-	const FString DeleteAssetURL = TEXT("https://beta.convai.com/assets/delete");
+    FString CreatePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/upload"), true); }
+    FString UpdatePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/update"), true); }
+    FString GetPakAssetURL()    { return UConvaiURL::GetFullURL(TEXT("assets/get"), true); }
+    FString DeletePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/delete"), true); }
 }
 
 
@@ -122,7 +122,7 @@ UCPM_CreatePakAssetProxy* UCPM_CreatePakAssetProxy::CreatePakAssetProxy(const FC
 {
 	UCPM_CreatePakAssetProxy* Proxy = NewObject<UCPM_CreatePakAssetProxy>();
 	Proxy->M_Params = Params;
-	Proxy->URL = CreatePakAssetURL;
+	Proxy->URL = CreatePakAssetURL();
 	return Proxy;
 }
 
@@ -156,7 +156,7 @@ UCPM_UpdatePakAssetProxy* UCPM_UpdatePakAssetProxy::UpdatePakAssetProxy(const FS
 {
 	UCPM_UpdatePakAssetProxy* Proxy = NewObject<UCPM_UpdatePakAssetProxy>();
 	Proxy->M_Params = UpdateParams;
-	Proxy->URL = UpdatePakAssetURL;
+	Proxy->URL = UpdatePakAssetURL();
 	Proxy->M_AssetId = AssetID;
 	Proxy->M_bUpdateAsset = true;
 	return Proxy;
@@ -194,11 +194,12 @@ void UCPM_UpdatePakAssetProxy::HandleFailure()
 
 
 
-UCPM_UploadPakAssetProxy* UCPM_UploadPakAssetProxy::UploadPakAssetProxy(const FString& UploadURL, const FString& PakFilePath)
+UCPM_UploadPakAssetProxy* UCPM_UploadPakAssetProxy::UploadPakAssetProxy(const FString& UploadURL, const FString& PakFilePath, UCPM_UploadPakAssetProxy*& OutProxy)
 {
 	UCPM_UploadPakAssetProxy* Proxy = NewObject<UCPM_UploadPakAssetProxy>();
 	Proxy->URL = UploadURL;
 	Proxy->M_PakFilePath = PakFilePath;
+	OutProxy = Proxy;
 	return Proxy;
 }
 
@@ -209,19 +210,46 @@ bool UCPM_UploadPakAssetProxy::ConfigureRequest(TSharedRef<CONVAI_HTTP_REQUEST_I
 		return false;
 	}
 
+	// Store the request reference for cancellation
+	ActiveHttpRequest = Request;
+	bIsInProgress = true;
+
 	Request->SetHeader(TEXT("access-control-allow-origin"), TEXT("*"));
 	Request->SetHeader(TEXT("x-goog-content-length-range"), TEXT("0,10485760000"));
 	
+	TWeakObjectPtr<UCPM_UploadPakAssetProxy> WeakThis(this);
 	Request->OnRequestProgress().BindLambda(
-	[&](CONVAI_HTTP_REQUEST_PTR InRequest, uint64 BytesSent, uint64 BytesReceived)
+	[WeakThis](CONVAI_HTTP_REQUEST_PTR InRequest, uint64 BytesSent, uint64 BytesReceived)
 	{
+		if (!WeakThis.IsValid())
+		{
+			return;
+		}
+		
 		uint64 TotalBytes = InRequest->GetContentLength();
 		float UploadProgress = TotalBytes > 0 ? (float)BytesSent / (float)TotalBytes : 0.0f;
 	
-		OnProgress.Broadcast(UploadProgress);
+		WeakThis->OnProgress.Broadcast(UploadProgress);
 	});
 		
 	return true;
+}
+
+void UCPM_UploadPakAssetProxy::CancelRequest()
+{
+	if (ActiveHttpRequest.IsValid() && bIsInProgress)
+	{
+		ActiveHttpRequest->CancelRequest();
+		bIsInProgress = false;
+		ActiveHttpRequest.Reset();
+		
+		OnCancelled.Broadcast();
+	}
+}
+
+bool UCPM_UploadPakAssetProxy::IsRequestInProgress() const
+{
+	return bIsInProgress;
 }
 
 bool UCPM_UploadPakAssetProxy::AddContentToRequest(CONVAI_HTTP_PAYLOAD_ARRAY_TYPE& DataToSend, const FString& Boundary)
@@ -244,12 +272,18 @@ bool UCPM_UploadPakAssetProxy::AddContentToRequest(CONVAI_HTTP_PAYLOAD_ARRAY_TYP
 
 void UCPM_UploadPakAssetProxy::HandleSuccess()
 {
+	bIsInProgress = false;
+	ActiveHttpRequest.Reset();
+	
 	Super::HandleSuccess();
 	OnSuccess.Broadcast(100.f);
 }
 
 void UCPM_UploadPakAssetProxy::HandleFailure()
 {
+	bIsInProgress = false;
+	ActiveHttpRequest.Reset();
+	
 	Super::HandleFailure();
 	OnFailure.Broadcast(0.f);
 }
@@ -258,7 +292,7 @@ void UCPM_UploadPakAssetProxy::HandleFailure()
 UCPM_GetAssetMetaDataProxy* UCPM_GetAssetMetaDataProxy::GetAssetProxy(UObject* WorldContextObject , FString AssetID)
 {
     UCPM_GetAssetMetaDataProxy* Proxy = NewObject<UCPM_GetAssetMetaDataProxy>();
-	Proxy->URL = GetAssetURL;
+	Proxy->URL = GetPakAssetURL();
     Proxy->AssociatedAssetIdD = AssetID;
     return Proxy;
 }
@@ -318,7 +352,7 @@ void UCPM_GetAssetMetaDataProxy::HandleFailure()
 UCPM_DeleteAssetProxy* UCPM_DeleteAssetProxy::DeleteAssetProxy(const FString& AssetID, const FString& Version)
 {
 	UCPM_DeleteAssetProxy* Proxy = NewObject<UCPM_DeleteAssetProxy>();
-	Proxy->URL = DeleteAssetURL;
+	Proxy->URL = DeletePakAssetURL();
 	Proxy->AssociatedAssetIdD = AssetID;
 	Proxy->AssociatedVersion = Version;
 	return Proxy;
