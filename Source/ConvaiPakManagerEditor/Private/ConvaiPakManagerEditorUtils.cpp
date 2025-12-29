@@ -2,7 +2,6 @@
 
 
 #include "ConvaiPakManagerEditorUtils.h"
-
 #include "CPM_Defination.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Misc/PackageName.h"
@@ -22,6 +21,15 @@
 #include "ImageUtils.h"
 #include "Slate/SceneViewport.h"
 #include "FileUtilities/ZipArchiveWriter.h"
+#include "Editor.h"
+#include "EngineUtils.h"
+#include "Engine/World.h"
+#include "GameFramework/Actor.h"
+#include "LevelEditorViewport.h" // For GCurrentLevelEditingViewportClient
+#include "ScopedTransaction.h" // For FScopedTransaction
+#include "Editor/EditorEngine.h" // For GEditor
+#include "Elements/Interfaces/TypedElementWorldInterface.h" // For ITypedElementWorldInterface
+#include "Elements/Framework/TypedElementHandle.h" // For FTypedElementHandle
 
 void UConvaiPakManagerEditorUtils::CPM_MarkAssetDirty(UObject* Asset)
 {
@@ -383,4 +391,271 @@ void UConvaiPakManagerEditorUtils::CPM_CreateZipAsync(const FString& ZipFilePath
 	});
 }
 
+AActor* UConvaiPakManagerEditorUtils::SpawnAndSnapActorToView(UClass* ActorClass)
+{
+    // --- Validation ---
+    if (!ActorClass)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("SpawnAndSnapActorToView: ActorClass is null."));
+        return nullptr;
+    }
+    if (!GEditor || !GCurrentLevelEditingViewportClient)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("SpawnAndSnapActorToView: GEditor or GCurrentLevelEditingViewportClient is not available."));
+        return nullptr;
+    }
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("SpawnAndSnapActorToView: Cannot get Editor World."));
+        return nullptr;
+    }
 
+    // --- Constants ---
+    static const FName EditorSpawnTag(TEXT("editorspawn"));
+
+    // --- View Transform ---
+    const FVector NewLocation = GCurrentLevelEditingViewportClient->GetViewLocation();
+    const FQuat   NewRotation = GCurrentLevelEditingViewportClient->GetViewRotation().Quaternion();
+    const FTransform ViewTransform(NewRotation, NewLocation);
+
+    // --- Look for an existing 'editorspawn' actor ---
+    AActor* TargetActor = nullptr;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        AActor* A = *It;
+        if (IsValid(A) && !A->IsPendingKillPending() && A->ActorHasTag(EditorSpawnTag))
+        {
+            TargetActor = A;
+            break; // Use the first one found
+        }
+    }
+
+    // --- Transaction & dirtied scope ---
+    FScopedTransaction Transaction(TargetActor
+        ? NSLOCTEXT("UnrealEd", "MoveEditorSpawnActorToView", "Move 'editorspawn' Actor to View")
+        : NSLOCTEXT("UnrealEd", "SpawnAndSnapActor", "Spawn and Snap Actor to View"));
+    FScopedLevelDirtied LevelDirtyCallback;
+
+    // --- If found: just move that actor ---
+    if (TargetActor)
+    {
+        TargetActor->SetFlags(RF_Transactional);
+
+        // Ensure a movable scene root so transform panel & movement work
+        if (!TargetActor->GetRootComponent())
+        {
+            USceneComponent* SceneRoot = NewObject<USceneComponent>(TargetActor, USceneComponent::StaticClass(), TEXT("DefaultSceneRoot"));
+            SceneRoot->SetMobility(EComponentMobility::Movable);
+            TargetActor->SetRootComponent(SceneRoot);
+            SceneRoot->RegisterComponent();
+        }
+        else if (TargetActor->GetRootComponent()->Mobility != EComponentMobility::Movable)
+        {
+            TargetActor->GetRootComponent()->SetMobility(EComponentMobility::Movable);
+        }
+
+        // Prevent construction scripts while we move things
+        FEditorScriptExecutionGuard ScriptGuard;
+
+        TargetActor->SetActorTransform(ViewTransform, /*bSweep=*/false, /*OutHit=*/nullptr, ETeleportType::TeleportPhysics);
+
+        LevelDirtyCallback.Request();
+
+        // Editor state
+        GEditor->SetPivot(ViewTransform.GetLocation(), false, true);
+        GEditor->SelectNone(/*bNoteSelectionChange=*/false, /*bDeselectBSPSurfs=*/true);
+        GEditor->SelectActor(TargetActor, /*bSelected=*/true, /*bNotify=*/true);
+        GEditor->RedrawLevelEditingViewports();
+
+        return TargetActor;
+    }
+
+    // --- Otherwise: spawn new actor, add 'editorspawn' tag, ensure movable root ---
+    AActor* SpawnedActor = World->SpawnActorDeferred<AActor>(ActorClass, ViewTransform, /*Owner=*/nullptr, /*Instigator=*/nullptr,
+        ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+
+    if (!SpawnedActor)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpawnAndSnapActorToView: Failed to spawn actor of class %s"), *ActorClass->GetName());
+        Transaction.Cancel();
+        return nullptr;
+    }
+
+    SpawnedActor->SetFlags(RF_Transactional);
+
+    // Tag it
+    SpawnedActor->Tags.AddUnique(EditorSpawnTag);
+
+    // Guarantee a movable scene root
+    if (!SpawnedActor->GetRootComponent())
+    {
+        USceneComponent* SceneRoot = NewObject<USceneComponent>(SpawnedActor, USceneComponent::StaticClass(), TEXT("DefaultSceneRoot"));
+        SceneRoot->SetMobility(EComponentMobility::Movable);
+        SpawnedActor->SetRootComponent(SceneRoot);
+        SceneRoot->RegisterComponent();
+    }
+    else if (SpawnedActor->GetRootComponent()->Mobility != EComponentMobility::Movable)
+    {
+        SpawnedActor->GetRootComponent()->SetMobility(EComponentMobility::Movable);
+    }
+
+    // Finish spawn & place
+    SpawnedActor->FinishSpawning(ViewTransform, /*bIsDefaultTransform=*/true);
+
+    {
+        FEditorScriptExecutionGuard ScriptGuard;
+        SpawnedActor->SetActorTransform(ViewTransform, /*bSweep=*/false, /*OutHit=*/nullptr, ETeleportType::TeleportPhysics);
+    }
+
+    LevelDirtyCallback.Request();
+
+    // Editor state
+    GEditor->SetPivot(ViewTransform.GetLocation(), false, true);
+    GEditor->SelectNone(/*bNoteSelectionChange=*/false, /*bDeselectBSPSurfs=*/true);
+    GEditor->SelectActor(SpawnedActor, /*bSelected=*/true, /*bNotify=*/true);
+    GEditor->RedrawLevelEditingViewports();
+
+    return SpawnedActor;
+}
+
+bool UConvaiPakManagerEditorUtils::GetPackageDependencies(const FName& PackageName, const TArray<FString>& FilterPaths, 
+	TSet<FName>& AllDependencies, TSet<FString>& ExternalObjectsPaths, TSet<FName>& ExcludedDependencies)
+{
+	if (PackageName.IsNone())
+	{
+		return false; // invalid input
+	}
+
+	// Derive the mount point safely (preferred over manual splitting)
+	const FName MountPoint = FPackageName::GetPackageMountPoint(PackageName.ToString());
+	if (MountPoint.IsNone())
+	{
+		return false; // malformed package path
+	}
+	const FString Root = TEXT("/") + MountPoint.ToString() + TEXT("/"); // e.g. "/ConvaiPluginContent/"
+
+	// We don't want to miss any violations, so never early-stop recursion.
+	auto NeverExclude = [FilterPaths](FName Dep) -> bool
+	{
+		const FString S = Dep.ToString();
+		for (const auto& It : FilterPaths)
+		{
+			if (!S.IsEmpty() && S.StartsWith(It))
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	
+	// Make sure outputs are clean before we fill them
+	// (comment out the Resets if you want to accumulate across multiple calls)
+	AllDependencies.Reset();
+	ExternalObjectsPaths.Reset();
+	
+	RecursiveGetDependencies(
+		PackageName,
+		AllDependencies,
+		ExternalObjectsPaths,
+		ExcludedDependencies,
+		NeverExclude
+	);
+
+	// Check if every dependency sits under the same root
+	auto IsUnderAnyIgnoredRoot = [](const FString& PackagePath, const TArray<FString>& IgnoredRoots) -> bool
+	{
+		for (const FString& InRoot : IgnoredRoots)
+		{
+			if (!InRoot.IsEmpty() && PackagePath.StartsWith(InRoot))
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	
+	bool bAllInsideSameRoot = true;
+	for (const FName& Dep : AllDependencies)
+	{
+		const FString DepStr = Dep.ToString();
+		if (!DepStr.StartsWith(Root))
+		{
+			bAllInsideSameRoot = false;
+			break;
+		}
+	}
+
+	return bAllInsideSameRoot;
+}
+
+void UConvaiPakManagerEditorUtils::RecursiveGetDependencies(const FName& PackageName, TSet<FName>& AllDependencies, TSet<FString>& OutExternalObjectsPaths, TSet<FName>& ExcludedDependencies, const TFunction<bool (FName)>& ShouldExcludeFromDependenciesSearch)
+{
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::Get().LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	TArray<FName> Dependencies;
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+	AssetRegistry.GetDependencies(PackageName, Dependencies);
+	
+	for (TArray<FName>::TConstIterator DependsIt = Dependencies.CreateConstIterator(); DependsIt; ++DependsIt)
+	{
+		FString DependencyName = (*DependsIt).ToString();
+
+		const bool bIsScriptPackage = DependencyName.StartsWith(TEXT("/Script"));
+
+		// The asset registry can give some reference to some deleted assets. We don't want to migrate these.
+		const bool bAssetExist = AssetRegistry.GetAssetPackageDataCopy(*DependsIt).IsSet();
+
+		if (!bIsScriptPackage && bAssetExist)
+		{
+			uint32 DependsHash = GetTypeHash(*DependsIt);
+			if (!AllDependencies.ContainsByHash(DependsHash, *DependsIt) && !ExcludedDependencies.ContainsByHash(DependsHash, *DependsIt))
+			{
+				// Early stop the dependency search
+				if (ShouldExcludeFromDependenciesSearch(*DependsIt))
+				{
+					ExcludedDependencies.AddByHash(DependsHash, *DependsIt);
+					continue;
+				}
+
+				AllDependencies.AddByHash(DependsHash, *DependsIt);
+
+				RecursiveGetDependencies(*DependsIt, AllDependencies, OutExternalObjectsPaths, ExcludedDependencies, ShouldExcludeFromDependenciesSearch);
+			}
+		}
+	}
+
+	// Handle Specific External Objects use case (only used for the Migrate path for now)
+	// todo: revisit how to handle those in a more generic way. Should the FExternalActorAssetDependencyGatherer handle the external objects reference also?
+	TArray<FAssetData> Assets;
+
+	// The migration only work on the saved version of the assets so no need to scan the for the in memory only assets. This also greatly improve the performance of the migration when a lot assets are loaded in the editor.
+	const bool bOnlyIncludeOnDiskAssets = true;
+	if (AssetRegistryModule.Get().GetAssetsByPackageName(PackageName, Assets, bOnlyIncludeOnDiskAssets))
+	{
+		for (const FAssetData& AssetData : Assets)
+		{
+			if (AssetData.GetClass() && AssetData.GetClass()->IsChildOf<UWorld>())
+			{
+				TArray<FString> ExternalObjectsPaths = ULevel::GetExternalObjectsPaths(PackageName.ToString());
+				for (const FString& ExternalObjectsPath : ExternalObjectsPaths)
+				{
+					if (!ExternalObjectsPath.IsEmpty() && !OutExternalObjectsPaths.Contains(ExternalObjectsPath))
+					{
+						OutExternalObjectsPaths.Add(ExternalObjectsPath);
+						AssetRegistryModule.Get().ScanPathsSynchronous({ ExternalObjectsPath }, /*bForceRescan*/true, /*bIgnoreDenyListScanFilters*/true);
+
+						TArray<FAssetData> ExternalObjectAssets;
+						AssetRegistryModule.Get().GetAssetsByPath(FName(*ExternalObjectsPath), ExternalObjectAssets, /*bRecursive*/true, bOnlyIncludeOnDiskAssets);
+
+						for (const FAssetData& ExternalObjectAsset : ExternalObjectAssets)
+						{
+							// We don't expose the early dependency search exit to the external objects/actors since to the users their are same the outer package that own these objects
+							AllDependencies.Add(ExternalObjectAsset.PackageName);
+							RecursiveGetDependencies(ExternalObjectAsset.PackageName, AllDependencies, OutExternalObjectsPaths, ExcludedDependencies, ShouldExcludeFromDependenciesSearch);
+						}
+					}
+				}
+			}
+		}
+	}
+}
