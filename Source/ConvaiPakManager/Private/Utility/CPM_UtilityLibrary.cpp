@@ -26,6 +26,17 @@
 #include "Utility/CPM_Log.h"
 #include "Interfaces/IPluginManager.h"
 
+#include "Misc/Paths.h"
+#include "HAL/PlatformProcess.h"
+#include "Misc/ScopeExit.h"
+
+#if PLATFORM_WINDOWS
+#include "Windows/AllowWindowsPlatformTypes.h"
+#include <windows.h>
+#include <shellapi.h>
+#include "Windows/HideWindowsPlatformTypes.h"
+#endif
+
 FString UCPM_UtilityLibrary::OpenFileDialog(const TArray<FString>& Extensions)
 {
 	FString FilePath;
@@ -1017,4 +1028,181 @@ int32 UCPM_UtilityLibrary::GetPrimaryAssetLabelChunkId(const FString& AssetPath)
 	
 	// 3) Read out the ChunkId from its rules
 	return Label->Rules.ChunkId;
+}
+
+bool UCPM_UtilityLibrary::CPM_SetSystemEnvVar(const FString& VarName, const FString& VarValue)
+{
+#if PLATFORM_WINDOWS
+    constexpr bool bWaitForExit = true;
+	
+    if (VarName.IsEmpty())
+    {
+        UE_LOG(LogTemp, Error, TEXT("SetSystemEnvVarElevated: VarName is empty."));
+        return false;
+    }
+
+    // Build a unique temporary bat filename in the user's temp folder
+    FString TempDir = FPlatformProcess::UserTempDir();
+    const FString SafeName = VarName.Replace(TEXT(" "), TEXT("_"));
+    const FString BatFilePath = FPaths::Combine(TempDir, FString::Printf(TEXT("UE_SetEnv_%s.bat"), *SafeName));
+
+    // Escape double-quotes in the value so the batch line is valid
+    const FString EscapedValue = VarValue.Replace(TEXT("\""), TEXT("\\\""));
+
+    // Simpler, friendly messages and auto-close after 5 seconds
+    FString BatContent = FString::Printf(
+        TEXT("@echo off\r\n")
+        TEXT("echo ======================================\r\n")
+        TEXT("echo Updating system settings...\r\n")
+        TEXT("echo Please wait a moment.\r\n")
+        TEXT("echo ======================================\r\n")
+        TEXT("setx %s \"%s\" /M >nul\r\n")
+        TEXT("if %%ERRORLEVEL%% EQU 0 (\r\n")
+        TEXT("  echo Done! The new setting has been saved.\r\n")
+        TEXT(") else (\r\n")
+        TEXT("  echo Oops, something went wrong while saving.\r\n")
+        TEXT(")\r\n")
+        TEXT("echo This window will close automatically in 3 seconds...\r\n")
+        TEXT("timeout /t 3 >nul\r\n")
+        TEXT("exit\r\n"),
+        *VarName,
+        *EscapedValue
+    );
+
+    // Write the bat file (ForceAnsi makes the .bat plain ASCII-friendly)
+    if (!FFileHelper::SaveStringToFile(BatContent, *BatFilePath, FFileHelper::EEncodingOptions::ForceAnsi))
+    {
+        UE_LOG(LogTemp, Error, TEXT("Failed to write batch file to: %s"), *BatFilePath);
+        return false;
+    }
+
+    // Prepare ShellExecuteEx to run: cmd.exe /K "<bat>"
+    FString CmdParams = FString::Printf(TEXT("/K \"%s\""), *BatFilePath);
+
+    SHELLEXECUTEINFOW ExecInfo;
+    FMemory::Memzero(&ExecInfo, sizeof(ExecInfo));
+    ExecInfo.cbSize = sizeof(SHELLEXECUTEINFOW);
+    ExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
+    ExecInfo.hwnd = nullptr;
+    ExecInfo.lpVerb = TEXT("runas");
+    ExecInfo.lpFile = TEXT("cmd.exe");
+    ExecInfo.lpParameters = *CmdParams;
+    ExecInfo.lpDirectory = nullptr;
+    ExecInfo.nShow = SW_SHOWNORMAL;
+
+    BOOL bExec = ShellExecuteExW(&ExecInfo);
+    if (!bExec)
+    {
+        DWORD Err = GetLastError();
+        UE_LOG(LogTemp, Error, TEXT("ShellExecuteExW failed (could not launch elevated process). GetLastError=%u"), Err);
+        IFileManager::Get().Delete(*BatFilePath);
+        return false;
+    }
+
+    if (bWaitForExit && ExecInfo.hProcess)
+    {
+        WaitForSingleObject(ExecInfo.hProcess, INFINITE);
+        CloseHandle(ExecInfo.hProcess);
+
+        if (!IFileManager::Get().Delete(*BatFilePath))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Could not delete temp batch file: %s"), *BatFilePath);
+        }
+    }
+    else if (ExecInfo.hProcess)
+    {
+        CloseHandle(ExecInfo.hProcess);
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("Launched elevated batch to set system env var: %s = %s"), *VarName, *VarValue);
+    return true;
+
+#else
+    UE_LOG(LogTemp, Warning, TEXT("SetSystemEnvVarElevated is only implemented on Windows."));
+    return false;
+#endif
+}
+
+bool UCPM_UtilityLibrary::CPM_GetSystemEnvVar(const FString& VarName, FString& OutVarValue)
+{
+#if PLATFORM_WINDOWS
+	if (VarName.IsEmpty())
+	{
+		UE_LOG(LogTemp, Error, TEXT("GetSystemEnvVar: VarName is empty."));
+		return false;
+	}
+
+	HKEY hKey;
+	LONG Result = RegOpenKeyExW(
+		HKEY_LOCAL_MACHINE,
+		L"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+		0,
+		KEY_READ,
+		&hKey
+	);
+
+	if (Result != ERROR_SUCCESS)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Failed to open system environment registry key. Error=%ld"), Result);
+		return false;
+	}
+
+	DWORD DataSize = 0;
+	DWORD Type = 0;
+
+	// First, get size of data
+	Result = RegQueryValueExW(
+		hKey,
+		*VarName,
+		nullptr,
+		&Type,
+		nullptr,
+		&DataSize
+	);
+
+	if (Result != ERROR_SUCCESS || Type != REG_EXPAND_SZ && Type != REG_SZ)
+	{
+		RegCloseKey(hKey);
+		UE_LOG(LogTemp, Warning, TEXT("Variable %s does not exist or is not a string."), *VarName);
+		return false;
+	}
+
+	// Allocate buffer
+	TArray<wchar_t> Buffer;
+	Buffer.SetNum(DataSize / sizeof(wchar_t));
+
+	Result = RegQueryValueExW(
+		hKey,
+		*VarName,
+		nullptr,
+		nullptr,
+		reinterpret_cast<BYTE*>(Buffer.GetData()),
+		&DataSize
+	);
+
+	RegCloseKey(hKey);
+
+	if (Result != ERROR_SUCCESS)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Failed to read variable %s from registry. Error=%ld"), *VarName, Result);
+		return false;
+	}
+
+	// Convert to FString
+	OutVarValue = FString(Buffer.GetData());
+	return true;
+#else
+	UE_LOG(LogTemp, Warning, TEXT("GetSystemEnvVar is only implemented on Windows."));
+	return false;
+#endif
+}
+
+int64 UCPM_UtilityLibrary::CPM_GetFileSize(const FString& FilePath)
+{
+	if (!FPaths::FileExists(FilePath))
+	{
+		return -1;
+	}
+
+	return IFileManager::Get().FileSize(*FilePath);
 }

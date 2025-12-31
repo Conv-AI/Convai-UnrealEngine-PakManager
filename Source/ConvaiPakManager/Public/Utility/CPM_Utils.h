@@ -222,6 +222,9 @@ struct FCPM_AssetData
 	FString file_name;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Data")
+	FString visibility;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Data")
 	TArray<FString> tags;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Data")
@@ -260,6 +263,9 @@ struct FCPM_ModdingMetadata
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Response")
     FString AssetType;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Asset Response")
+	bool bIsMetahuman;
 };
 
 UENUM(BlueprintType)
