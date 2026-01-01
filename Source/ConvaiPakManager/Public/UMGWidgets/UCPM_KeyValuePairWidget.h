@@ -33,75 +33,75 @@ public:
 	//~ Properties
 
 	/** Initial pairs to populate when the widget is created */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Key Value Pairs")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Convai|PakManager|KeyValuePairWidget")
 	TArray<FCPM_KeyValuePair> InitialPairs;
 
 	/** Hint text displayed in empty Key input fields */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Appearance")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Convai|PakManager|KeyValuePairWidget|Appearance")
 	FText KeyHintText;
 
 	/** Hint text displayed in empty Value input fields */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Appearance")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Convai|PakManager|KeyValuePairWidget|Appearance")
 	FText ValueHintText;
 
 	/** Text displayed on the Add button */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Appearance")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Convai|PakManager|KeyValuePairWidget|Appearance")
 	FText AddButtonText;
 
 	/** Whether to show the Add button */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Appearance")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Convai|PakManager|KeyValuePairWidget|Appearance")
 	bool bShowAddButton;
 
 	/** Maximum height before the list becomes scrollable */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Appearance", meta = (ClampMin = "50.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Convai|PakManager|KeyValuePairWidget|Appearance", meta = (ClampMin = "50.0"))
 	float MaxHeight;
 
 	//~ Events
 
 	/** Called whenever the list changes (add/remove/edit) */
-	UPROPERTY(BlueprintAssignable, Category = "Key Value Pairs|Events")
+	UPROPERTY(BlueprintAssignable, Category = "Convai|PakManager|KeyValuePairWidget|Events")
 	FCPM_OnKeyValuePairsChanged OnPairsChanged;
 
 	//~ Blueprint Functions
 
 	/** Get all key-value pairs (including empty ones) */
-	UFUNCTION(BlueprintCallable, Category = "Key Value Pairs")
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
 	TArray<FCPM_KeyValuePair> GetAllPairs() const;
 
 	/** Get only valid pairs (where key is not empty) */
-	UFUNCTION(BlueprintCallable, Category = "Key Value Pairs")
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
 	TArray<FCPM_KeyValuePair> GetValidPairs() const;
 
 	/** Set all pairs (replaces existing) */
-	UFUNCTION(BlueprintCallable, Category = "Key Value Pairs")
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
 	void SetPairs(const TArray<FCPM_KeyValuePair>& InPairs);
 
 	/** Add a new empty pair */
-	UFUNCTION(BlueprintCallable, Category = "Key Value Pairs")
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
 	void AddEmptyPair();
 
-	/** Add a new pair with specified key and value */
-	UFUNCTION(BlueprintCallable, Category = "Key Value Pairs")
-	void AddPair(const FString& Key, const FString& Value);
+	/** Add a pair using the full struct (allows setting all control options like locked keys, dropdowns, etc.) */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
+	void AddPair(const FCPM_KeyValuePair& Pair);
 
 	/** Remove the pair at the specified index */
-	UFUNCTION(BlueprintCallable, Category = "Key Value Pairs")
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
 	void RemovePairAt(int32 Index);
 
 	/** Clear all pairs */
-	UFUNCTION(BlueprintCallable, Category = "Key Value Pairs")
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
 	void ClearAllPairs();
 
 	/** Get the number of pairs */
-	UFUNCTION(BlueprintCallable, Category = "Key Value Pairs")
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
 	int32 GetPairCount() const;
 
 	/** Convert pairs to a TMap for easy lookup */
-	UFUNCTION(BlueprintCallable, Category = "Key Value Pairs")
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
 	TMap<FString, FString> GetPairsAsMap() const;
 
 	/** Set pairs from a TMap */
-	UFUNCTION(BlueprintCallable, Category = "Key Value Pairs")
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
 	void SetPairsFromMap(const TMap<FString, FString>& InMap);
 
 protected:

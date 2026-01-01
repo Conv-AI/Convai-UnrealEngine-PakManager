@@ -42,7 +42,7 @@ TSharedRef<SWidget> UCPM_KeyValuePairWidget::RebuildWidget()
 #if WITH_EDITOR
 const FText UCPM_KeyValuePairWidget::GetPaletteCategory()
 {
-	return LOCTEXT("PaletteCategory", "Convai");
+	return LOCTEXT("PaletteCategory", "Convai|PakManager");
 }
 #endif
 
@@ -93,11 +93,11 @@ void UCPM_KeyValuePairWidget::AddEmptyPair()
 	}
 }
 
-void UCPM_KeyValuePairWidget::AddPair(const FString& Key, const FString& Value)
+void UCPM_KeyValuePairWidget::AddPair(const FCPM_KeyValuePair& Pair)
 {
 	if (SlateWidget.IsValid())
 	{
-		SlateWidget->AddPair(FCPM_KeyValuePair(Key, Value));
+		SlateWidget->AddPair(Pair);
 	}
 }
 

@@ -149,8 +149,7 @@ TSharedRef<SCPM_KeyValueRow> SCPM_KeyValueList::CreateRowWidget(int32 Index, con
 {
 	return SNew(SCPM_KeyValueRow)
 		.RowIndex(Index)
-		.Key(Pair.Key)
-		.Value(Pair.Value)
+		.Pair(Pair)
 		.KeyHintText(KeyHintText)
 		.ValueHintText(ValueHintText)
 		.ShowRemoveButton(true)

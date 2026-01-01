@@ -3,6 +3,7 @@
 #include "SlateWidgets/Composite/SCPM_KeyValueRow.h"
 #include "SlateWidgets/Core/SCPM_EditableTextBox.h"
 #include "SlateWidgets/Core/SCPM_IconButton.h"
+#include "SlateWidgets/Core/SCPM_ComboBox.h"
 #include "SlateWidgets/CPM_SlateStyle.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
@@ -10,10 +11,36 @@
 void SCPM_KeyValueRow::Construct(const FArguments& InArgs)
 {
 	RowIndex = InArgs._RowIndex;
-	CurrentKey = InArgs._Key;
-	CurrentValue = InArgs._Value;
+	CurrentPair = InArgs._Pair;
 	OnRemoveRequestedCallback = InArgs._OnRemoveRequested;
 	OnKeyValueChangedCallback = InArgs._OnKeyValueChanged;
+
+	// Determine if remove button should be visible
+	const bool bShowRemove = InArgs._ShowRemoveButton && !CurrentPair.bCannotRemove;
+
+	// Create the value widget - either text input or dropdown
+	TSharedPtr<SWidget> ValueWidget;
+	
+	if (CurrentPair.bUseDropdownForValue && CurrentPair.ValueOptions.Num() > 0)
+	{
+		// Use dropdown for value
+		SAssignNew(ValueComboBox, SCPM_ComboBox)
+			.Options(CurrentPair.ValueOptions)
+			.SelectedOption(CurrentPair.Value)
+			.OnSelectionChanged(this, &SCPM_KeyValueRow::HandleValueDropdownChanged);
+		
+		ValueWidget = ValueComboBox;
+	}
+	else
+	{
+		// Use text input for value
+		SAssignNew(ValueInput, SCPM_EditableTextBox)
+			.Text(FText::FromString(CurrentPair.Value))
+			.HintText(InArgs._ValueHintText)
+			.OnTextChanged(this, &SCPM_KeyValueRow::HandleValueChanged);
+		
+		ValueWidget = ValueInput;
+	}
 
 	ChildSlot
 	[
@@ -25,20 +52,18 @@ void SCPM_KeyValueRow::Construct(const FArguments& InArgs)
 		.Padding(0, 0, 4, 0)
 		[
 			SAssignNew(KeyInput, SCPM_EditableTextBox)
-			.Text(FText::FromString(CurrentKey))
+			.Text(FText::FromString(CurrentPair.Key))
 			.HintText(InArgs._KeyHintText)
+			.IsReadOnly(CurrentPair.bKeyReadOnly)
 			.OnTextChanged(this, &SCPM_KeyValueRow::HandleKeyChanged)
 		]
 		
-		// Value Input
+		// Value Widget (text input or dropdown)
 		+ SHorizontalBox::Slot()
 		.FillWidth(1.0f)
 		.Padding(4, 0, 4, 0)
 		[
-			SAssignNew(ValueInput, SCPM_EditableTextBox)
-			.Text(FText::FromString(CurrentValue))
-			.HintText(InArgs._ValueHintText)
-			.OnTextChanged(this, &SCPM_KeyValueRow::HandleValueChanged)
+			ValueWidget.ToSharedRef()
 		]
 		
 		// Remove Button (conditionally shown)
@@ -48,7 +73,7 @@ void SCPM_KeyValueRow::Construct(const FArguments& InArgs)
 		.Padding(4, 0, 0, 0)
 		[
 			SNew(SBox)
-			.Visibility(InArgs._ShowRemoveButton ? EVisibility::Visible : EVisibility::Collapsed)
+			.Visibility(bShowRemove ? EVisibility::Visible : EVisibility::Collapsed)
 			[
 				SNew(SCPM_IconButton)
 				.IconText(SCPM_IconButton::GetRemoveIcon())
@@ -66,26 +91,38 @@ FString SCPM_KeyValueRow::GetKey() const
 	{
 		return KeyInput->GetText().ToString();
 	}
-	return CurrentKey;
+	return CurrentPair.Key;
 }
 
 FString SCPM_KeyValueRow::GetValue() const
 {
+	// Check if using dropdown
+	if (ValueComboBox.IsValid())
+	{
+		return ValueComboBox->GetSelectedOption();
+	}
+	
+	// Using text input
 	if (ValueInput.IsValid())
 	{
 		return ValueInput->GetText().ToString();
 	}
-	return CurrentValue;
+	
+	return CurrentPair.Value;
 }
 
 FCPM_KeyValuePair SCPM_KeyValueRow::GetKeyValuePair() const
 {
-	return FCPM_KeyValuePair(GetKey(), GetValue());
+	// Create a copy and update key/value while preserving control flags
+	FCPM_KeyValuePair Result = CurrentPair;
+	Result.Key = GetKey();
+	Result.Value = GetValue();
+	return Result;
 }
 
 void SCPM_KeyValueRow::SetKey(const FString& InKey)
 {
-	CurrentKey = InKey;
+	CurrentPair.Key = InKey;
 	if (KeyInput.IsValid())
 	{
 		KeyInput->SetText(FText::FromString(InKey));
@@ -94,8 +131,13 @@ void SCPM_KeyValueRow::SetKey(const FString& InKey)
 
 void SCPM_KeyValueRow::SetValue(const FString& InValue)
 {
-	CurrentValue = InValue;
-	if (ValueInput.IsValid())
+	CurrentPair.Value = InValue;
+	
+	if (ValueComboBox.IsValid())
+	{
+		ValueComboBox->SetSelectedOption(InValue);
+	}
+	else if (ValueInput.IsValid())
 	{
 		ValueInput->SetText(FText::FromString(InValue));
 	}
@@ -103,19 +145,27 @@ void SCPM_KeyValueRow::SetValue(const FString& InValue)
 
 void SCPM_KeyValueRow::SetKeyValuePair(const FCPM_KeyValuePair& InPair)
 {
+	// Note: Control flags cannot be changed after construction
+	// Only key and value are updated
 	SetKey(InPair.Key);
 	SetValue(InPair.Value);
 }
 
 void SCPM_KeyValueRow::HandleKeyChanged(const FText& NewText)
 {
-	CurrentKey = NewText.ToString();
+	CurrentPair.Key = NewText.ToString();
 	NotifyChanged();
 }
 
 void SCPM_KeyValueRow::HandleValueChanged(const FText& NewText)
 {
-	CurrentValue = NewText.ToString();
+	CurrentPair.Value = NewText.ToString();
+	NotifyChanged();
+}
+
+void SCPM_KeyValueRow::HandleValueDropdownChanged(const FString& NewValue)
+{
+	CurrentPair.Value = NewValue;
 	NotifyChanged();
 }
 
@@ -127,6 +177,5 @@ FReply SCPM_KeyValueRow::HandleRemoveClicked()
 
 void SCPM_KeyValueRow::NotifyChanged()
 {
-	OnKeyValueChangedCallback.ExecuteIfBound(RowIndex, CurrentKey, CurrentValue);
+	OnKeyValueChangedCallback.ExecuteIfBound(RowIndex, CurrentPair.Key, CurrentPair.Value);
 }
-
