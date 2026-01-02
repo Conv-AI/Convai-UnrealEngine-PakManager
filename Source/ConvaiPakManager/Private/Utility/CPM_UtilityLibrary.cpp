@@ -468,17 +468,37 @@ void UCPM_UtilityLibrary::CPM_LogMessage(const FString& Message, const ECPM_LogL
 	}
 }
 
-FString UCPM_UtilityLibrary::GetPythonScriptDirectory()
+FString UCPM_UtilityLibrary::CPM_GetPluginDirectory()
 {
 	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("ConvaiPakManager"));
-        if (Plugin.IsValid())
-        {
-            return FPaths::Combine(Plugin->GetBaseDir(), TEXT("Scripts/"));
-        }
+	if (Plugin.IsValid())
+	{
+		return Plugin->GetBaseDir();
+	}
     
-        // Fallback or error message if plugin is not found
-        UE_LOG(LogTemp, Warning, TEXT("ConvaiPakManager plugin not found!"));
-        return FString();
+	// Fallback or error message if plugin is not found
+	UE_LOG(LogTemp, Warning, TEXT("ConvaiPakManager plugin not found!"));
+	return FString();
+}
+
+FString UCPM_UtilityLibrary::GetPythonScriptDirectory()
+{
+	return FPaths::Combine(CPM_GetPluginDirectory(), TEXT("Scripts/"));
+}
+
+FString UCPM_UtilityLibrary::CPM_GetUIDefaultsDirectory()
+{
+	return FPaths::Combine(CPM_GetPluginDirectory(), TEXT("Resources"), TEXT("UI"), TEXT("Defaults"));
+}
+
+FString UCPM_UtilityLibrary::CPM_GetUIDefaultsFilePath(const FString& Filename)
+{
+	const FString Directory = CPM_GetUIDefaultsDirectory();
+	if (Directory.IsEmpty())
+	{
+		return FString();
+	}
+	return FPaths::Combine(Directory, Filename);
 }
 
 UClass* UCPM_UtilityLibrary::CPM_LoadClassByPath(const FString& ClassPath)

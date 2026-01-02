@@ -87,6 +87,14 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static FString GetPythonScriptDirectory();
+	
+	/** Get the ui default directory path (PluginDir/Resources/UI/Defaults/) */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static FString CPM_GetUIDefaultsDirectory();
+
+	/** Get a specific default JSON file path by filename (e.g., "InitialAssetInfo.json") */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+	static FString CPM_GetUIDefaultsFilePath(const FString& Filename);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static UClass* CPM_LoadClassByPath(const FString& ClassPath);
@@ -129,6 +137,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|System|Environment")
 	static int64 CPM_GetFileSize(const FString& FilePath);
 	
+	static FString CPM_GetPluginDirectory();
 	static bool Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height, TArray<FColor>& Pixels);
 	static bool Texture2DToBytes(UTexture2D* Texture2D, const EImageFormat ImageFormat, TArray<uint8>& ByteArray, const int32 CompressionQuality);
 	static bool PixelsToBytes(const int32 Width, const int32 Height, const TArray<FColor>& Pixels, const EImageFormat ImageFormat, TArray<uint8>& ByteArray, const int32 CompressionQuality);

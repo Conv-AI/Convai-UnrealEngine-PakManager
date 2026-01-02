@@ -1,0 +1,47 @@
+{
+	"Pairs": [
+		{
+			"Key": "Asset_Name",
+			"Value": "",
+			"bKeyReadOnly": true,
+			"bUseDropdownForValue": false,
+			"bCannotRemove": true,
+			"ValueOptions": []
+		},
+		{
+			"Key": "Asset_ Description",
+			"Value": "",
+			"bKeyReadOnly": true,
+			"bUseDropdownForValue": false,
+			"bCannotRemove": true,
+			"ValueOptions": []
+		},
+		{
+			"Key": "Gender",
+			"Value": "Male",
+			"bKeyReadOnly": true,
+			"bUseDropdownForValue": true,
+			"bCannotRemove": true,
+			"ValueOptions": [
+				"Male",
+				"Female"
+			]
+		},
+		{
+			"Key": "Category",
+			"Value": "",
+			"bKeyReadOnly": true,
+			"bUseDropdownForValue": false,
+			"bCannotRemove": true,
+			"ValueOptions": []
+		},
+		{
+			"Key": "Cloth_Description",
+			"Value": "",
+			"bKeyReadOnly": true,
+			"bUseDropdownForValue": false,
+			"bCannotRemove": true,
+			"ValueOptions": []
+		}
+	]
+}
