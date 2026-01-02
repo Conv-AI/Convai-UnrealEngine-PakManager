@@ -138,9 +138,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
 	bool RemoveByKey(const FString& Key);
 
-	/** Add or update a pair. If key exists, updates value. If not, adds new pair. */
+	/** Add or update a pair. If key exists, updates the pair. If not, adds new pair. */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
-	void AddOrUpdatePair(const FString& Key, const FString& Value);
+	void AddOrUpdatePair(const FCPM_KeyValuePair& InPair);
 
 protected:
 	//~ UWidget Interface

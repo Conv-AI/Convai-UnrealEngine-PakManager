@@ -108,8 +108,8 @@ public:
 	/** Remove the pair with the specified key. Returns true if found and removed. */
 	bool RemoveByKey(const FString& Key);
 
-	/** Add or update a pair. If key exists, updates value. If not, adds new pair. */
-	void AddOrUpdatePair(const FString& Key, const FString& Value);
+	/** Add or update a pair. If key exists, updates the pair. If not, adds new pair. */
+	void AddOrUpdatePair(const FCPM_KeyValuePair& InPair);
 
 private:
 	/** Container for row widgets */

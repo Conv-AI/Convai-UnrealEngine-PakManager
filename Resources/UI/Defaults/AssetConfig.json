@@ -7,7 +7,7 @@
 			"bValueReadOnly": true,
 			"bUseDropdownForValue": false,
 			"bCannotRemove": true,
-			"bIsHidden": true,
+			"bIsHidden": false,
 			"valueOptions": []
 		},
 		{
@@ -34,7 +34,7 @@
 			"key": "Asset_Type",
 			"value": "",
 			"bKeyReadOnly": true,
-			"bVal ueReadOnly": true,
+			"bValueReadOnly": true,
 			"bUseDropdownForValue": false,
 			"bCannotRemove": true,
 			"bIsHidden": true,
@@ -71,7 +71,7 @@
 			"valueOptions": []
 		},
 		{
-			"key": "Asset_ Description",
+			"key": "Asset_Description",
 			"value": "",
 			"bKeyReadOnly": true,
 			"bValueReadOnly": false,

@@ -213,11 +213,11 @@ bool UCPM_KeyValuePairWidget::RemoveByKey(const FString& Key)
 	return false;
 }
 
-void UCPM_KeyValuePairWidget::AddOrUpdatePair(const FString& Key, const FString& Value)
+void UCPM_KeyValuePairWidget::AddOrUpdatePair(const FCPM_KeyValuePair& InPair)
 {
 	if (SlateWidget.IsValid())
 	{
-		SlateWidget->AddOrUpdatePair(Key, Value);
+		SlateWidget->AddOrUpdatePair(InPair);
 	}
 }
 

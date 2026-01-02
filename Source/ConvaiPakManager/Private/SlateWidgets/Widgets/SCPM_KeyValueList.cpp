@@ -260,19 +260,19 @@ bool SCPM_KeyValueList::RemoveByKey(const FString& Key)
 	return false;
 }
 
-void SCPM_KeyValueList::AddOrUpdatePair(const FString& Key, const FString& Value)
+void SCPM_KeyValueList::AddOrUpdatePair(const FCPM_KeyValuePair& InPair)
 {
-	const int32 Index = FindKeyIndex(Key);
+	const int32 Index = FindKeyIndex(InPair.Key);
 	if (Index != INDEX_NONE && RowWidgets[Index].IsValid())
 	{
-		// Key exists, update value
-		RowWidgets[Index]->SetValue(Value);
+		// Key exists, update the entire pair
+		RowWidgets[Index]->SetKeyValuePair(InPair);
 		NotifyListChanged();
 	}
 	else
 	{
 		// Key doesn't exist, add new pair
-		AddPair(FCPM_KeyValuePair(Key, Value));
+		AddPair(InPair);
 	}
 }
 
