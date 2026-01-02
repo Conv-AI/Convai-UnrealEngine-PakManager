@@ -49,10 +49,9 @@ const FText UCPM_KeyValuePairWidget::GetPaletteCategory()
 void UCPM_KeyValuePairWidget::SynchronizeProperties()
 {
 	Super::SynchronizeProperties();
-
-	// If we need to update properties at runtime, we'd rebuild here
-	// For now, most properties are only set at construction
 }
+
+//~ Basic Getters
 
 TArray<FCPM_KeyValuePair> UCPM_KeyValuePairWidget::GetAllPairs() const
 {
@@ -72,6 +71,26 @@ TArray<FCPM_KeyValuePair> UCPM_KeyValuePairWidget::GetValidPairs() const
 	return TArray<FCPM_KeyValuePair>();
 }
 
+int32 UCPM_KeyValuePairWidget::GetPairCount() const
+{
+	if (SlateWidget.IsValid())
+	{
+		return SlateWidget->GetPairCount();
+	}
+	return 0;
+}
+
+TMap<FString, FString> UCPM_KeyValuePairWidget::GetPairsAsMap() const
+{
+	if (SlateWidget.IsValid())
+	{
+		return SlateWidget->GetPairsAsMap();
+	}
+	return TMap<FString, FString>();
+}
+
+//~ Basic Setters
+
 void UCPM_KeyValuePairWidget::SetPairs(const TArray<FCPM_KeyValuePair>& InPairs)
 {
 	if (SlateWidget.IsValid())
@@ -82,14 +101,6 @@ void UCPM_KeyValuePairWidget::SetPairs(const TArray<FCPM_KeyValuePair>& InPairs)
 	{
 		// Store for when widget is built
 		InitialPairs = InPairs;
-	}
-}
-
-void UCPM_KeyValuePairWidget::AddEmptyPair()
-{
-	if (SlateWidget.IsValid())
-	{
-		SlateWidget->AddPair(FCPM_KeyValuePair());
 	}
 }
 
@@ -117,40 +128,100 @@ void UCPM_KeyValuePairWidget::ClearAllPairs()
 	}
 }
 
-int32 UCPM_KeyValuePairWidget::GetPairCount() const
+//~ Index-Based Access
+
+FCPM_KeyValuePair UCPM_KeyValuePairWidget::GetPairByIndex(int32 Index) const
 {
 	if (SlateWidget.IsValid())
 	{
-		return SlateWidget->GetPairCount();
+		return SlateWidget->GetPairByIndex(Index);
 	}
-	return 0;
+	return FCPM_KeyValuePair();
 }
 
-TMap<FString, FString> UCPM_KeyValuePairWidget::GetPairsAsMap() const
+bool UCPM_KeyValuePairWidget::SetPairByIndex(int32 Index, const FCPM_KeyValuePair& InPair)
 {
-	TMap<FString, FString> Result;
-	
-	TArray<FCPM_KeyValuePair> Pairs = GetValidPairs();
-	for (const FCPM_KeyValuePair& Pair : Pairs)
+	if (SlateWidget.IsValid())
 	{
-		Result.Add(Pair.Key, Pair.Value);
+		return SlateWidget->SetPairByIndex(Index, InPair);
 	}
-	
-	return Result;
+	return false;
 }
 
-void UCPM_KeyValuePairWidget::SetPairsFromMap(const TMap<FString, FString>& InMap)
+//~ Key-Based Lookup
+
+bool UCPM_KeyValuePairWidget::HasKey(const FString& Key) const
 {
-	TArray<FCPM_KeyValuePair> Pairs;
-	Pairs.Reserve(InMap.Num());
-	
-	for (const TPair<FString, FString>& MapPair : InMap)
+	if (SlateWidget.IsValid())
 	{
-		Pairs.Add(FCPM_KeyValuePair(MapPair.Key, MapPair.Value));
+		return SlateWidget->HasKey(Key);
 	}
-	
-	SetPairs(Pairs);
+	return false;
 }
+
+int32 UCPM_KeyValuePairWidget::FindKeyIndex(const FString& Key) const
+{
+	if (SlateWidget.IsValid())
+	{
+		return SlateWidget->FindKeyIndex(Key);
+	}
+	return INDEX_NONE;
+}
+
+FString UCPM_KeyValuePairWidget::GetValueForKey(const FString& Key) const
+{
+	if (SlateWidget.IsValid())
+	{
+		return SlateWidget->GetValueForKey(Key);
+	}
+	return FString();
+}
+
+FCPM_KeyValuePair UCPM_KeyValuePairWidget::GetPairByKey(const FString& Key) const
+{
+	if (SlateWidget.IsValid())
+	{
+		return SlateWidget->GetPairByKey(Key);
+	}
+	return FCPM_KeyValuePair();
+}
+
+bool UCPM_KeyValuePairWidget::SetValueForKey(const FString& Key, const FString& NewValue)
+{
+	if (SlateWidget.IsValid())
+	{
+		return SlateWidget->SetValueForKey(Key, NewValue);
+	}
+	return false;
+}
+
+bool UCPM_KeyValuePairWidget::SetPairByKey(const FString& Key, const FCPM_KeyValuePair& InPair)
+{
+	if (SlateWidget.IsValid())
+	{
+		return SlateWidget->SetPairByKey(Key, InPair);
+	}
+	return false;
+}
+
+bool UCPM_KeyValuePairWidget::RemoveByKey(const FString& Key)
+{
+	if (SlateWidget.IsValid())
+	{
+		return SlateWidget->RemoveByKey(Key);
+	}
+	return false;
+}
+
+void UCPM_KeyValuePairWidget::AddOrUpdatePair(const FString& Key, const FString& Value)
+{
+	if (SlateWidget.IsValid())
+	{
+		SlateWidget->AddOrUpdatePair(Key, Value);
+	}
+}
+
+//~ Event Handler
 
 void UCPM_KeyValuePairWidget::HandleListChanged(const TArray<FCPM_KeyValuePair>& Pairs)
 {
@@ -158,4 +229,3 @@ void UCPM_KeyValuePairWidget::HandleListChanged(const TArray<FCPM_KeyValuePair>&
 }
 
 #undef LOCTEXT_NAMESPACE
-

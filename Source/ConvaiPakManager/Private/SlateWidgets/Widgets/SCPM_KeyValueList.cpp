@@ -145,6 +145,137 @@ int32 SCPM_KeyValueList::GetPairCount() const
 	return RowWidgets.Num();
 }
 
+TMap<FString, FString> SCPM_KeyValueList::GetPairsAsMap() const
+{
+	TMap<FString, FString> Result;
+	
+	for (const TSharedPtr<SCPM_KeyValueRow>& Row : RowWidgets)
+	{
+		if (Row.IsValid())
+		{
+			FCPM_KeyValuePair Pair = Row->GetKeyValuePair();
+			if (Pair.IsValid())
+			{
+				Result.Add(Pair.Key, Pair.Value);
+			}
+		}
+	}
+	
+	return Result;
+}
+
+//~ Index-Based Access
+
+FCPM_KeyValuePair SCPM_KeyValueList::GetPairByIndex(int32 Index) const
+{
+	if (RowWidgets.IsValidIndex(Index) && RowWidgets[Index].IsValid())
+	{
+		return RowWidgets[Index]->GetKeyValuePair();
+	}
+	return FCPM_KeyValuePair();
+}
+
+bool SCPM_KeyValueList::SetPairByIndex(int32 Index, const FCPM_KeyValuePair& InPair)
+{
+	if (RowWidgets.IsValidIndex(Index) && RowWidgets[Index].IsValid())
+	{
+		RowWidgets[Index]->SetKeyValuePair(InPair);
+		NotifyListChanged();
+		return true;
+	}
+	return false;
+}
+
+//~ Key-Based Lookup
+
+bool SCPM_KeyValueList::HasKey(const FString& Key) const
+{
+	return FindKeyIndex(Key) != INDEX_NONE;
+}
+
+int32 SCPM_KeyValueList::FindKeyIndex(const FString& Key) const
+{
+	for (int32 i = 0; i < RowWidgets.Num(); ++i)
+	{
+		if (RowWidgets[i].IsValid() && RowWidgets[i]->GetKey() == Key)
+		{
+			return i;
+		}
+	}
+	return INDEX_NONE;
+}
+
+FString SCPM_KeyValueList::GetValueForKey(const FString& Key) const
+{
+	const int32 Index = FindKeyIndex(Key);
+	if (Index != INDEX_NONE && RowWidgets[Index].IsValid())
+	{
+		return RowWidgets[Index]->GetValue();
+	}
+	return FString();
+}
+
+FCPM_KeyValuePair SCPM_KeyValueList::GetPairByKey(const FString& Key) const
+{
+	const int32 Index = FindKeyIndex(Key);
+	if (Index != INDEX_NONE && RowWidgets[Index].IsValid())
+	{
+		return RowWidgets[Index]->GetKeyValuePair();
+	}
+	return FCPM_KeyValuePair();
+}
+
+bool SCPM_KeyValueList::SetValueForKey(const FString& Key, const FString& NewValue)
+{
+	const int32 Index = FindKeyIndex(Key);
+	if (Index != INDEX_NONE && RowWidgets[Index].IsValid())
+	{
+		RowWidgets[Index]->SetValue(NewValue);
+		NotifyListChanged();
+		return true;
+	}
+	return false;
+}
+
+bool SCPM_KeyValueList::SetPairByKey(const FString& Key, const FCPM_KeyValuePair& InPair)
+{
+	const int32 Index = FindKeyIndex(Key);
+	if (Index != INDEX_NONE && RowWidgets[Index].IsValid())
+	{
+		RowWidgets[Index]->SetKeyValuePair(InPair);
+		NotifyListChanged();
+		return true;
+	}
+	return false;
+}
+
+bool SCPM_KeyValueList::RemoveByKey(const FString& Key)
+{
+	const int32 Index = FindKeyIndex(Key);
+	if (Index != INDEX_NONE)
+	{
+		RemovePairAt(Index);
+		return true;
+	}
+	return false;
+}
+
+void SCPM_KeyValueList::AddOrUpdatePair(const FString& Key, const FString& Value)
+{
+	const int32 Index = FindKeyIndex(Key);
+	if (Index != INDEX_NONE && RowWidgets[Index].IsValid())
+	{
+		// Key exists, update value
+		RowWidgets[Index]->SetValue(Value);
+		NotifyListChanged();
+	}
+	else
+	{
+		// Key doesn't exist, add new pair
+		AddPair(FCPM_KeyValuePair(Key, Value));
+	}
+}
+
 TSharedRef<SCPM_KeyValueRow> SCPM_KeyValueList::CreateRowWidget(int32 Index, const FCPM_KeyValuePair& Pair)
 {
 	return SNew(SCPM_KeyValueRow)
@@ -198,7 +329,7 @@ void SCPM_KeyValueList::HandleRowRemoveRequested(int32 RowIndex)
 	RemovePairAt(RowIndex);
 }
 
-void SCPM_KeyValueList::HandleRowValueChanged(int32 RowIndex, const FString& Key, const FString& Value)
+void SCPM_KeyValueList::HandleRowValueChanged(int32 RowIndex, const FString& Key, const FString& Value) const
 {
 	// Just notify - the row already stores the updated value
 	NotifyListChanged();
@@ -210,7 +341,7 @@ FReply SCPM_KeyValueList::HandleAddClicked()
 	return FReply::Handled();
 }
 
-void SCPM_KeyValueList::NotifyListChanged()
+void SCPM_KeyValueList::NotifyListChanged() const
 {
 	if (OnListChangedCallback.IsBound())
 	{

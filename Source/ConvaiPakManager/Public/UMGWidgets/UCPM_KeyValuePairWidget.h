@@ -62,7 +62,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Convai|PakManager|KeyValuePairWidget|Events")
 	FCPM_OnKeyValuePairsChanged OnPairsChanged;
 
-	//~ Blueprint Functions
+	//~ Basic Getters
 
 	/** Get all key-value pairs (including empty ones) */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
@@ -72,15 +72,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
 	TArray<FCPM_KeyValuePair> GetValidPairs() const;
 
+	/** Get the number of pairs */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
+	int32 GetPairCount() const;
+
+	/** Convert pairs to a TMap for easy lookup */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
+	TMap<FString, FString> GetPairsAsMap() const;
+
+	//~ Basic Setters
+
 	/** Set all pairs (replaces existing) */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
 	void SetPairs(const TArray<FCPM_KeyValuePair>& InPairs);
 
-	/** Add a new empty pair */
-	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
-	void AddEmptyPair();
-
-	/** Add a pair using the full struct (allows setting all control options like locked keys, dropdowns, etc.) */
+	/** Add a pair using the full struct (allows setting all control options) */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
 	void AddPair(const FCPM_KeyValuePair& Pair);
 
@@ -92,17 +98,49 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
 	void ClearAllPairs();
 
-	/** Get the number of pairs */
-	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
-	int32 GetPairCount() const;
+	//~ Index-Based Access
 
-	/** Convert pairs to a TMap for easy lookup */
+	/** Get pair at the specified index. Returns empty pair if invalid. */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
-	TMap<FString, FString> GetPairsAsMap() const;
+	FCPM_KeyValuePair GetPairByIndex(int32 Index) const;
 
-	/** Set pairs from a TMap */
+	/** Set pair at the specified index. Returns true if successful. */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
-	void SetPairsFromMap(const TMap<FString, FString>& InMap);
+	bool SetPairByIndex(int32 Index, const FCPM_KeyValuePair& InPair);
+
+	//~ Key-Based Lookup
+
+	/** Check if a key exists in the list */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
+	bool HasKey(const FString& Key) const;
+
+	/** Find the index of a key. Returns -1 if not found. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
+	int32 FindKeyIndex(const FString& Key) const;
+
+	/** Get the value for a specific key. Returns empty string if not found. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
+	FString GetValueForKey(const FString& Key) const;
+
+	/** Get the full pair for a specific key. Returns empty pair if not found. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
+	FCPM_KeyValuePair GetPairByKey(const FString& Key) const;
+
+	/** Set/update the value for a specific key. Returns true if key was found. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
+	bool SetValueForKey(const FString& Key, const FString& NewValue);
+
+	/** Set/update the full pair for a specific key. Returns true if key was found. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
+	bool SetPairByKey(const FString& Key, const FCPM_KeyValuePair& InPair);
+
+	/** Remove the pair with the specified key. Returns true if found and removed. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
+	bool RemoveByKey(const FString& Key);
+
+	/** Add or update a pair. If key exists, updates value. If not, adds new pair. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
+	void AddOrUpdatePair(const FString& Key, const FString& Value);
 
 protected:
 	//~ UWidget Interface

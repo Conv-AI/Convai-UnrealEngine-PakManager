@@ -49,11 +49,21 @@ public:
 	/** Constructs this widget */
 	void Construct(const FArguments& InArgs);
 
+	//~ Basic Getters
+
 	/** Get all key-value pairs */
 	TArray<FCPM_KeyValuePair> GetAllPairs() const;
 
 	/** Get only non-empty pairs (where key is not empty) */
 	TArray<FCPM_KeyValuePair> GetValidPairs() const;
+
+	/** Get the number of pairs */
+	int32 GetPairCount() const;
+
+	/** Convert pairs to a TMap for easy lookup (only valid pairs) */
+	TMap<FString, FString> GetPairsAsMap() const;
+
+	//~ Basic Setters
 
 	/** Set all pairs (replaces existing) */
 	void SetPairs(const TArray<FCPM_KeyValuePair>& InPairs);
@@ -67,8 +77,39 @@ public:
 	/** Clear all pairs */
 	void ClearAllPairs();
 
-	/** Get the number of pairs */
-	int32 GetPairCount() const;
+	//~ Index-Based Access
+
+	/** Get pair at the specified index. Returns empty pair if invalid. */
+	FCPM_KeyValuePair GetPairByIndex(int32 Index) const;
+
+	/** Set pair at the specified index. Returns true if successful. */
+	bool SetPairByIndex(int32 Index, const FCPM_KeyValuePair& InPair);
+
+	//~ Key-Based Lookup
+
+	/** Check if a key exists in the list */
+	bool HasKey(const FString& Key) const;
+
+	/** Find the index of a key. Returns INDEX_NONE (-1) if not found. */
+	int32 FindKeyIndex(const FString& Key) const;
+
+	/** Get the value for a specific key. Returns empty string if not found. */
+	FString GetValueForKey(const FString& Key) const;
+
+	/** Get the full pair for a specific key. Returns empty pair if not found. */
+	FCPM_KeyValuePair GetPairByKey(const FString& Key) const;
+
+	/** Set/update the value for a specific key. Returns true if key was found. */
+	bool SetValueForKey(const FString& Key, const FString& NewValue);
+
+	/** Set/update the full pair for a specific key. Returns true if key was found. */
+	bool SetPairByKey(const FString& Key, const FCPM_KeyValuePair& InPair);
+
+	/** Remove the pair with the specified key. Returns true if found and removed. */
+	bool RemoveByKey(const FString& Key);
+
+	/** Add or update a pair. If key exists, updates value. If not, adds new pair. */
+	void AddOrUpdatePair(const FString& Key, const FString& Value);
 
 private:
 	/** Container for row widgets */
@@ -100,12 +141,12 @@ private:
 	void HandleRowRemoveRequested(int32 RowIndex);
 
 	/** Handle row value change */
-	void HandleRowValueChanged(int32 RowIndex, const FString& Key, const FString& Value);
+	void HandleRowValueChanged(int32 RowIndex, const FString& Key, const FString& Value) const;
 
 	/** Handle add button click */
 	FReply HandleAddClicked();
 
 	/** Notify listeners of list changes */
-	void NotifyListChanged();
+	void NotifyListChanged() const;
 };
 
