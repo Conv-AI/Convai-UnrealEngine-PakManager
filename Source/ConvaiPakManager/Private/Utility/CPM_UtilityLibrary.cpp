@@ -199,6 +199,50 @@ void UCPM_UtilityLibrary::GetAssetMetaDataString(FString& MetaData, const int32&
 	FFileHelper::LoadFileToString(MetaData, *GetPakMetadataFilePath(ChunkId));
 }
 
+bool UCPM_UtilityLibrary::GetAssetMetadata(FCPM_AssetMetadata& OutMetadata, const int32& ChunkId)
+{
+	FString MetaDataString;
+	GetAssetMetaDataString(MetaDataString, ChunkId);
+
+	if (MetaDataString.IsEmpty())
+	{
+		return false;
+	}
+
+	TSharedPtr<FJsonObject> JsonObject;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(MetaDataString);
+
+	if (!FJsonSerializer::Deserialize(Reader, JsonObject) || !JsonObject.IsValid())
+	{
+		return false;
+	}
+
+	// Parse the metadata fields
+	JsonObject->TryGetStringField(TEXT("version"), OutMetadata.Version);
+	JsonObject->TryGetStringField(TEXT("scene_id"), OutMetadata.SceneId);
+	JsonObject->TryGetStringField(TEXT("entity_id"), OutMetadata.EntityId);
+	JsonObject->TryGetStringField(TEXT("root_path"), OutMetadata.RootPath);
+	JsonObject->TryGetStringField(TEXT("asset_type"), OutMetadata.AssetType);
+	JsonObject->TryGetStringField(TEXT("level_name"), OutMetadata.LevelName);
+	JsonObject->TryGetStringField(TEXT("content_path"), OutMetadata.ContentPath);
+	JsonObject->TryGetStringField(TEXT("project_name"), OutMetadata.ProjectName);
+	JsonObject->TryGetStringField(TEXT("blueprint_class"), OutMetadata.BlueprintClass);
+	JsonObject->TryGetStringField(TEXT("blueprint_class_path"), OutMetadata.BlueprintClassPath);
+	JsonObject->TryGetStringField(TEXT("asset_name"), OutMetadata.AssetName);
+	JsonObject->TryGetStringField(TEXT("asset_description"), OutMetadata.AssetDescription);
+
+	// Parse entity data if present
+	const TSharedPtr<FJsonObject>* EntityDataObj;
+	if (JsonObject->TryGetObjectField(TEXT("entity_data"), EntityDataObj))
+	{
+		(*EntityDataObj)->TryGetStringField(TEXT("scene_name"), OutMetadata.EntityData.SceneName);
+		(*EntityDataObj)->TryGetStringField(TEXT("scene_description"), OutMetadata.EntityData.SceneDescription);
+		(*EntityDataObj)->TryGetStringField(TEXT("scene_metadata"), OutMetadata.EntityData.SceneMetaData);
+	}
+
+	return true;
+}
+
 FString UCPM_UtilityLibrary::GetPakMetadataFilePath(const int32& ChunkId)
 {
 	return FPaths::Combine(FPaths::ProjectDir(),TEXT("ConvaiEssentials"),FString::Printf(TEXT("ChunkId_%d"), ChunkId), FString::Printf(TEXT("PakMetaData_%d.json"), ChunkId));
