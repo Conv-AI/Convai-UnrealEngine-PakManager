@@ -18,12 +18,16 @@ public:
 	SLATE_BEGIN_ARGS(SCPM_ComboBox)
 		: _Options()
 		, _SelectedOption()
+		, _IsEnabled(true)
 	{}
 		/** The list of options to display */
 		SLATE_ARGUMENT(TArray<FString>, Options)
 		
 		/** The initially selected option */
 		SLATE_ARGUMENT(FString, SelectedOption)
+		
+		/** Whether the combo box is enabled (can be interacted with) */
+		SLATE_ARGUMENT(bool, IsEnabled)
 		
 		/** Called when the selection changes */
 		SLATE_EVENT(FOnCPMComboBoxSelectionChanged, OnSelectionChanged)
@@ -44,6 +48,9 @@ public:
 
 	/** Get the available options */
 	const TArray<FString>& GetOptions() const { return Options; }
+
+	/** Set whether the combo box is enabled */
+	void SetIsEnabled(bool bInIsEnabled);
 
 private:
 	/** The combo box widget */

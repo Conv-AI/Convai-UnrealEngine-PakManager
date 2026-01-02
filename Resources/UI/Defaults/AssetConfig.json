@@ -1,47 +1,117 @@
 {
 	"Pairs": [
 		{
-			"Key": "Asset_Name",
-			"Value": "",
+			"key": "Asset_ID",
+			"value": "",
 			"bKeyReadOnly": true,
+			"bValueReadOnly": true,
 			"bUseDropdownForValue": false,
 			"bCannotRemove": true,
-			"ValueOptions": []
+			"bIsHidden": true,
+			"valueOptions": []
 		},
 		{
-			"Key": "Asset_ Description",
-			"Value": "",
+			"key": "Project_Name",
+			"value": "",
 			"bKeyReadOnly": true,
+			"bValueReadOnly": true,
 			"bUseDropdownForValue": false,
 			"bCannotRemove": true,
-			"ValueOptions": []
+			"bIsHidden": false,
+			"valueOptions": []
 		},
 		{
-			"Key": "Gender",
-			"Value": "Male",
+			"key": "Current_UE_Version",
+			"value": "",
 			"bKeyReadOnly": true,
+			"bValueReadOnly": true,
+			"bUseDropdownForValue": false,
+			"bCannotRemove": true,
+			"bIsHidden": false,
+			"valueOptions": []
+		},
+		{
+			"key": "Asset_Type",
+			"value": "",
+			"bKeyReadOnly": true,
+			"bVal ueReadOnly": true,
+			"bUseDropdownForValue": false,
+			"bCannotRemove": true,
+			"bIsHidden": true,
+			"valueOptions": []
+		},
+		{
+			"key": "Pak_File_Path_Win",
+			"value": "",
+			"bKeyReadOnly": true,
+			"bValueReadOnly": true,
+			"bUseDropdownForValue": false,
+			"bCannotRemove": true,
+			"bIsHidden": false,
+			"valueOptions": []
+		},
+		{
+			"key": "Pak_File_Path_Linux",
+			"value": "",
+			"bKeyReadOnly": true,
+			"bValueReadOnly": true,
+			"bUseDropdownForValue": false,
+			"bCannotRemove": true,
+			"bIsHidden": false,
+			"valueOptions": []
+		},
+		{
+			"key": "Asset_Name",
+			"value": "",
+			"bKeyReadOnly": true,
+			"bValueReadOnly": false,
+			"bUseDropdownForValue": false,
+			"bCannotRemove": true,
+			"bIsHidden": false,
+			"valueOptions": []
+		},
+		{
+			"key": "Asset_ Description",
+			"value": "",
+			"bKeyReadOnly": true,
+			"bValueReadOnly": false,
+			"bUseDropdownForValue": false,
+			"bCannotRemove": true,
+			"bIsHidden": false,
+			"valueOptions": []
+		},
+		{
+			"key": "Gender",
+			"value": "Male",
+			"bKeyReadOnly": true,
+			"bValueReadOnly": false,
 			"bUseDropdownForValue": true,
 			"bCannotRemove": true,
-			"ValueOptions": [
+			"bIsHidden": false,
+			"valueOptions": [
 				"Male",
 				"Female"
 			]
 		},
 		{
-			"Key": "Category",
-			"Value": "",
+			"key": "Category",
+			"value": "",
 			"bKeyReadOnly": true,
+			"bValueReadOnly": false,
 			"bUseDropdownForValue": false,
 			"bCannotRemove": true,
-			"ValueOptions": []
+			"bIsHidden": false,
+			"valueOptions": []
 		},
 		{
-			"Key": "Cloth_Description",
-			"Value": "",
+			"key": "Cloth_Description",
+			"value": "",
 			"bKeyReadOnly": true,
-			"bUseDropdownForValue": false,
+			"bValueReadOnly": false,
+			"bUseDropdownFo rValue": false,
 			"bCannotRemove": true,
-			"ValueOptions": []
+			"bIsHidden": false,
+			"valueOptions": []
 		}
 	]
 }

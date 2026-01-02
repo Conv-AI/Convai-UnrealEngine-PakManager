@@ -66,8 +66,14 @@ public:
 	/** Set the value */
 	void SetValue(const FString& InValue);
 
-	/** Set both key and value (preserves control flags) */
+	/** Set both key and value, and updates visibility */
 	void SetKeyValuePair(const FCPM_KeyValuePair& InPair);
+
+	/** Set whether this row is hidden */
+	void SetIsHidden(bool bHidden);
+
+	/** Check if this row is hidden */
+	bool IsHidden() const { return CurrentPair.bIsHidden; }
 
 	/** Get the row index */
 	int32 GetRowIndex() const { return RowIndex; }

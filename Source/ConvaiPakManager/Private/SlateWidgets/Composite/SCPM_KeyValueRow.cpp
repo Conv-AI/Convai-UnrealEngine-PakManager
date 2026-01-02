@@ -27,6 +27,7 @@ void SCPM_KeyValueRow::Construct(const FArguments& InArgs)
 		SAssignNew(ValueComboBox, SCPM_ComboBox)
 			.Options(CurrentPair.ValueOptions)
 			.SelectedOption(CurrentPair.Value)
+			.IsEnabled(!CurrentPair.bValueReadOnly)
 			.OnSelectionChanged(this, &SCPM_KeyValueRow::HandleValueDropdownChanged);
 		
 		ValueWidget = ValueComboBox;
@@ -37,6 +38,7 @@ void SCPM_KeyValueRow::Construct(const FArguments& InArgs)
 		SAssignNew(ValueInput, SCPM_EditableTextBox)
 			.Text(FText::FromString(CurrentPair.Value))
 			.HintText(InArgs._ValueHintText)
+			.IsReadOnly(CurrentPair.bValueReadOnly)
 			.OnTextChanged(this, &SCPM_KeyValueRow::HandleValueChanged);
 		
 		ValueWidget = ValueInput;
@@ -83,6 +85,9 @@ void SCPM_KeyValueRow::Construct(const FArguments& InArgs)
 			]
 		]
 	];
+
+	// Set initial visibility based on hidden flag
+	SetVisibility(CurrentPair.bIsHidden ? EVisibility::Collapsed : EVisibility::Visible);
 }
 
 FString SCPM_KeyValueRow::GetKey() const
@@ -145,10 +150,22 @@ void SCPM_KeyValueRow::SetValue(const FString& InValue)
 
 void SCPM_KeyValueRow::SetKeyValuePair(const FCPM_KeyValuePair& InPair)
 {
-	// Note: Control flags cannot be changed after construction
-	// Only key and value are updated
+	// Update key and value
 	SetKey(InPair.Key);
 	SetValue(InPair.Value);
+	
+	// Update visibility if changed
+	if (CurrentPair.bIsHidden != InPair.bIsHidden)
+	{
+		CurrentPair.bIsHidden = InPair.bIsHidden;
+		SetIsHidden(InPair.bIsHidden);
+	}
+}
+
+void SCPM_KeyValueRow::SetIsHidden(bool bHidden)
+{
+	CurrentPair.bIsHidden = bHidden;
+	SetVisibility(bHidden ? EVisibility::Collapsed : EVisibility::Visible);
 }
 
 void SCPM_KeyValueRow::HandleKeyChanged(const FText& NewText)

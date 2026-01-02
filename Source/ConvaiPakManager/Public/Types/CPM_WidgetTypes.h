@@ -26,6 +26,10 @@ struct CONVAIPAKMANAGER_API FCPM_KeyValuePair
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Convai|PakManager|KeyValuePair|Control")
 	bool bKeyReadOnly;
 
+	/** If true, the value field cannot be edited by the user */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Convai|PakManager|KeyValuePair|Control")
+	bool bValueReadOnly;
+
 	/** If true, shows a dropdown instead of text input for the value */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Convai|PakManager|KeyValuePair|Control")
 	bool bUseDropdownForValue;
@@ -33,6 +37,10 @@ struct CONVAIPAKMANAGER_API FCPM_KeyValuePair
 	/** If true, the remove button is hidden for this pair */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Convai|PakManager|KeyValuePair|Control")
 	bool bCannotRemove;
+
+	/** If true, this pair is hidden from the UI but still accessible via code */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Convai|PakManager|KeyValuePair|Control")
+	bool bIsHidden;
 
 	/** Options to show in dropdown when bUseDropdownForValue is true */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Convai|PakManager|KeyValuePair|Control", meta = (EditCondition = "bUseDropdownForValue"))
@@ -42,8 +50,10 @@ struct CONVAIPAKMANAGER_API FCPM_KeyValuePair
 		: Key(TEXT(""))
 		, Value(TEXT(""))
 		, bKeyReadOnly(false)
+		, bValueReadOnly(false)
 		, bUseDropdownForValue(false)
 		, bCannotRemove(false)
+		, bIsHidden(false)
 	{
 	}
 
@@ -51,8 +61,10 @@ struct CONVAIPAKMANAGER_API FCPM_KeyValuePair
 		: Key(InKey)
 		, Value(InValue)
 		, bKeyReadOnly(false)
+		, bValueReadOnly(false)
 		, bUseDropdownForValue(false)
 		, bCannotRemove(false)
+		, bIsHidden(false)
 	{
 	}
 
@@ -80,6 +92,24 @@ struct CONVAIPAKMANAGER_API FCPM_KeyValuePair
 		FCPM_KeyValuePair Pair(InKey, InValue);
 		Pair.bKeyReadOnly = true;
 		Pair.bCannotRemove = true;
+		return Pair;
+	}
+
+	/** Create a fully read-only pair (display only - cannot edit key or value) */
+	static FCPM_KeyValuePair MakeReadOnly(const FString& InKey, const FString& InValue = FString())
+	{
+		FCPM_KeyValuePair Pair(InKey, InValue);
+		Pair.bKeyReadOnly = true;
+		Pair.bValueReadOnly = true;
+		Pair.bCannotRemove = true;
+		return Pair;
+	}
+
+	/** Create a hidden pair (stored but not visible in UI) */
+	static FCPM_KeyValuePair MakeHidden(const FString& InKey, const FString& InValue = FString())
+	{
+		FCPM_KeyValuePair Pair(InKey, InValue);
+		Pair.bIsHidden = true;
 		return Pair;
 	}
 

@@ -43,6 +43,7 @@ void SCPM_ComboBox::Construct(const FArguments& InArgs)
 			.InitiallySelectedItem(SelectedItem)
 			.OnSelectionChanged(this, &SCPM_ComboBox::HandleSelectionChanged)
 			.Font(CPMStyle::BodyFont())
+			.IsEnabled(InArgs._IsEnabled)
 		]
 	];
 }
@@ -114,6 +115,14 @@ void SCPM_ComboBox::RebuildOptionsSource()
 	for (const FString& Option : Options)
 	{
 		OptionsSource.Add(MakeShared<FString>(Option));
+	}
+}
+
+void SCPM_ComboBox::SetIsEnabled(bool bInIsEnabled)
+{
+	if (ComboBox.IsValid())
+	{
+		ComboBox->SetEnabled(bInIsEnabled);
 	}
 }
 
