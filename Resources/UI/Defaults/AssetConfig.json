@@ -1,7 +1,7 @@
 {
 	"Pairs": [
 		{
-			"key": "Asset_ID",
+			"key": "asset_id",
 			"value": "",
 			"bKeyReadOnly": true,
 			"bValueReadOnly": true,
@@ -11,7 +11,7 @@
 			"valueOptions": []
 		},
 		{
-			"key": "Project_Name",
+			"key": "project_name",
 			"value": "",
 			"bKeyReadOnly": true,
 			"bValueReadOnly": true,
@@ -21,7 +21,7 @@
 			"valueOptions": []
 		},
 		{
-			"key": "Current_UE_Version",
+			"key": "current_ue_version",
 			"value": "",
 			"bKeyReadOnly": true,
 			"bValueReadOnly": true,
@@ -31,7 +31,7 @@
 			"valueOptions": []
 		},
 		{
-			"key": "Asset_Type",
+			"key": "asset_type",
 			"value": "",
 			"bKeyReadOnly": true,
 			"bValueReadOnly": true,
@@ -41,7 +41,7 @@
 			"valueOptions": []
 		},
 		{
-			"key": "Pak_File_Path_Win",
+			"key": "pak_file_path_win",
 			"value": "",
 			"bKeyReadOnly": true,
 			"bValueReadOnly": true,
@@ -51,7 +51,7 @@
 			"valueOptions": []
 		},
 		{
-			"key": "Pak_File_Path_Linux",
+			"key": "pak_file_path_linux",
 			"value": "",
 			"bKeyReadOnly": true,
 			"bValueReadOnly": true,
@@ -61,7 +61,7 @@
 			"valueOptions": []
 		},
 		{
-			"key": "Asset_Name",
+			"key": "target_avatar_id",
 			"value": "",
 			"bKeyReadOnly": true,
 			"bValueReadOnly": false,
@@ -71,7 +71,7 @@
 			"valueOptions": []
 		},
 		{
-			"key": "Asset_Description",
+			"key": "asset_name",
 			"value": "",
 			"bKeyReadOnly": true,
 			"bValueReadOnly": false,
@@ -81,7 +81,17 @@
 			"valueOptions": []
 		},
 		{
-			"key": "Gender",
+			"key": "asset_description",
+			"value": "",
+			"bKeyReadOnly": true,
+			"bValueReadOnly": false,
+			"bUseDropdownForValue": false,
+			"bCannotRemove": true,
+			"bIsHidden": false,
+			"valueOptions": []
+		},
+		{
+			"key": "gender",
 			"value": "Male",
 			"bKeyReadOnly": true,
 			"bValueReadOnly": false,
@@ -94,7 +104,7 @@
 			]
 		},
 		{
-			"key": "Category",
+			"key": "category",
 			"value": "",
 			"bKeyReadOnly": true,
 			"bValueReadOnly": false,
@@ -104,7 +114,7 @@
 			"valueOptions": []
 		},
 		{
-			"key": "Cloth_Description",
+			"key": "cloth_description",
 			"value": "",
 			"bKeyReadOnly": true,
 			"bValueReadOnly": false,
