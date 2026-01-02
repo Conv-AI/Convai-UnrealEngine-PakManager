@@ -199,7 +199,7 @@ void UCPM_UtilityLibrary::GetAssetMetaDataString(FString& MetaData, const int32&
 	FFileHelper::LoadFileToString(MetaData, *GetPakMetadataFilePath(ChunkId));
 }
 
-bool UCPM_UtilityLibrary::GetAssetMetadata(FCPM_AssetMetadata& OutMetadata, const int32& ChunkId)
+bool UCPM_UtilityLibrary::CPM_GetAssetMetadata(FCPM_AssetMetadata& OutMetadata, const int32& ChunkId)
 {
 	FString MetaDataString;
 	GetAssetMetaDataString(MetaDataString, ChunkId);

@@ -53,7 +53,7 @@ public:
 
 	/** Get parsed asset metadata struct from chunk ID */
 	UFUNCTION(BlueprintCallable, Category="Convai|PakManager")
-	static bool GetAssetMetadata(FCPM_AssetMetadata& OutMetadata, const int32& ChunkId);
+	static bool CPM_GetAssetMetadata(FCPM_AssetMetadata& OutMetadata, const int32& ChunkId);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static FString GetPakMetadataFilePath(const int32& ChunkId);
