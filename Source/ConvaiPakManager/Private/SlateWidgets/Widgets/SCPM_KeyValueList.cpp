@@ -7,6 +7,9 @@
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/SBoxPanel.h"
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
 
 void SCPM_KeyValueList::Construct(const FArguments& InArgs)
 {
@@ -274,6 +277,56 @@ void SCPM_KeyValueList::AddOrUpdatePair(const FCPM_KeyValuePair& InPair)
 		// Key doesn't exist, add new pair
 		AddPair(InPair);
 	}
+}
+
+//~ JSON Export
+
+TSharedPtr<FJsonObject> SCPM_KeyValueList::GetPairsAsJsonObject(const TArray<FString>& KeysToIgnore) const
+{
+	TSharedPtr<FJsonObject> JsonObject = MakeShared<FJsonObject>();
+
+	for (const TSharedPtr<SCPM_KeyValueRow>& Row : RowWidgets)
+	{
+		if (!Row.IsValid())
+		{
+			continue;
+		}
+
+		const FCPM_KeyValuePair Pair = Row->GetKeyValuePair();
+
+		// Skip if key is empty
+		if (Pair.Key.IsEmpty())
+		{
+			continue;
+		}
+
+		// Skip if value is empty
+		if (Pair.Value.IsEmpty())
+		{
+			continue;
+		}
+
+		// Skip if key is in ignore list
+		if (KeysToIgnore.Contains(Pair.Key))
+		{
+			continue;
+		}
+
+		JsonObject->SetStringField(Pair.Key, Pair.Value);
+	}
+
+	return JsonObject;
+}
+
+FString SCPM_KeyValueList::GetPairsAsJsonString(const TArray<FString>& KeysToIgnore) const
+{
+	TSharedPtr<FJsonObject> JsonObject = GetPairsAsJsonObject(KeysToIgnore);
+
+	FString OutputString;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputString);
+	FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
+
+	return OutputString;
 }
 
 TSharedRef<SCPM_KeyValueRow> SCPM_KeyValueList::CreateRowWidget(int32 Index, const FCPM_KeyValuePair& Pair)

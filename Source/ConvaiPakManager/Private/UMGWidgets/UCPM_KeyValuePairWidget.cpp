@@ -221,6 +221,17 @@ void UCPM_KeyValuePairWidget::AddOrUpdatePair(const FCPM_KeyValuePair& InPair)
 	}
 }
 
+//~ JSON Export
+
+FString UCPM_KeyValuePairWidget::GetPairsAsJsonString(const TArray<FString>& KeysToIgnore)
+{
+	if (SlateWidget.IsValid())
+	{
+		return SlateWidget->GetPairsAsJsonString(KeysToIgnore);
+	}
+	return TEXT("{}");
+}
+
 //~ Event Handler
 
 void UCPM_KeyValuePairWidget::HandleListChanged(const TArray<FCPM_KeyValuePair>& Pairs)

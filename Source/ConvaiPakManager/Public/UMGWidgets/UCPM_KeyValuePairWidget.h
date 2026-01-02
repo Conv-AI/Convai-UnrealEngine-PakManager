@@ -142,6 +142,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
 	void AddOrUpdatePair(const FCPM_KeyValuePair& InPair);
 
+	//~ JSON Export
+
+	/**
+	 * Get pairs as a JSON string { "key1": "value1", "key2": "value2" }
+	 * Skips pairs with empty keys or empty values.
+	 * @param KeysToIgnore - Array of keys to exclude from the output
+	 * @return JSON string containing key-value pairs
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|KeyValuePairWidget")
+	FString GetPairsAsJsonString(const TArray<FString>& KeysToIgnore);
+
 protected:
 	//~ UWidget Interface
 	virtual void SynchronizeProperties() override;

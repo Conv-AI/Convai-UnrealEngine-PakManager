@@ -1,0 +1,12 @@
+{
+  "Keys": [
+    "asset_id",
+    "project_name",
+    "current_ue_version",
+    "asset_type",
+    "pak_file_path_win",
+    "pak_file_path_linux",
+    "asset_name",
+    "asset_description"
+  ]
+}

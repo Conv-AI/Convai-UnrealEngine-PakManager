@@ -111,6 +111,22 @@ public:
 	/** Add or update a pair. If key exists, updates the pair. If not, adds new pair. */
 	void AddOrUpdatePair(const FCPM_KeyValuePair& InPair);
 
+	//~ JSON Export
+
+	/** 
+	 * Get pairs as a JSON object { key1: value1, key2: value2 }
+	 * @param KeysToIgnore - Array of keys to exclude from the output
+	 * @return JSON object containing key-value pairs (skips empty values)
+	 */
+	TSharedPtr<FJsonObject> GetPairsAsJsonObject(const TArray<FString>& KeysToIgnore = TArray<FString>()) const;
+
+	/**
+	 * Get pairs as a JSON string { "key1": "value1", "key2": "value2" }
+	 * @param KeysToIgnore - Array of keys to exclude from the output
+	 * @return JSON string containing key-value pairs (skips empty values)
+	 */
+	FString GetPairsAsJsonString(const TArray<FString>& KeysToIgnore = TArray<FString>()) const;
+
 private:
 	/** Container for row widgets */
 	TSharedPtr<class SVerticalBox> RowsContainer;
