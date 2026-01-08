@@ -545,6 +545,21 @@ FString UCPM_UtilityLibrary::CPM_GetUIDefaultsFilePath(const FString& Filename)
 	return FPaths::Combine(Directory, Filename);
 }
 
+FString UCPM_UtilityLibrary::CPM_GetConfigDefaultsDirectory()
+{
+	return FPaths::Combine(CPM_GetPluginDirectory(), TEXT("Resources"), TEXT("Config"), TEXT("Defaults"));
+}
+
+FString UCPM_UtilityLibrary::CPM_GetConfigDefaultsFilePath(const FString& Filename)
+{
+	const FString Directory = CPM_GetConfigDefaultsDirectory();
+	if (Directory.IsEmpty())
+	{
+		return FString();
+	}
+	return FPaths::Combine(Directory, Filename);
+}
+
 UClass* UCPM_UtilityLibrary::CPM_LoadClassByPath(const FString& ClassPath)
 {
 	FString ObjectPath = ClassPath;

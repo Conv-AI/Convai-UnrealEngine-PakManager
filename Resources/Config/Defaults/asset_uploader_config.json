@@ -1,0 +1,13 @@
+{
+    "unreal-engine": {
+        "windows": {
+            "should-package": false,
+            "configuration": "Shipping"
+        },
+        "linux": {
+            "should-package": true,
+            "configuration": "Shipping"
+        }
+    },
+    "raw-project-upload": true
+}

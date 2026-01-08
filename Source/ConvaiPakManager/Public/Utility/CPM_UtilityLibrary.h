@@ -99,6 +99,12 @@ public:
 	/** Get a specific default JSON file path by filename (e.g., "InitialAssetInfo.json") */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static FString CPM_GetUIDefaultsFilePath(const FString& Filename);
+	
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+    static FString CPM_GetConfigDefaultsDirectory();
+    
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
+    static FString CPM_GetConfigDefaultsFilePath(const FString& Filename);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static UClass* CPM_LoadClassByPath(const FString& ClassPath);

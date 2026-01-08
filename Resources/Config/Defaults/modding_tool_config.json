@@ -1,0 +1,99 @@
+{
+    "cross_compilation": {
+        "toolchain_versions": {
+            "5_5": "v23_clang-18.1.0-rockylinux8",
+            "5_6": "v25_clang-18.1.0-rockylinux8",
+            "5_7": "v26_clang-20.1.8-rockylinux8"
+        },
+        "toolchain_download_urls": {
+            "v23_clang-18.1.0-rockylinux8": "https://cdn.unrealengine.com/CrossToolchain_Linux/v23_clang-18.1.0-rockylinux8.exe",
+            "v25_clang-18.1.0-rockylinux8": "https://cdn.unrealengine.com/CrossToolchain_Linux/v25_clang-18.1.0-rockylinux8.exe",
+            "v26_clang-20.1.8-rockylinux8": "https://cdn.unrealengine.com/CrossToolchain_Linux/v26_clang-20.1.8-rockylinux8.exe"
+        },
+        "toolchain_download_directory": "%APPDATA%\\ConvaiModdingTool\\Downloads",
+        "toolchain_install_directory": "C:\\UnrealToolchains",
+        "environment_variable": "LINUX_MULTIARCH_ROOT"
+    },
+    "github": {
+        "convai_plugin": {
+            "repo": "Conv-AI/Convai-UnrealEngine-SDK",
+            "asset_patterns": [".zip", "plugin", "unreal", "ue"],
+            "post_process": true
+        },
+        "convai_http_plugin": {
+            "repo": "Conv-AI/Convai-UnrealEngine-HTTP",
+            "asset_patterns": [".zip", "plugin", "unreal", "ue"],
+            "post_process": false
+        },
+        "convai_convenience_pack": {
+            "repo": "Conv-AI/Convai-UnrealEngine-CCPack",
+            "asset_patterns": [".zip", "pack", "convai", "convenience"],
+            "post_process": false
+        },
+        "convai_pak_manager": {
+            "repo": "Conv-AI/Convai-UnrealEngine-PakManager",
+            "asset_patterns": [".zip", "plugin", "pak", "manager"],
+            "post_process": false
+        }
+    },
+    "google_drive": {
+        "convai_reallusion_content": "1bAatTW4vYycDbGLeO1pGILc3OVOOR3je"
+    },
+    "project_settings": {
+        "max_project_name_length": 20,
+        "required_plugins": [
+            "ConvAI",
+            "ConvaiHTTP",
+            "ConvaiPakManager",
+            "JsonBlueprintUtilities"
+        ],
+        "metahuman_plugins": [
+            "LiveLinkControlRig",
+            "AppleARKitFaceSupport"
+        ]
+    },
+    "directory_names": {
+        "plugins": "Plugins",
+        "content": "Content",
+        "config": "Config",
+        "essentials": "ConvaiEssentials",
+        "editor": "Editor",
+        "source": "Source",
+        "templates": "Templates"
+    },
+    "file_names": {
+        "config_files": {
+            "default_game": "DefaultGame.ini",
+            "default_engine": "DefaultEngine.ini",
+            "default_input": "DefaultInput.ini"
+        },
+        "metadata_file": "ModdingMetaData.txt",
+        "plugin_files": {
+            "convai": "ConvAI.uplugin",
+            "convai_http": "ConvaiHTTP.uplugin",
+            "convai_pak_manager": "ConvaiPakManager.uplugin"
+        },
+        "build_file": "Convai.Build.cs"
+    },
+    "asset_names": {
+        "uploader_asset": "AssetUploader.uasset",
+        "metahumans_folder": "MetaHumans",
+        "convenience_pack": "ConvaiConveniencePack",
+        "template_name": "TP_Blank"
+    },
+    "unreal_paths": {
+        "engine_binary": "Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool.exe",
+        "version_file": "Engine/Source/Runtime/Launch/Resources/Version.h"
+    },
+    "ubt_configuration": {
+        "appdata_path": "Unreal Engine/UnrealBuildTool/BuildConfiguration.xml",
+        "xml_namespace": "https://www.unrealengine.com/BuildConfiguration",
+        "required_settings": {
+            "bAllowUBALocalExecutor": "false"
+        },
+        "xml_template": {
+            "root_element": "Configuration",
+            "config_element": "BuildConfiguration"
+        }
+    }
+}
