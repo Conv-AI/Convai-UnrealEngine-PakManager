@@ -42,53 +42,80 @@ struct CONVAIPAKMANAGEREDITOR_API FCPM_DependencyCopyOptions
 {
 	GENERATED_BODY()
 
+	// Initializes sensible defaults for automated dependency copy.
+	FCPM_DependencyCopyOptions()
+		: Operation(ECPM_DependencyCopyOp::Copy)                              // Copy assets (not move)
+		, EnginePolicy(ECPM_EngineDependencyPolicy::CopyIntoDestination)      // Keep PAK self-contained
+		, bIncludeSoftDependencies(true)                                      // Include soft refs
+		, bIncludeHardDependencies(true)                                      // Include hard refs
+		, bIncludeSearchableNameDependencies(false)                           // Skip name-only deps
+		, bCopyIfAlreadyInDestination(false)                                  // Avoid re-copying
+		, DestinationSubdir(TEXT(""))                                         // Example: "Imported/MyFeature"
+		, bFixupRedirectors(true)                                             // Fix redirectors after copy/move
+		, bSaveAfterCopy(true)                                                // Save touched packages
+		, bSuppressUI(true)                                                   // Automation-friendly (no dialogs)
+		, bOverwriteExisting(true)                                            // Replace existing destination assets
+		, ExcludedPaths()                                                     // Example: {"/Game/ThirdParty"}
+		, ExcludedModules()                                                   // Example: {"Engine", "MyPlugin"}
+		, ExcludedPackages()                                                  // Example: {"/Game/UI/WBP_Debug"}
+	{
+	}
+
 	/** Copy vs Move (move only allowed for non-engine assets) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
-	ECPM_DependencyCopyOp Operation = ECPM_DependencyCopyOp::Copy;
+	ECPM_DependencyCopyOp Operation;
 
 	/** How to handle Engine content dependencies */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
-	ECPM_EngineDependencyPolicy EnginePolicy = ECPM_EngineDependencyPolicy::CopyIntoDestination;
+	ECPM_EngineDependencyPolicy EnginePolicy;
 
-	/** If true, also include soft references (AssetRegistry "soft" dependencies) */
+	/** Include soft references (AssetRegistry "soft" deps) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
-	bool bIncludeSoftDependencies = true;
+	bool bIncludeSoftDependencies;
 
-	/** If true, include hard package references */
+	/** Include hard package references */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
-	bool bIncludeHardDependencies = true;
+	bool bIncludeHardDependencies;
 
-	/** If true, include searchable name dependencies (usually optional) */
+	/** Include searchable-name deps (optional; usually safe to keep off) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
-	bool bIncludeSearchableNameDependencies = false;
+	bool bIncludeSearchableNameDependencies;
 
-	/** If true, include packages already inside DestinationRoot in the plan (usually false) */
+	/** Include assets already under destination root (usually false to avoid duplicates) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
-	bool bCopyIfAlreadyInDestination = false;
+	bool bCopyIfAlreadyInDestination;
 
-	/** Optional subfolder under destination (e.g. "Imported/MyFeature") */
+	/** Optional subfolder under destination root (empty = place directly under root). Example: "Imported/MyFeature" */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
 	FString DestinationSubdir;
 
-	/** If true, fix redirectors at the end of the operation (when moving/renaming) */
+	/** Fix redirectors after copy/move (recommended when moving/renaming is involved) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
-	bool bFixupRedirectors = true;
+	bool bFixupRedirectors;
 
-	/** If true, save packages after copy operation completes */
+	/** Save packages when done (recommended for automation) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
-	bool bSaveAfterCopy = true;
+	bool bSaveAfterCopy;
 
-	/** If true, suppress the Advanced Copy UI dialog */
+	/** Suppress Advanced Copy UI (recommended for commandlets/CI) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
-	bool bSuppressUI = true;
+	bool bSuppressUI;
 
-	/** If true, overwrite existing assets at destination */
+	/** Overwrite existing destination assets (true = replace, false = keep existing) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
-	bool bOverwriteExisting = true;
+	bool bOverwriteExisting;
 
-	/** Additional package paths to exclude from dependency gathering (e.g., "/Game/SomeFolder") */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
+	/** Skip dependencies under these path prefixes. Example: "/Game/ThirdParty" skips "/Game/ThirdParty/..." */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy|Exclusions")
 	TArray<FString> ExcludedPaths;
+
+	/** Skip dependencies under these mount points/modules. Example: "Engine" skips "/Engine/..." */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy|Exclusions")
+	TArray<FString> ExcludedModules;
+
+	/** Skip these exact packages (exact match). Example: "/Game/UI/WBP_Debug" */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy|Exclusions")
+	TArray<FName> ExcludedPackages;
 };
 
 /**
@@ -265,6 +292,16 @@ public:
 	 * @return                  True if the package is already under the destination
 	 */
 	static bool IsPackageUnderDestination(const FName &PackageName, const FString &DestinationRoot);
+
+	/**
+	 * Checks if a package should be excluded based on the options.
+	 * Checks against ExcludedPaths, ExcludedModules, ExcludedPackages, and ExcludedPlugins.
+	 *
+	 * @param PackageName   The package to check
+	 * @param Options       The copy options containing exclusion lists
+	 * @return              True if the package should be excluded
+	 */
+	static bool ShouldExcludePackage(const FName& PackageName, const FCPM_DependencyCopyOptions& Options);
 
 	/**
 	 * Generates the destination package path for a source package.

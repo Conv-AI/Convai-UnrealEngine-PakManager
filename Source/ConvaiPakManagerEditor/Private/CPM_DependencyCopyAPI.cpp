@@ -59,6 +59,20 @@ void UCPM_DependencyCopyCustomization::Configure(const FString &InDestinationRoo
 			FilterForExcludingDependencies.PackagePaths.Add(FName(*ExcludedPath));
 		}
 	}
+
+	// Add module/plugin exclusions to the filter
+	for (const FString& ExcludedModule : Options.ExcludedModules)
+	{
+		if (!ExcludedModule.IsEmpty())
+		{
+			FString ModulePath = ExcludedModule;
+			if (!ModulePath.StartsWith(TEXT("/")))
+			{
+				ModulePath = TEXT("/") + ModulePath;
+			}
+			FilterForExcludingDependencies.PackagePaths.Add(FName(*ModulePath));
+		}
+	}
 }
 
 FARFilter UCPM_DependencyCopyCustomization::GetARFilter() const
@@ -245,6 +259,54 @@ bool FCPM_DependencyCopyAPI::IsPackageUnderDestination(const FName &PackageName,
 	return PackageStr.StartsWith(DestinationRoot);
 }
 
+bool FCPM_DependencyCopyAPI::ShouldExcludePackage(const FName& PackageName, const FCPM_DependencyCopyOptions& Options)
+{
+	const FString PackageStr = PackageName.ToString();
+
+	// Check exact package name exclusions
+	if (Options.ExcludedPackages.Contains(PackageName))
+	{
+		UE_LOG(LogTemp, Verbose, TEXT("CPM_DependencyCopyAPI: Excluding package %s (exact match in ExcludedPackages)"), *PackageStr);
+		return true;
+	}
+
+	// Check path prefix exclusions
+	for (const FString& ExcludedPath : Options.ExcludedPaths)
+	{
+		if (!ExcludedPath.IsEmpty() && PackageStr.StartsWith(ExcludedPath))
+		{
+			UE_LOG(LogTemp, Verbose, TEXT("CPM_DependencyCopyAPI: Excluding package %s (matches ExcludedPath %s)"), *PackageStr, *ExcludedPath);
+			return true;
+		}
+	}
+
+	// Check module/plugin exclusions (mount point based)
+	for (const FString& ExcludedModule : Options.ExcludedModules)
+	{
+		if (!ExcludedModule.IsEmpty())
+		{
+			// Build the mount point pattern: "ModuleName" -> "/ModuleName/"
+			FString ModulePattern = ExcludedModule;
+			if (!ModulePattern.StartsWith(TEXT("/")))
+			{
+				ModulePattern = TEXT("/") + ModulePattern;
+			}
+			if (!ModulePattern.EndsWith(TEXT("/")))
+			{
+				ModulePattern += TEXT("/");
+			}
+
+			if (PackageStr.StartsWith(ModulePattern))
+			{
+				UE_LOG(LogTemp, Verbose, TEXT("CPM_DependencyCopyAPI: Excluding package %s (matches ExcludedModule %s)"), *PackageStr, *ExcludedModule);
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
 FName FCPM_DependencyCopyAPI::MakeDestinationPackage(
 	const FName &SourcePackage,
 	const FString &DestinationRoot,
@@ -405,17 +467,8 @@ void FCPM_DependencyCopyAPI::RecursiveGatherDependencies(
 			continue;
 		}
 
-		// Check excluded paths
-		bool bIsExcluded = false;
-		for (const FString &ExcludedPath : Options.ExcludedPaths)
-		{
-			if (!ExcludedPath.IsEmpty() && DependencyStr.StartsWith(ExcludedPath))
-			{
-				bIsExcluded = true;
-				break;
-			}
-		}
-		if (bIsExcluded)
+		// Check if this dependency should be excluded
+		if (ShouldExcludePackage(Dependency, Options))
 		{
 			continue;
 		}

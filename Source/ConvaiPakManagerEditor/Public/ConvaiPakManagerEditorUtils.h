@@ -95,15 +95,6 @@ public:
 	);
 
 	/**
-	 * Checks if a package is an Engine asset or from a non-project plugin.
-	 * 
-	 * @param PackageName   The package to check
-	 * @return              True if this is an Engine/non-project asset
-	 */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager|DependencyCopy")
-	static bool IsEnginePackage(const FName& PackageName);
-
-	/**
 	 * Generates the destination package path for a source package.
 	 * Useful for previewing where packages will be copied.
 	 * 
@@ -118,15 +109,7 @@ public:
 		const FString& DestinationRoot,
 		const FString& DestinationSubdir
 	);
-
-	/**
-	 * Creates default options for dependency copy with common settings.
-	 * 
-	 * @return Default options configured for typical use case
-	 */
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager|DependencyCopy")
-	static FCPM_DependencyCopyOptions MakeDefaultDependencyCopyOptions();
-
+	
 	/**
 	 * Analyzes dependencies for a package without copying.
 	 * Returns counts of Engine vs Game dependencies.
