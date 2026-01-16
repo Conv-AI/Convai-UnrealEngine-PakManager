@@ -219,10 +219,27 @@ FName FCPM_DependencyCopyAPI::MakeDestinationPackage(
 	const FString &DestinationSubdir)
 {
 	FString SourceStr = SourcePackage.ToString();
+	
+	// Normalize destination root
+	FString NormalizedDestRoot = DestinationRoot;
+	if (!NormalizedDestRoot.EndsWith(TEXT("/")))
+	{
+		NormalizedDestRoot += TEXT("/");
+	}
+
+	// Check if the source package is already under the destination root
+	if (SourceStr.StartsWith(NormalizedDestRoot) || 
+		(SourceStr.StartsWith(DestinationRoot) && !DestinationRoot.EndsWith(TEXT("/"))))
+	{
+		// Package is already at destination - return unchanged (no transformation needed)
+		UE_LOG(LogTemp, Verbose, TEXT("CPM_DependencyCopyAPI: Package %s is already under destination %s, no transformation needed"),
+			*SourceStr, *DestinationRoot);
+		return SourcePackage;
+	}
 
 	// Extract the relative path from the source
 	// e.g., /Game/Characters/Hero -> Characters/Hero
-	// e.g., /Engine/Content/Textures/Default -> Engine_Content/Textures/Default
+	// e.g., /Engine/Content/Textures/Default -> EngineContent/Textures/Default
 
 	FString RelativePath;
 
