@@ -3,6 +3,7 @@
 
 #include "ConvaiPakManagerEditorUtils.h"
 #include "CPM_Defination.h"
+#include "CPM_DependencyCopyAPI.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Misc/PackageName.h"
 #include "UObject/Package.h"
@@ -659,3 +660,189 @@ void UConvaiPakManagerEditorUtils::RecursiveGetDependencies(const FName& Package
 		}
 	}
 }
+
+// ==================================================================================
+// Dependency Copy API - Blueprint Wrapper Implementations
+// ==================================================================================
+
+bool UConvaiPakManagerEditorUtils::CopyPackageWithDependencies(
+	const FName& SourcePackage,
+	const FString& DestinationRoot,
+	const FCPM_DependencyCopyOptions& Options,
+	FCPM_DependencyCopyReport& OutReport)
+{
+	OutReport = FCPM_DependencyCopyAPI::CopyPackageWithDependencies(SourcePackage, DestinationRoot, Options);
+	return OutReport.bSuccess;
+}
+
+bool UConvaiPakManagerEditorUtils::CopyPackagesWithDependencies(
+	const TArray<FName>& SourcePackages,
+	const FString& DestinationRoot,
+	const FCPM_DependencyCopyOptions& Options,
+	FCPM_DependencyCopyReport& OutReport)
+{
+	OutReport = FCPM_DependencyCopyAPI::CopyPackagesWithDependencies(SourcePackages, DestinationRoot, Options);
+	return OutReport.bSuccess;
+}
+
+bool UConvaiPakManagerEditorUtils::IsEnginePackage(const FName& PackageName)
+{
+	return FCPM_DependencyCopyAPI::IsEnginePackage(PackageName);
+}
+
+FName UConvaiPakManagerEditorUtils::GetDestinationPackagePath(
+	const FName& SourcePackage,
+	const FString& DestinationRoot,
+	const FString& DestinationSubdir)
+{
+	return FCPM_DependencyCopyAPI::MakeDestinationPackage(SourcePackage, DestinationRoot, DestinationSubdir);
+}
+
+FCPM_DependencyCopyOptions UConvaiPakManagerEditorUtils::MakeDefaultDependencyCopyOptions()
+{
+	FCPM_DependencyCopyOptions Options;
+	
+	// Default: Copy operation
+	Options.Operation = ECPM_DependencyCopyOp::Copy;
+	
+	// Default: Copy Engine assets into destination (makes PAK self-contained)
+	Options.EnginePolicy = ECPM_EngineDependencyPolicy::CopyIntoDestination;
+	
+	// Include both hard and soft dependencies by default
+	Options.bIncludeSoftDependencies = true;
+	Options.bIncludeHardDependencies = true;
+	Options.bIncludeSearchableNameDependencies = false;
+	
+	// Don't re-copy things already at destination
+	Options.bCopyIfAlreadyInDestination = false;
+	
+	// No subdirectory by default
+	Options.DestinationSubdir = FString();
+	
+	// Fixup redirectors and save
+	Options.bFixupRedirectors = true;
+	Options.bSaveAfterCopy = true;
+	
+	// Suppress UI for automation
+	Options.bSuppressUI = true;
+	
+	// Overwrite existing by default
+	Options.bOverwriteExisting = true;
+	
+	return Options;
+}
+
+void UConvaiPakManagerEditorUtils::AnalyzePackageDependencies(
+	const FName& PackageName,
+	const FCPM_DependencyCopyOptions& Options,
+	int32& OutTotalDependencies,
+	int32& OutEngineDependencies,
+	int32& OutGameDependencies,
+	TArray<FName>& OutDependencyList)
+{
+	OutTotalDependencies = 0;
+	OutEngineDependencies = 0;
+	OutGameDependencies = 0;
+	OutDependencyList.Reset();
+
+	if (PackageName.IsNone())
+	{
+		return;
+	}
+
+	// Use a local implementation to gather dependencies without copying
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::Get().LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+	TSet<FName> VisitedPackages;
+	TArray<FName> PackagesToProcess;
+	PackagesToProcess.Add(PackageName);
+	VisitedPackages.Add(PackageName);
+
+	// Build dependency query
+	UE::AssetRegistry::FDependencyQuery DependencyQuery;
+	UE::AssetRegistry::EDependencyCategory Category = UE::AssetRegistry::EDependencyCategory::None;
+
+	if (Options.bIncludeHardDependencies)
+	{
+		Category |= UE::AssetRegistry::EDependencyCategory::Package;
+	}
+
+	if (!Options.bIncludeSoftDependencies)
+	{
+		DependencyQuery.Required = UE::AssetRegistry::EDependencyProperty::Hard;
+	}
+
+	if (Options.bIncludeSearchableNameDependencies)
+	{
+		Category |= UE::AssetRegistry::EDependencyCategory::SearchableName;
+	}
+
+	while (PackagesToProcess.Num() > 0)
+	{
+		FName CurrentPackage = PackagesToProcess.Pop();
+
+		TArray<FName> Dependencies;
+		AssetRegistry.GetDependencies(CurrentPackage, Dependencies, Category, DependencyQuery);
+
+		for (const FName& Dependency : Dependencies)
+		{
+			const FString DependencyStr = Dependency.ToString();
+
+			// Skip script packages
+			if (DependencyStr.StartsWith(TEXT("/Script/")))
+			{
+				continue;
+			}
+
+			// Skip already visited
+			if (VisitedPackages.Contains(Dependency))
+			{
+				continue;
+			}
+
+			// Check if package exists
+			const bool bPackageExists = AssetRegistry.GetAssetPackageDataCopy(Dependency).IsSet();
+			if (!bPackageExists)
+			{
+				continue;
+			}
+
+			// Check excluded paths
+			bool bIsExcluded = false;
+			for (const FString& ExcludedPath : Options.ExcludedPaths)
+			{
+				if (!ExcludedPath.IsEmpty() && DependencyStr.StartsWith(ExcludedPath))
+				{
+					bIsExcluded = true;
+					break;
+				}
+			}
+			if (bIsExcluded)
+			{
+				continue;
+			}
+
+			VisitedPackages.Add(Dependency);
+			PackagesToProcess.Add(Dependency);
+		}
+	}
+
+	// Classify results
+	for (const FName& Package : VisitedPackages)
+	{
+		OutDependencyList.Add(Package);
+		
+		if (FCPM_DependencyCopyAPI::IsEnginePackage(Package))
+		{
+			OutEngineDependencies++;
+		}
+		else
+		{
+			OutGameDependencies++;
+		}
+	}
+
+	OutTotalDependencies = OutDependencyList.Num();
+}
+
