@@ -16,6 +16,7 @@
 #include "Editor.h"
 #include "Misc/MessageDialog.h"
 #include "Logging/MessageLog.h"
+#include "Serialization/ArchiveReplaceObjectRef.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(CPM_DependencyCopyAPI)
 
@@ -622,16 +623,19 @@ bool FCPM_DependencyCopyAPI::ExecuteAdvancedCopy(
 			}
 		}
 
-		// Fix up references in copied Engine packages
-		if (CopiedEnginePackages.Num() > 0)
-		{
-			FString FixupError;
-			if (!FixupReferencesInCopiedPackages(SourceToDest, CopiedEnginePackages, FixupError))
-			{
-				UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: Reference fixup warning: %s"), *FixupError);
-				// Don't fail the whole operation for fixup issues
-			}
-		}
+	}
+
+	// Final comprehensive reference fixup pass for ALL copied packages
+	// This is necessary because:
+	// 1. AdvancedCopy only remaps game->game references, not game->engine
+	// 2. Engine assets were duplicated with their original references intact
+	UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Performing comprehensive reference fixup for all copied packages..."));
+	
+	FString FixupError;
+	if (!FixupAllHardReferences(SourceToDest, FixupError))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: Reference fixup warning: %s"), *FixupError);
+		// Don't fail the whole operation for fixup issues, but log it
 	}
 
 	return bSuccess;
@@ -729,46 +733,234 @@ bool FCPM_DependencyCopyAPI::DuplicateAssetManually(
 }
 
 bool FCPM_DependencyCopyAPI::FixupReferencesInCopiedPackages(
-	const TMap<FName, FName> &SourceToDest,
-	const TArray<FName> &CopiedPackages,
-	FString &OutError)
+	const TMap<FName, FName>& SourceToDest,
+	const TArray<FName>& CopiedPackages,
+	FString& OutError)
 {
-	if (CopiedPackages.Num() == 0 || SourceToDest.Num() == 0)
+	// This function is now deprecated in favor of FixupAllHardReferences
+	// Keeping for backwards compatibility
+	return true;
+}
+
+bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
+	const TMap<FName, FName>& SourceToDest,
+	FString& OutError)
+{
+	if (SourceToDest.Num() == 0)
 	{
 		return true;
 	}
 
-	// Build a map of old to new object paths
-	TMap<FSoftObjectPath, FSoftObjectPath> RedirectorMap;
+	FScopedSlowTask SlowTask(3.0f, LOCTEXT("FixingReferences", "Fixing asset references..."));
+	SlowTask.MakeDialog();
 
-	for (const auto &Pair : SourceToDest)
+	// Step 1: Build mapping of old UObject* to new UObject*
+	SlowTask.EnterProgressFrame(1.0f, LOCTEXT("LoadingAssets", "Loading assets for reference fixup..."));
+
+	TMap<UObject*, UObject*> OldToNewObjects;
+	TArray<UPackage*> DestinationPackages;
+	TMap<FSoftObjectPath, FSoftObjectPath> SoftPathRemap;
+
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::Get().LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+	for (const auto& Pair : SourceToDest)
 	{
-		const FString SourcePackageStr = Pair.Key.ToString();
-		const FString DestPackageStr = Pair.Value.ToString();
-		const FString SourceAssetName = FPackageName::GetShortName(SourcePackageStr);
-		const FString DestAssetName = FPackageName::GetShortName(DestPackageStr);
+		const FName& SourcePackageName = Pair.Key;
+		const FName& DestPackageName = Pair.Value;
 
-		FSoftObjectPath OldPath(SourcePackageStr + TEXT(".") + SourceAssetName);
-		FSoftObjectPath NewPath(DestPackageStr + TEXT(".") + DestAssetName);
-
-		RedirectorMap.Add(OldPath, NewPath);
-	}
-
-	// Load copied packages and update references
-	TArray<UPackage *> PackagesToCheck;
-	for (const FName &PackageName : CopiedPackages)
-	{
-		UPackage *Package = LoadPackage(nullptr, *PackageName.ToString(), LOAD_None);
-		if (Package)
+		// Load source package to get its objects
+		UPackage* SourcePackage = LoadPackage(nullptr, *SourcePackageName.ToString(), LOAD_None);
+		if (!SourcePackage)
 		{
-			PackagesToCheck.Add(Package);
+			UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: Could not load source package %s for reference mapping"),
+				*SourcePackageName.ToString());
+			continue;
+		}
+
+		// Load destination package
+		UPackage* DestPackage = LoadPackage(nullptr, *DestPackageName.ToString(), LOAD_None);
+		if (!DestPackage)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: Could not load dest package %s for reference mapping"),
+				*DestPackageName.ToString());
+			continue;
+		}
+
+		DestinationPackages.AddUnique(DestPackage);
+
+		// Get all top-level objects from both packages
+		TArray<UObject*> SourceObjects;
+		TArray<UObject*> DestObjects;
+		
+		// Find the main asset in each package
+		ForEachObjectWithPackage(SourcePackage, [&SourceObjects](UObject* Object)
+		{
+			if (Object && Object->IsAsset())
+			{
+				SourceObjects.Add(Object);
+			}
+			return true;
+		}, false);
+
+		ForEachObjectWithPackage(DestPackage, [&DestObjects](UObject* Object)
+		{
+			if (Object && Object->IsAsset())
+			{
+				DestObjects.Add(Object);
+			}
+			return true;
+		}, false);
+
+		UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Package %s -> %s has %d source objects, %d dest objects"),
+			*SourcePackageName.ToString(), *DestPackageName.ToString(), SourceObjects.Num(), DestObjects.Num());
+
+		// Match source to dest assets by class and name
+		for (UObject* SourceObject : SourceObjects)
+		{
+			if (!SourceObject)
+			{
+				continue;
+			}
+
+			const FString SourceName = SourceObject->GetName();
+			const UClass* SourceClass = SourceObject->GetClass();
+			
+			for (UObject* DestObject : DestObjects)
+			{
+				if (DestObject && DestObject->GetClass() == SourceClass && DestObject->GetName() == SourceName)
+				{
+					// Add to object mapping
+					OldToNewObjects.Add(SourceObject, DestObject);
+					
+					// Add to soft path mapping
+					SoftPathRemap.Add(
+						FSoftObjectPath(SourceObject),
+						FSoftObjectPath(DestObject)
+					);
+					
+					UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Mapped object %s -> %s"),
+						*SourceObject->GetPathName(), *DestObject->GetPathName());
+					break;
+				}
+			}
 		}
 	}
 
-	if (PackagesToCheck.Num() > 0)
+	UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Built reference map with %d object mappings across %d packages"),
+		OldToNewObjects.Num(), DestinationPackages.Num());
+
+	if (OldToNewObjects.Num() == 0)
 	{
-		IAssetTools &AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
-		AssetTools.RenameReferencingSoftObjectPaths(PackagesToCheck, RedirectorMap);
+		OutError = TEXT("No object mappings could be built");
+		return false;
+	}
+
+	// Step 2: Replace hard object references in all destination packages
+	SlowTask.EnterProgressFrame(1.0f, LOCTEXT("ReplacingReferences", "Replacing object references..."));
+
+	int32 TotalReplacedCount = 0;
+
+	for (UPackage* Package : DestinationPackages)
+	{
+		// Get all objects in this package
+		TArray<UObject*> ObjectsInPackage;
+		GetObjectsWithOuter(Package, ObjectsInPackage, true);
+
+		for (UObject* Object : ObjectsInPackage)
+		{
+			// Skip null or invalid objects - NOTE: we want to process VALID objects
+			if (!Object || !IsValid(Object))
+			{
+				continue;
+			}
+
+			// Replace hard object references
+			FArchiveReplaceObjectRef<UObject> ReplaceAr(
+				Object,
+				OldToNewObjects,
+				EArchiveReplaceObjectFlags::IgnoreOuterRef | EArchiveReplaceObjectFlags::IgnoreArchetypeRef
+			);
+
+			int32 ReplacedInThisObject = ReplaceAr.GetCount();
+			if (ReplacedInThisObject > 0)
+			{
+				UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Replaced %d references in %s"),
+					ReplacedInThisObject, *Object->GetPathName());
+			}
+			TotalReplacedCount += ReplacedInThisObject;
+		}
+
+		// Mark package as dirty so it gets saved
+		Package->MarkPackageDirty();
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Replaced %d object references"), TotalReplacedCount);
+
+	// Step 3: Also fix soft object paths
+	if (DestinationPackages.Num() > 0 && SoftPathRemap.Num() > 0)
+	{
+		IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
+		AssetTools.RenameReferencingSoftObjectPaths(DestinationPackages, SoftPathRemap);
+	}
+
+	// Step 4: Save all modified packages
+	SlowTask.EnterProgressFrame(1.0f, LOCTEXT("SavingPackages", "Saving modified packages..."));
+
+	TArray<UPackage*> PackagesToSave;
+	for (UPackage* Package : DestinationPackages)
+	{
+		if (Package->IsDirty())
+		{
+			PackagesToSave.Add(Package);
+		}
+	}
+
+	if (PackagesToSave.Num() > 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Saving %d modified packages..."), PackagesToSave.Num());
+
+		for (UPackage* Package : PackagesToSave)
+		{
+			const FString PackageName = Package->GetName();
+			const FString PackageFilename = FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension());
+
+			// Get the main asset to save
+			TArray<UObject*> ObjectsInPackage;
+			GetObjectsWithOuter(Package, ObjectsInPackage, false);
+			
+			UObject* AssetToSave = nullptr;
+			for (UObject* Obj : ObjectsInPackage)
+			{
+				if (Obj && Obj->IsAsset())
+				{
+					AssetToSave = Obj;
+					break;
+				}
+			}
+
+			if (!AssetToSave)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: No asset found in package %s"), *PackageName);
+				continue;
+			}
+
+			FSavePackageArgs SaveArgs;
+			SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+			SaveArgs.Error = GError;
+			SaveArgs.SaveFlags = SAVE_NoError;
+
+			FSavePackageResultStruct SaveResult = UPackage::Save(Package, AssetToSave, *PackageFilename, SaveArgs);
+
+			if (SaveResult.Result == ESavePackageResult::Success)
+			{
+				UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Saved package with updated references: %s"), *PackageName);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: Failed to save package: %s"), *PackageName);
+			}
+		}
 	}
 
 	return true;

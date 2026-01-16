@@ -329,9 +329,23 @@ private:
 
 	/**
 	 * Updates references in copied packages to point to other copied packages.
+	 * @deprecated Use FixupAllHardReferences instead
 	 */
 	static bool FixupReferencesInCopiedPackages(
-		const TMap<FName, FName> &SourceToDest,
-		const TArray<FName> &CopiedPackages,
-		FString &OutError);
+		const TMap<FName, FName>& SourceToDest,
+		const TArray<FName>& CopiedPackages,
+		FString& OutError);
+
+	/**
+	 * Comprehensive reference fixup that handles both hard and soft object references.
+	 * Loads all source and destination packages, builds object mappings, and uses
+	 * FArchiveReplaceObjectRef to replace all references in copied packages.
+	 * 
+	 * @param SourceToDest  Map of source package names to destination package names
+	 * @param OutError      Error message if operation fails
+	 * @return              True if successful
+	 */
+	static bool FixupAllHardReferences(
+		const TMap<FName, FName>& SourceToDest,
+		FString& OutError);
 };
