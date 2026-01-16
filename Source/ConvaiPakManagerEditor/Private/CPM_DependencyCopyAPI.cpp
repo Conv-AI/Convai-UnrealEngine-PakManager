@@ -510,52 +510,108 @@ bool FCPM_DependencyCopyAPI::ExecuteAdvancedCopy(
 	// Copy Game packages using AdvancedCopy
 	if (GamePackagesToCopy.Num() > 0)
 	{
-		UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Copying %d game packages using AdvancedCopy"), GamePackagesToCopy.Num());
+		UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Processing %d game packages for copy"), GamePackagesToCopy.Num());
 
-		IAssetTools &AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
-
-		FDuplicatedObjects DuplicatedObjects;
-		const bool bForceAutosave = Options.bSaveAfterCopy;
-		const bool bCopyOverAllDestinationOverlaps = Options.bOverwriteExisting;
-
-		bool bCopyResult = AssetTools.AdvancedCopyPackages(
-			GamePackagesToCopy,
-			bForceAutosave,
-			bCopyOverAllDestinationOverlaps,
-			&DuplicatedObjects,
-			Options.bSuppressUI ? EMessageSeverity::Error : EMessageSeverity::Info);
-
-		if (!bCopyResult)
+		// Filter out packages that already exist at destination to avoid World Partition crashes
+		// The AdvancedCopyPackages delete-then-copy approach crashes with WP actors
+		TMap<FString, FString> FilteredPackagesToCopy;
+		for (const auto& Pair : GamePackagesToCopy)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: AdvancedCopyPackages returned false"));
-			// Note: AdvancedCopy can return false but still have copied some packages
-		}
-
-		// Mark copied packages in the report
-		for (const auto &Pair : GamePackagesToCopy)
-		{
-			FName SourceName(*Pair.Key);
-			for (FCPM_DependencyCopyItem &Item : InOutReport.Items)
+			FString DestFilename;
+			const bool bDestExists = FPackageName::DoesPackageExist(Pair.Value, &DestFilename);
+			
+			if (bDestExists)
 			{
-				if (Item.SourcePackage == SourceName)
+				if (Options.bOverwriteExisting)
 				{
-					// Check if package exists at destination
-					FString DestFilename;
-					if (FPackageName::DoesPackageExist(Pair.Value, &DestFilename))
+					// Destination exists but overwrite requested - skip and mark as already copied
+					UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Skipping %s -> %s (destination already exists)"), 
+						*Pair.Key, *Pair.Value);
+					
+					// Mark as copied in report since it already exists
+					FName SourceName(*Pair.Key);
+					for (FCPM_DependencyCopyItem& Item : InOutReport.Items)
 					{
-						Item.bCopiedOrMoved = true;
+						if (Item.SourcePackage == SourceName)
+						{
+							Item.bCopiedOrMoved = true; // Already at destination
+							break;
+						}
 					}
-					else
+				}
+				else
+				{
+					// Destination exists and no overwrite - skip
+					UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Skipping %s (destination exists, overwrite disabled)"), *Pair.Key);
+					FName SourceName(*Pair.Key);
+					for (FCPM_DependencyCopyItem& Item : InOutReport.Items)
 					{
-						Item.bCopiedOrMoved = false;
-						Item.Error = TEXT("Package not found at destination after copy");
-						InOutReport.FailedPackages.AddUnique(SourceName);
-						bSuccess = false;
+						if (Item.SourcePackage == SourceName)
+						{
+							Item.bSkipped = true;
+							InOutReport.SkippedPackages.AddUnique(SourceName);
+							break;
+						}
 					}
-					break;
 				}
 			}
+			else
+			{
+				// Destination doesn't exist - add to copy list
+				FilteredPackagesToCopy.Add(Pair.Key, Pair.Value);
+			}
 		}
+
+		if (FilteredPackagesToCopy.Num() > 0)
+		{
+			UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Copying %d game packages via AdvancedCopy"), FilteredPackagesToCopy.Num());
+
+			IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
+
+			FDuplicatedObjects DuplicatedObjects;
+			const bool bForceAutosave = Options.bSaveAfterCopy;
+			// Always false since we pre-filtered - no overwrites needed
+			const bool bCopyOverAllDestinationOverlaps = false;
+
+			bool bCopyResult = AssetTools.AdvancedCopyPackages(
+				FilteredPackagesToCopy,
+				bForceAutosave,
+				bCopyOverAllDestinationOverlaps,
+				&DuplicatedObjects,
+				Options.bSuppressUI ? EMessageSeverity::Error : EMessageSeverity::Info);
+
+			if (!bCopyResult)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: AdvancedCopyPackages returned false"));
+				// Note: AdvancedCopy can return false but still have copied some packages
+			}
+
+			// Mark copied packages in the report
+			for (const auto& Pair : FilteredPackagesToCopy)
+			{
+				FName SourceName(*Pair.Key);
+				for (FCPM_DependencyCopyItem& Item : InOutReport.Items)
+				{
+					if (Item.SourcePackage == SourceName)
+					{
+						// Check if package exists at destination
+						FString DestFilename;
+						if (FPackageName::DoesPackageExist(Pair.Value, &DestFilename))
+						{
+							Item.bCopiedOrMoved = true;
+						}
+						else
+						{
+							Item.bCopiedOrMoved = false;
+							Item.Error = TEXT("Package not found at destination after copy");
+							InOutReport.FailedPackages.AddUnique(SourceName);
+							bSuccess = false;
+						}
+						break;
+					}
+				}
+			}
+		} // end if (FilteredPackagesToCopy.Num() > 0)
 	}
 
 	// Copy Engine packages manually (AdvancedCopy rejects Engine content)
