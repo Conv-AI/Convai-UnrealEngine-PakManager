@@ -29,7 +29,6 @@
 #include "LevelEditorViewport.h" // For GCurrentLevelEditingViewportClient
 #include "ScopedTransaction.h" // For FScopedTransaction
 #include "Editor/EditorEngine.h" // For GEditor
-#include "Elements/Interfaces/TypedElementWorldInterface.h" // For ITypedElementWorldInterface
 #include "Elements/Framework/TypedElementHandle.h" // For FTypedElementHandle
 
 void UConvaiPakManagerEditorUtils::CPM_MarkAssetDirty(UObject* Asset)
@@ -562,19 +561,6 @@ bool UConvaiPakManagerEditorUtils::GetPackageDependencies(const FName& PackageNa
 		ExcludedDependencies,
 		NeverExclude
 	);
-
-	// Check if every dependency sits under the same root
-	auto IsUnderAnyIgnoredRoot = [](const FString& PackagePath, const TArray<FString>& IgnoredRoots) -> bool
-	{
-		for (const FString& InRoot : IgnoredRoots)
-		{
-			if (!InRoot.IsEmpty() && PackagePath.StartsWith(InRoot))
-			{
-				return true;
-			}
-		}
-		return false;
-	};
 	
 	bool bAllInsideSameRoot = true;
 	for (const FName& Dep : AllDependencies)
@@ -629,8 +615,8 @@ void UConvaiPakManagerEditorUtils::RecursiveGetDependencies(const FName& Package
 	// todo: revisit how to handle those in a more generic way. Should the FExternalActorAssetDependencyGatherer handle the external objects reference also?
 	TArray<FAssetData> Assets;
 
-	// The migration only work on the saved version of the assets so no need to scan the for the in memory only assets. This also greatly improve the performance of the migration when a lot assets are loaded in the editor.
-	const bool bOnlyIncludeOnDiskAssets = true;
+	// The migration only work on the saved version of the assets so no need to scan the for the in memory only assets. This also greatly improve the performance of the migration when a lot of assets are loaded in the editor.
+	constexpr bool bOnlyIncludeOnDiskAssets = true;
 	if (AssetRegistryModule.Get().GetAssetsByPackageName(PackageName, Assets, bOnlyIncludeOnDiskAssets))
 	{
 		for (const FAssetData& AssetData : Assets)
@@ -650,7 +636,7 @@ void UConvaiPakManagerEditorUtils::RecursiveGetDependencies(const FName& Package
 
 						for (const FAssetData& ExternalObjectAsset : ExternalObjectAssets)
 						{
-							// We don't expose the early dependency search exit to the external objects/actors since to the users their are same the outer package that own these objects
+							// We don't expose the early dependency search exit to the external objects/actors since to the users there are same the outer package that own these objects
 							AllDependencies.Add(ExternalObjectAsset.PackageName);
 							RecursiveGetDependencies(ExternalObjectAsset.PackageName, AllDependencies, OutExternalObjectsPaths, ExcludedDependencies, ShouldExcludeFromDependenciesSearch);
 						}
@@ -765,7 +751,7 @@ void UConvaiPakManagerEditorUtils::AnalyzePackageDependencies(
 				continue;
 			}
 
-			// Check if should be excluded
+			// Check if it should be excluded
 			if (FCPM_DependencyCopyAPI::ShouldExcludePackage(Dependency, Options))
 			{
 				continue;

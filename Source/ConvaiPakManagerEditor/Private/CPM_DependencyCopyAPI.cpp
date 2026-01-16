@@ -11,7 +11,6 @@
 #include "Engine/World.h"
 #include "Engine/Level.h"
 #include "Interfaces/IPluginManager.h"
-#include "ObjectTools.h"
 #include "FileHelpers.h"
 #include "Editor.h"
 #include "Misc/MessageDialog.h"
@@ -21,99 +20,6 @@
 #include UE_INLINE_GENERATED_CPP_BY_NAME(CPM_DependencyCopyAPI)
 
 #define LOCTEXT_NAMESPACE "CPM_DependencyCopyAPI"
-
-//////////////////////////////////////////////////////////////////////////
-// UCPM_DependencyCopyCustomization
-//////////////////////////////////////////////////////////////////////////
-
-UCPM_DependencyCopyCustomization::UCPM_DependencyCopyCustomization(const FObjectInitializer &ObjectInitializer)
-	: Super(ObjectInitializer)
-{
-	// By default, we want to allow more assets than the base class
-	// Clear the default exclusions - we'll handle Engine assets ourselves
-	FilterForExcludingDependencies.PackagePaths.Reset();
-	FilterForExcludingDependencies.bRecursivePaths = true;
-	FilterForExcludingDependencies.bRecursiveClasses = true;
-
-	// Still exclude World/Level/MapBuildData as those are special
-	FilterForExcludingDependencies.ClassPaths.Add(UWorld::StaticClass()->GetClassPathName());
-	FilterForExcludingDependencies.ClassPaths.Add(ULevel::StaticClass()->GetClassPathName());
-}
-
-void UCPM_DependencyCopyCustomization::Configure(const FString &InDestinationRoot, const FCPM_DependencyCopyOptions &InOptions)
-{
-	DestinationRoot = InDestinationRoot;
-	Options = InOptions;
-
-	// Ensure destination root ends with /
-	if (!DestinationRoot.EndsWith(TEXT("/")))
-	{
-		DestinationRoot += TEXT("/");
-	}
-
-	// Add user-specified excluded paths to the filter
-	for (const FString &ExcludedPath : Options.ExcludedPaths)
-	{
-		if (!ExcludedPath.IsEmpty())
-		{
-			FilterForExcludingDependencies.PackagePaths.Add(FName(*ExcludedPath));
-		}
-	}
-
-	// Add module/plugin exclusions to the filter
-	for (const FString& ExcludedModule : Options.ExcludedModules)
-	{
-		if (!ExcludedModule.IsEmpty())
-		{
-			FString ModulePath = ExcludedModule;
-			if (!ModulePath.StartsWith(TEXT("/")))
-			{
-				ModulePath = TEXT("/") + ModulePath;
-			}
-			FilterForExcludingDependencies.PackagePaths.Add(FName(*ModulePath));
-		}
-	}
-}
-
-FARFilter UCPM_DependencyCopyCustomization::GetARFilter() const
-{
-	FARFilter Filter = FilterForExcludingDependencies;
-
-	// If we're skipping Engine assets, add Engine paths to exclusion
-	if (Options.EnginePolicy == ECPM_EngineDependencyPolicy::Skip)
-	{
-		Filter.PackagePaths.Add(TEXT("/Engine"));
-
-		// Add non-project plugin paths
-		for (TSharedRef<IPlugin> &Plugin : IPluginManager::Get().GetDiscoveredPlugins())
-		{
-			if (Plugin->GetType() != EPluginType::Project)
-			{
-				Filter.PackagePaths.Add(FName(*("/" + Plugin->GetName())));
-			}
-		}
-	}
-
-	return Filter;
-}
-
-void UCPM_DependencyCopyCustomization::TransformDestinationPaths(TMap<FString, FString> &OutPackagesAndDestinations) const
-{
-	// Transform all destination paths to be under our destination root
-	for (auto &Pair : OutPackagesAndDestinations)
-	{
-		const FString &SourcePackage = Pair.Key;
-		FString &DestPackage = Pair.Value;
-
-		// Generate the new destination
-		FName NewDest = FCPM_DependencyCopyAPI::MakeDestinationPackage(
-			FName(*SourcePackage),
-			DestinationRoot,
-			Options.DestinationSubdir);
-
-		DestPackage = NewDest.ToString();
-	}
-}
 
 //////////////////////////////////////////////////////////////////////////
 // FCPM_DependencyCopyAPI - Public Methods
@@ -750,7 +656,7 @@ bool FCPM_DependencyCopyAPI::DuplicateAssetManually(
 		}
 
 		// Mark package as dirty
-		DestinationPackage->MarkPackageDirty();
+		(void)DestinationPackage->MarkPackageDirty();
 
 		// Notify asset registry
 		FAssetRegistryModule::AssetCreated(DuplicatedObject);
@@ -768,7 +674,7 @@ bool FCPM_DependencyCopyAPI::DuplicateAssetManually(
 		SaveArgs.bWarnOfLongFilename = false;
 		SaveArgs.SaveFlags = SAVE_NoError;
 
-		FSavePackageResultStruct SaveResult = UPackage::Save(DestinationPackage, DuplicatedObject, *PackageFilename, SaveArgs);
+		const FSavePackageResultStruct SaveResult = UPackage::Save(DestinationPackage, DuplicatedObject, *PackageFilename, SaveArgs);
 
 		if (SaveResult.Result == ESavePackageResult::Success)
 		{
@@ -783,16 +689,6 @@ bool FCPM_DependencyCopyAPI::DuplicateAssetManually(
 	}
 
 	return bAnySuccess;
-}
-
-bool FCPM_DependencyCopyAPI::FixupReferencesInCopiedPackages(
-	const TMap<FName, FName>& SourceToDest,
-	const TArray<FName>& CopiedPackages,
-	FString& OutError)
-{
-	// This function is now deprecated in favor of FixupAllHardReferences
-	// Keeping for backwards compatibility
-	return true;
 }
 
 bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
@@ -813,9 +709,6 @@ bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 	TMap<UObject*, UObject*> OldToNewObjects;
 	TArray<UPackage*> DestinationPackages;
 	TMap<FSoftObjectPath, FSoftObjectPath> SoftPathRemap;
-
-	FAssetRegistryModule& AssetRegistryModule = FModuleManager::Get().LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
-	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
 
 	for (const auto& Pair : SourceToDest)
 	{
@@ -945,7 +838,7 @@ bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 		}
 
 		// Mark package as dirty so it gets saved
-		Package->MarkPackageDirty();
+		(void)Package->MarkPackageDirty();
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Replaced %d object references"), TotalReplacedCount);

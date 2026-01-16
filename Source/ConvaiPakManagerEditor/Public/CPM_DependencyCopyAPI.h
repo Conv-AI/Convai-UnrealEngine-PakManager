@@ -4,7 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
-#include "AdvancedCopyCustomization.h"
 #include "CPM_DependencyCopyAPI.generated.h"
 
 /**
@@ -209,41 +208,6 @@ struct CONVAIPAKMANAGEREDITOR_API FCPM_DependencyCopyReport
 };
 
 /**
- * Custom AdvancedCopyCustomization that allows copying Engine assets.
- * Standard UAdvancedCopyCustomization excludes Engine content by default.
- */
-UCLASS()
-class CONVAIPAKMANAGEREDITOR_API UCPM_DependencyCopyCustomization : public UAdvancedCopyCustomization
-{
-	GENERATED_BODY()
-
-public:
-	UCPM_DependencyCopyCustomization(const FObjectInitializer &ObjectInitializer);
-
-	/** Configure this customization for a specific copy operation */
-	void Configure(const FString &InDestinationRoot, const FCPM_DependencyCopyOptions &InOptions);
-
-	/** Override to allow Engine assets (we handle them specially) */
-	virtual FARFilter GetARFilter() const override;
-
-	/** Transform destination paths to map to our target location */
-	virtual void TransformDestinationPaths(TMap<FString, FString> &OutPackagesAndDestinations) const override;
-
-	/** Get the destination root configured for this operation */
-	const FString &GetDestinationRoot() const { return DestinationRoot; }
-
-	/** Get the options configured for this operation */
-	const FCPM_DependencyCopyOptions &GetOptions() const { return Options; }
-
-protected:
-	/** The destination root path (e.g., "/MyPlugin/") */
-	FString DestinationRoot;
-
-	/** Options for this copy operation */
-	FCPM_DependencyCopyOptions Options;
-};
-
-/**
  * API for copying packages with their dependencies into a target module.
  * Handles both Game and Engine module dependencies correctly.
  */
@@ -363,15 +327,6 @@ private:
 		const FName &SourcePackage,
 		const FName &DestPackage,
 		FString &OutError);
-
-	/**
-	 * Updates references in copied packages to point to other copied packages.
-	 * @deprecated Use FixupAllHardReferences instead
-	 */
-	static bool FixupReferencesInCopiedPackages(
-		const TMap<FName, FName>& SourceToDest,
-		const TArray<FName>& CopiedPackages,
-		FString& OutError);
 
 	/**
 	 * Comprehensive reference fixup that handles both hard and soft object references.
