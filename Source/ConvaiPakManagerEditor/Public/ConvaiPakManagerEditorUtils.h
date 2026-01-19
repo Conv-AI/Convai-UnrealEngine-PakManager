@@ -24,7 +24,7 @@ public:
 	static void CPM_MarkAssetDirty(UObject* Asset);
 
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManagerEditor", meta = (CallInEditor = "true"))
-	static void CPM_TogglePlayMode();
+	static void CPM_SetPlayMode(const bool bPlay);
 
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManagerEditor")
 	static void CPM_PackageProject(const FCPM_PackageParam& PackageParam, FOnUatTaskResultCallack OnPackagingCompleted);

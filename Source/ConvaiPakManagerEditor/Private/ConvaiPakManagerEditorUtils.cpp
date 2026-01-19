@@ -63,23 +63,35 @@ static TSharedPtr<IAssetViewport> GetActiveAssetViewport()
 }
 #endif
 
-void UConvaiPakManagerEditorUtils::CPM_TogglePlayMode()
+void UConvaiPakManagerEditorUtils::CPM_SetPlayMode(const bool bPlay)
 {
 #if WITH_EDITOR
-	
-	if (!GEditor->PlayWorld)
+	if (!GEditor)
+	{
+		return;
+	}
+
+	const bool bIsPlaying = (GEditor->PlayWorld != nullptr);
+
+	// If we're already in the requested state, do nothing.
+	if (bPlay == bIsPlaying)
+	{
+		return;
+	}
+
+	if (bPlay)
 	{
 		FRequestPlaySessionParams PlayParams;
+
 		if (const TSharedPtr<IAssetViewport> ActiveViewport = GetActiveAssetViewport(); ActiveViewport.IsValid())
 		{
-			const TWeakPtr<IAssetViewport> WeakViewport(ActiveViewport);
-			PlayParams.DestinationSlateViewport = WeakViewport;
+			PlayParams.DestinationSlateViewport = TWeakPtr<IAssetViewport>(ActiveViewport);
 		}
 		else
 		{
 			UE_LOG(LogTemp, Warning, TEXT("No valid active viewport found. Launching PIE in a new editor window."));
 		}
-        
+
 		GEditor->RequestPlaySession(PlayParams);
 	}
 	else
@@ -88,6 +100,7 @@ void UConvaiPakManagerEditorUtils::CPM_TogglePlayMode()
 	}
 #endif
 }
+
 
 void UConvaiPakManagerEditorUtils::CPM_PackageProject(const FCPM_PackageParam& PackageParam, const FOnUatTaskResultCallack OnPackagingCompleted)
 {
