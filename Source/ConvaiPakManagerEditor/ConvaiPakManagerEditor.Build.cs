@@ -41,7 +41,9 @@ public class ConvaiPakManagerEditor : ModuleRules
                 "UATHelper", 
                 "LiveCoding",
                 "RenderCore",
-                "FileUtilities"
+                "FileUtilities",
+                "AssetRegistry",
+                "Projects"  // For IPluginManager
 			}
 			);
 		

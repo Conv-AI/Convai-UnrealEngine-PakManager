@@ -3,6 +3,7 @@
 
 #include "ConvaiPakManagerEditorUtils.h"
 #include "CPM_Defination.h"
+#include "CPM_DependencyCopyAPI.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Misc/PackageName.h"
 #include "UObject/Package.h"
@@ -28,7 +29,6 @@
 #include "LevelEditorViewport.h" // For GCurrentLevelEditingViewportClient
 #include "ScopedTransaction.h" // For FScopedTransaction
 #include "Editor/EditorEngine.h" // For GEditor
-#include "Elements/Interfaces/TypedElementWorldInterface.h" // For ITypedElementWorldInterface
 #include "Elements/Framework/TypedElementHandle.h" // For FTypedElementHandle
 
 void UConvaiPakManagerEditorUtils::CPM_MarkAssetDirty(UObject* Asset)
@@ -63,23 +63,35 @@ static TSharedPtr<IAssetViewport> GetActiveAssetViewport()
 }
 #endif
 
-void UConvaiPakManagerEditorUtils::CPM_TogglePlayMode()
+void UConvaiPakManagerEditorUtils::CPM_SetPlayMode(const bool bPlay)
 {
 #if WITH_EDITOR
-	
-	if (!GEditor->PlayWorld)
+	if (!GEditor)
+	{
+		return;
+	}
+
+	const bool bIsPlaying = (GEditor->PlayWorld != nullptr);
+
+	// If we're already in the requested state, do nothing.
+	if (bPlay == bIsPlaying)
+	{
+		return;
+	}
+
+	if (bPlay)
 	{
 		FRequestPlaySessionParams PlayParams;
+
 		if (const TSharedPtr<IAssetViewport> ActiveViewport = GetActiveAssetViewport(); ActiveViewport.IsValid())
 		{
-			const TWeakPtr<IAssetViewport> WeakViewport(ActiveViewport);
-			PlayParams.DestinationSlateViewport = WeakViewport;
+			PlayParams.DestinationSlateViewport = TWeakPtr<IAssetViewport>(ActiveViewport);
 		}
 		else
 		{
 			UE_LOG(LogTemp, Warning, TEXT("No valid active viewport found. Launching PIE in a new editor window."));
 		}
-        
+
 		GEditor->RequestPlaySession(PlayParams);
 	}
 	else
@@ -88,6 +100,7 @@ void UConvaiPakManagerEditorUtils::CPM_TogglePlayMode()
 	}
 #endif
 }
+
 
 void UConvaiPakManagerEditorUtils::CPM_PackageProject(const FCPM_PackageParam& PackageParam, const FOnUatTaskResultCallack OnPackagingCompleted)
 {
@@ -561,19 +574,6 @@ bool UConvaiPakManagerEditorUtils::GetPackageDependencies(const FName& PackageNa
 		ExcludedDependencies,
 		NeverExclude
 	);
-
-	// Check if every dependency sits under the same root
-	auto IsUnderAnyIgnoredRoot = [](const FString& PackagePath, const TArray<FString>& IgnoredRoots) -> bool
-	{
-		for (const FString& InRoot : IgnoredRoots)
-		{
-			if (!InRoot.IsEmpty() && PackagePath.StartsWith(InRoot))
-			{
-				return true;
-			}
-		}
-		return false;
-	};
 	
 	bool bAllInsideSameRoot = true;
 	for (const FName& Dep : AllDependencies)
@@ -628,8 +628,8 @@ void UConvaiPakManagerEditorUtils::RecursiveGetDependencies(const FName& Package
 	// todo: revisit how to handle those in a more generic way. Should the FExternalActorAssetDependencyGatherer handle the external objects reference also?
 	TArray<FAssetData> Assets;
 
-	// The migration only work on the saved version of the assets so no need to scan the for the in memory only assets. This also greatly improve the performance of the migration when a lot assets are loaded in the editor.
-	const bool bOnlyIncludeOnDiskAssets = true;
+	// The migration only work on the saved version of the assets so no need to scan the for the in memory only assets. This also greatly improve the performance of the migration when a lot of assets are loaded in the editor.
+	constexpr bool bOnlyIncludeOnDiskAssets = true;
 	if (AssetRegistryModule.Get().GetAssetsByPackageName(PackageName, Assets, bOnlyIncludeOnDiskAssets))
 	{
 		for (const FAssetData& AssetData : Assets)
@@ -649,7 +649,7 @@ void UConvaiPakManagerEditorUtils::RecursiveGetDependencies(const FName& Package
 
 						for (const FAssetData& ExternalObjectAsset : ExternalObjectAssets)
 						{
-							// We don't expose the early dependency search exit to the external objects/actors since to the users their are same the outer package that own these objects
+							// We don't expose the early dependency search exit to the external objects/actors since to the users there are same the outer package that own these objects
 							AllDependencies.Add(ExternalObjectAsset.PackageName);
 							RecursiveGetDependencies(ExternalObjectAsset.PackageName, AllDependencies, OutExternalObjectsPaths, ExcludedDependencies, ShouldExcludeFromDependenciesSearch);
 						}
@@ -658,4 +658,137 @@ void UConvaiPakManagerEditorUtils::RecursiveGetDependencies(const FName& Package
 			}
 		}
 	}
+}
+
+bool UConvaiPakManagerEditorUtils::CopyPackageWithDependencies(
+	const FName& SourcePackage,
+	const FString& DestinationRoot,
+	const FCPM_DependencyCopyOptions& Options,
+	FCPM_DependencyCopyReport& OutReport)
+{
+	OutReport = FCPM_DependencyCopyAPI::CopyPackageWithDependencies(SourcePackage, DestinationRoot, Options);
+	return OutReport.bSuccess;
+}
+
+bool UConvaiPakManagerEditorUtils::CopyPackagesWithDependencies(
+	const TArray<FName>& SourcePackages,
+	const FString& DestinationRoot,
+	const FCPM_DependencyCopyOptions& Options,
+	FCPM_DependencyCopyReport& OutReport)
+{
+	OutReport = FCPM_DependencyCopyAPI::CopyPackagesWithDependencies(SourcePackages, DestinationRoot, Options);
+	return OutReport.bSuccess;
+}
+
+FName UConvaiPakManagerEditorUtils::GetDestinationPackagePath(
+	const FName& SourcePackage,
+	const FString& DestinationRoot,
+	const FString& DestinationSubdir)
+{
+	return FCPM_DependencyCopyAPI::MakeDestinationPackage(SourcePackage, DestinationRoot, DestinationSubdir);
+}
+
+void UConvaiPakManagerEditorUtils::AnalyzePackageDependencies(
+	const FName& PackageName,
+	const FCPM_DependencyCopyOptions& Options,
+	int32& OutTotalDependencies,
+	int32& OutEngineDependencies,
+	int32& OutGameDependencies,
+	TArray<FName>& OutDependencyList)
+{
+	OutTotalDependencies = 0;
+	OutEngineDependencies = 0;
+	OutGameDependencies = 0;
+	OutDependencyList.Reset();
+
+	if (PackageName.IsNone())
+	{
+		return;
+	}
+
+	// Use a local implementation to gather dependencies without copying
+	const FAssetRegistryModule& AssetRegistryModule = FModuleManager::Get().LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	const IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+	TSet<FName> VisitedPackages;
+	TArray<FName> PackagesToProcess;
+	PackagesToProcess.Add(PackageName);
+	VisitedPackages.Add(PackageName);
+
+	// Build dependency query
+	UE::AssetRegistry::FDependencyQuery DependencyQuery;
+	UE::AssetRegistry::EDependencyCategory Category = UE::AssetRegistry::EDependencyCategory::None;
+
+	if (Options.bIncludeHardDependencies)
+	{
+		Category |= UE::AssetRegistry::EDependencyCategory::Package;
+	}
+
+	if (!Options.bIncludeSoftDependencies)
+	{
+		DependencyQuery.Required = UE::AssetRegistry::EDependencyProperty::Hard;
+	}
+
+	if (Options.bIncludeSearchableNameDependencies)
+	{
+		Category |= UE::AssetRegistry::EDependencyCategory::SearchableName;
+	}
+
+	while (PackagesToProcess.Num() > 0)
+	{
+		FName CurrentPackage = PackagesToProcess.Pop();
+
+		TArray<FName> Dependencies;
+		AssetRegistry.GetDependencies(CurrentPackage, Dependencies, Category, DependencyQuery);
+
+		for (const FName& Dependency : Dependencies)
+		{
+			const FString DependencyStr = Dependency.ToString();
+
+			// Skip script packages
+			if (DependencyStr.StartsWith(TEXT("/Script/")))
+			{
+				continue;
+			}
+
+			// Skip already visited
+			if (VisitedPackages.Contains(Dependency))
+			{
+				continue;
+			}
+
+			// Check if package exists
+			const bool bPackageExists = AssetRegistry.GetAssetPackageDataCopy(Dependency).IsSet();
+			if (!bPackageExists)
+			{
+				continue;
+			}
+
+			// Check if it should be excluded
+			if (FCPM_DependencyCopyAPI::ShouldExcludePackage(Dependency, Options))
+			{
+				continue;
+			}
+
+			VisitedPackages.Add(Dependency);
+			PackagesToProcess.Add(Dependency);
+		}
+	}
+
+	// Classify results
+	for (const FName& Package : VisitedPackages)
+	{
+		OutDependencyList.Add(Package);
+		
+		if (FCPM_DependencyCopyAPI::IsEnginePackage(Package))
+		{
+			OutEngineDependencies++;
+		}
+		else
+		{
+			OutGameDependencies++;
+		}
+	}
+
+	OutTotalDependencies = OutDependencyList.Num();
 }
