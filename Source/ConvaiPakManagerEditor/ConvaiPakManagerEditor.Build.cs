@@ -7,7 +7,7 @@ public class ConvaiPakManagerEditor : ModuleRules
 	public ConvaiPakManagerEditor(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-		
+
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
@@ -21,46 +21,44 @@ public class ConvaiPakManagerEditor : ModuleRules
 				"PakFile",
 				"ImageWrapper",
 				"AssetRegistry",
-				"Convai"
+				"Slate",
+				"SlateCore",
+				"UnrealEd",
+				"WebBrowser",
+				"Convai",
+				"ApplicationCore",
+				"UMGEditor",
+				"Blutility",
 			}
 		);
-			
+
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
-				// Slate
-				"Slate",
-				"SlateCore",
-				
-				// UMG
 				"UMG",
-				"UMGEditor",
-				
-				// Editor
-				"UnrealEd",
+				"EditorStyle",
 				"LevelEditor",
-				"Blutility",
+				"Projects",
+				"ToolMenus",
+				"EditorFramework",
+				"HTTPServer",
+				"Sockets",
+				"Networking",
+				"RHI",
+				"RenderCore",
+				"AssetTools",
 				"EditorScriptingUtilities",
 				"PropertyEditor",
 				"DeveloperSettings",
-				"EditorSubsystem",
 				"ContentBrowser",
-				"AssetTools",
-				"DesktopPlatform",
-				
-				// Packaging
-				"UATHelper",
+				"ContentBrowserData",
+				"TextureEditor",
 				"LiveCoding",
-				
-				// Rendering
-				"RenderCore",
-				
-				// File utilities
+				"UATHelper",
 				"FileUtilities",
-				"Projects"
 			}
 		);
-		
+
 		// Enable logging
 		const bool bEnableLogging = true;
 		PublicDefinitions.Add("CONVAI_PAK_MANAGER_LOG=" + (bEnableLogging ? "1" : "0"));
