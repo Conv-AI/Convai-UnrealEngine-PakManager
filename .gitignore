@@ -8,6 +8,7 @@
 !/Resources/
 !/Content/
 !/Scripts/
+!/Context/
 # Ignore intermediate build files
 Binaries/
 Intermediate/
