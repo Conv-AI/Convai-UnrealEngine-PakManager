@@ -11,7 +11,7 @@
  * A styled button with consistent CPM styling.
  * Supports Primary, Secondary, Danger, and Ghost variants.
  */
-class CONVAIPAKMANAGER_API SCPM_Button : public SCompoundWidget
+class CONVAIPAKMANAGEREDITOR_API SCPM_Button : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SCPM_Button)

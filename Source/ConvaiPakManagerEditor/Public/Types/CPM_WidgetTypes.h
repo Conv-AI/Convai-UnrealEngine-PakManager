@@ -10,7 +10,7 @@
  * Used by the KeyValuePair widget for dynamic data entry.
  */
 USTRUCT(BlueprintType)
-struct CONVAIPAKMANAGER_API FCPM_KeyValuePair
+struct CONVAIPAKMANAGEREDITOR_API FCPM_KeyValuePair
 {
 	GENERATED_BODY()
 

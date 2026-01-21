@@ -11,7 +11,7 @@
  * A styled text label with consistent CPM styling.
  * Supports Header, Body, Caption, and Button text styles.
  */
-class CONVAIPAKMANAGER_API SCPM_Label : public SCompoundWidget
+class CONVAIPAKMANAGEREDITOR_API SCPM_Label : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SCPM_Label)

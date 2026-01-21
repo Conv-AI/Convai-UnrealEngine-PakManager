@@ -15,7 +15,7 @@ DECLARE_DELEGATE_ThreeParams(FOnKeyValueRowChanged, int32 /*RowIndex*/, const FS
  * Supports read-only keys, dropdown values, and non-removable rows.
  * Used as a building block for the KeyValueList.
  */
-class CONVAIPAKMANAGER_API SCPM_KeyValueRow : public SCompoundWidget
+class CONVAIPAKMANAGEREDITOR_API SCPM_KeyValueRow : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SCPM_KeyValueRow)

@@ -12,7 +12,7 @@ DECLARE_DELEGATE_OneParam(FOnCPMComboBoxSelectionChanged, const FString& /*Selec
  * A styled combo box (dropdown) with consistent CPM styling.
  * Allows selection from a list of predefined string options.
  */
-class CONVAIPAKMANAGER_API SCPM_ComboBox : public SCompoundWidget
+class CONVAIPAKMANAGEREDITOR_API SCPM_ComboBox : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SCPM_ComboBox)

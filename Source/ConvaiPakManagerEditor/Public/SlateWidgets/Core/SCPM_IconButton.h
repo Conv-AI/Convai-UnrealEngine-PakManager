@@ -11,7 +11,7 @@
  * A small icon-only button for actions like remove, add, etc.
  * Uses text characters as icons for simplicity (✕, +, etc.)
  */
-class CONVAIPAKMANAGER_API SCPM_IconButton : public SCompoundWidget
+class CONVAIPAKMANAGEREDITOR_API SCPM_IconButton : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SCPM_IconButton)

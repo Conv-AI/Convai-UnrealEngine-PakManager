@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -13,7 +13,7 @@
 struct FCPM_CreatedAssets;
 
 UCLASS()
-class CONVAIPAKMANAGER_API UCPM_UtilityLibrary : public UBlueprintFunctionLibrary
+class CONVAIPAKMANAGEREDITOR_API UCPM_UtilityLibrary : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 	

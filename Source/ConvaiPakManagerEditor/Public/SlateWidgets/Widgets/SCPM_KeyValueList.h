@@ -13,7 +13,7 @@ DECLARE_DELEGATE_OneParam(FOnKeyValueListChanged, const TArray<FCPM_KeyValuePair
  * A complete key-value pair list widget with add/remove functionality.
  * Contains a scrollable list of KeyValueRows and an Add button.
  */
-class CONVAIPAKMANAGER_API SCPM_KeyValueList : public SCompoundWidget
+class CONVAIPAKMANAGEREDITOR_API SCPM_KeyValueList : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SCPM_KeyValueList)

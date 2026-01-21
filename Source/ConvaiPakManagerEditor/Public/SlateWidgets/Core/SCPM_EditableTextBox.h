@@ -10,7 +10,7 @@
  * A styled editable text box with consistent CPM styling.
  * Supports hint text, validation, and change callbacks.
  */
-class CONVAIPAKMANAGER_API SCPM_EditableTextBox : public SCompoundWidget
+class CONVAIPAKMANAGEREDITOR_API SCPM_EditableTextBox : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SCPM_EditableTextBox)

@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -77,7 +77,7 @@ protected:
 //-------------------------------------------Upload proxy-------------------------------------------
 
 UCLASS(BlueprintType)
-class CONVAIPAKMANAGER_API UCPM_UploadPakAssetProxy : public UConvaiAPIBaseProxy
+class CONVAIPAKMANAGEREDITOR_API UCPM_UploadPakAssetProxy : public UConvaiAPIBaseProxy
 {
 	GENERATED_BODY()
 
