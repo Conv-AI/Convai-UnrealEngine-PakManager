@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "JobTypes.generated.h"
+#include "JS_Definations.generated.h"
 
 /**
  * Result of a job execution
@@ -41,4 +41,25 @@ enum class EWorkflowStatus : uint8
 	
 	/** Workflow was cancelled */
 	Cancelled	UMETA(DisplayName = "Cancelled")
+};
+
+/**
+ * Configuration for workflow execution
+ */
+USTRUCT(BlueprintType)
+struct CONVAIJOBSYSTEM_API FWorkflowConfig
+{
+	GENERATED_BODY()
+
+	/** Timeout for individual jobs in seconds. 0 = no timeout. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
+	float JobTimeoutSeconds = 0.0f;
+
+	/** Timeout for entire workflow in seconds. 0 = no timeout. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
+	float WorkflowTimeoutSeconds = 0.0f;
+
+	/** If true, automatically force-fail timed out jobs and continue. If false, fail workflow on timeout. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
+	bool bContinueOnJobTimeout = false;
 };

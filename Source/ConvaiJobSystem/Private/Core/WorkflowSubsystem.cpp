@@ -3,14 +3,27 @@
 #include "Core/WorkflowSubsystem.h"
 #include "Core/WorkflowContext.h"
 #include "Interface/JobInterface.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWorkflow, Log, All);
+
+namespace 
+{
+	FTimerManager* GetTimerManager() 
+	{
+		if (const UWorld* World = GEngine ? GEngine->GetCurrentPlayWorld() : nullptr)
+		{
+			return &World->GetTimerManager();
+		}
+		return nullptr;
+	}
+}
 
 void UWorkflowSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 	
-	// Create the shared context
 	Context = NewObject<UWorkflowContext>(this);
 	
 	UE_LOG(LogWorkflow, Log, TEXT("WorkflowSubsystem initialized"));
@@ -18,14 +31,13 @@ void UWorkflowSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UWorkflowSubsystem::Deinitialize()
 {
-	// Cancel any running workflow
+	// Silent reset during shutdown - don't broadcast
 	if (IsRunning())
 	{
-		CancelWorkflow();
+		ResetState(false);
 	}
 	
 	Context = nullptr;
-	JobQueue.Empty();
 	
 	UE_LOG(LogWorkflow, Log, TEXT("WorkflowSubsystem deinitialized"));
 	
@@ -39,16 +51,21 @@ UWorkflowContext* UWorkflowSubsystem::GetContext() const
 
 void UWorkflowSubsystem::OnJobCompleted(UObject* Job, const EJobResult Result, const FString& ErrorMessage)
 {
-	// Validate this is the current job
-	if (Job != CurrentJob)
+	// Check if workflow is still running first - a timed-out job may complete after workflow finished
+	if (!IsRunning())
 	{
-		UE_LOG(LogWorkflow, Warning, TEXT("NotifyJobCompleted called with unexpected job object"));
+		UE_LOG(LogWorkflow, Verbose, TEXT("OnJobCompleted ignored - workflow is not running (job: %s completed after timeout/cancel)"),
+			Job ? *Job->GetName() : TEXT("null"));
 		return;
 	}
 	
-	if (Status != EWorkflowStatus::Running)
+	ClearJobTimeoutTimer();
+	
+	if (Job != CurrentJob)
 	{
-		UE_LOG(LogWorkflow, Warning, TEXT("NotifyJobCompleted called but workflow is not running"));
+		UE_LOG(LogWorkflow, Warning, TEXT("OnJobCompleted called with unexpected job object. Expected: %s, Got: %s"),
+			CurrentJob ? *CurrentJob->GetName() : TEXT("null"),
+			Job ? *Job->GetName() : TEXT("null"));
 		return;
 	}
 	
@@ -57,35 +74,22 @@ void UWorkflowSubsystem::OnJobCompleted(UObject* Job, const EJobResult Result, c
 		Result == EJobResult::Success ? TEXT("Success") : 
 		Result == EJobResult::Failed ? TEXT("Failed") : TEXT("Cancelled"));
 	
-	// Broadcast job completion
 	OnJobStatusChanged.Broadcast(CurrentJobIndex, Result, Job);
 	
-	// Handle result
-	if (Result == EJobResult::Success)
+	switch (Result)
 	{
-		// Move to next job
-		CurrentJobIndex++;
-		CurrentJob = nullptr;
+	case EJobResult::Success:
+		AdvanceToNextJob();
+		break;
 		
-		if (CurrentJobIndex < JobQueue.Num())
-		{
-			// Execute next job
-			ExecuteCurrentJob();
-		}
-		else
-		{
-			// All jobs completed successfully
-			FinishWorkflow(EWorkflowStatus::Completed);
-		}
-	}
-	else if (Result == EJobResult::Failed)
-	{
+	case EJobResult::Failed:
 		LastErrorMessage = ErrorMessage;
 		FinishWorkflow(EWorkflowStatus::Failed, ErrorMessage);
-	}
-	else // Cancelled
-	{
+		break;
+		
+	case EJobResult::Cancelled:
 		FinishWorkflow(EWorkflowStatus::Cancelled);
+		break;
 	}
 }
 
@@ -94,23 +98,21 @@ bool UWorkflowSubsystem::IsCancellationRequested() const
 	return bCancellationRequested;
 }
 
-bool UWorkflowSubsystem::ExecuteWorkflow(const TArray<TScriptInterface<IJobInterface>>& Jobs)
+bool UWorkflowSubsystem::ExecuteWorkflow(const FWorkflowConfig& Config, const TArray<TScriptInterface<IJobInterface>>& Jobs)
 {
-	// Check if already running
 	if (IsRunning())
 	{
-		UE_LOG(LogWorkflow, Warning, TEXT("Cannot start workflow - already running"));
+		UE_LOG(LogWorkflow, Warning, TEXT("Cannot start workflow - already running. Call CancelWorkflow(true) to force reset."));
 		return false;
 	}
 	
-	// Validate jobs
 	if (Jobs.Num() == 0)
 	{
 		UE_LOG(LogWorkflow, Warning, TEXT("Cannot start workflow - no jobs provided"));
 		return false;
 	}
 	
-	// Validate all jobs implement the interface
+	// Validate all jobs
 	for (int32 i = 0; i < Jobs.Num(); i++)
 	{
 		UObject* JobObject = Jobs[i].GetObject();
@@ -120,7 +122,6 @@ bool UWorkflowSubsystem::ExecuteWorkflow(const TArray<TScriptInterface<IJobInter
 			return false;
 		}
 		
-		// Check if object implements IJobInterface (works for both C++ and Blueprint)
 		if (!JobObject->GetClass()->ImplementsInterface(UJobInterface::StaticClass()))
 		{
 			UE_LOG(LogWorkflow, Error, TEXT("Job at index %d (%s) does not implement IJobInterface"), 
@@ -129,33 +130,47 @@ bool UWorkflowSubsystem::ExecuteWorkflow(const TArray<TScriptInterface<IJobInter
 		}
 	}
 	
-	// Reset state
-	ResetState();
+	ResetState(false);
 	
-	// Store jobs
+	CurrentConfig = Config;
 	JobQueue = Jobs;
 	Status = EWorkflowStatus::Running;
+	WorkflowStartTime = FPlatformTime::Seconds();
 	
-	UE_LOG(LogWorkflow, Log, TEXT("Starting workflow with %d jobs"), JobQueue.Num());
+	UE_LOG(LogWorkflow, Log, TEXT("Starting workflow with %d jobs (JobTimeout: %.1fs, WorkflowTimeout: %.1fs)"), 
+		JobQueue.Num(), Config.JobTimeoutSeconds, Config.WorkflowTimeoutSeconds);
 	
-	// Start first job
+	StartWorkflowTimeoutTimer();
 	ExecuteCurrentJob();
 	
 	return true;
 }
 
-void UWorkflowSubsystem::CancelWorkflow()
+void UWorkflowSubsystem::CancelWorkflow(const bool bForce)
 {
 	if (!IsRunning())
 	{
+		UE_LOG(LogWorkflow, Log, TEXT("CancelWorkflow called but workflow is not running"));
 		return;
 	}
 	
-	UE_LOG(LogWorkflow, Log, TEXT("Cancellation requested"));
-	bCancellationRequested = true;
-	
-	// Note: The current job should check IsCancellationRequested() and complete
-	// with EJobResult::Canceled. If it doesn't respond, we don't force-kill it.
+	if (bForce)
+	{
+		UE_LOG(LogWorkflow, Warning, TEXT("Force cancelling workflow - immediately resetting state"));
+		ResetState(true);
+	}
+	else
+	{
+		if (bCancellationRequested)
+		{
+			UE_LOG(LogWorkflow, Log, TEXT("Cancellation already requested. Call CancelWorkflow(true) to force reset."));
+			return;
+		}
+		
+		UE_LOG(LogWorkflow, Log, TEXT("Graceful cancellation requested - notifying listeners"));
+		bCancellationRequested = true;
+		OnCancellationRequested.Broadcast();
+	}
 }
 
 float UWorkflowSubsystem::GetProgress() const
@@ -164,9 +179,47 @@ float UWorkflowSubsystem::GetProgress() const
 	{
 		return 0.0f;
 	}
-	
-	// Simple progress: completed jobs / total jobs
 	return static_cast<float>(CurrentJobIndex) / static_cast<float>(JobQueue.Num());
+}
+
+float UWorkflowSubsystem::GetCurrentJobElapsedTime() const
+{
+	if (!IsRunning() || CurrentJobStartTime <= 0.0)
+	{
+		return 0.0f;
+	}
+	return static_cast<float>(FPlatformTime::Seconds() - CurrentJobStartTime);
+}
+
+float UWorkflowSubsystem::GetWorkflowElapsedTime() const
+{
+	if (WorkflowStartTime <= 0.0)
+	{
+		return 0.0f;
+	}
+	return static_cast<float>(FPlatformTime::Seconds() - WorkflowStartTime);
+}
+
+void UWorkflowSubsystem::AdvanceToNextJob()
+{
+	CurrentJobIndex++;
+	CurrentJob = nullptr;
+	
+	if (CurrentJobIndex < JobQueue.Num())
+	{
+		if (bCancellationRequested)
+		{
+			FinishWorkflow(EWorkflowStatus::Cancelled);
+		}
+		else
+		{
+			ExecuteCurrentJob();
+		}
+	}
+	else
+	{
+		FinishWorkflow(EWorkflowStatus::Completed);
+	}
 }
 
 void UWorkflowSubsystem::ExecuteCurrentJob()
@@ -177,20 +230,23 @@ void UWorkflowSubsystem::ExecuteCurrentJob()
 		return;
 	}
 	
-	// Check for cancellation before starting next job
 	if (bCancellationRequested)
 	{
 		FinishWorkflow(EWorkflowStatus::Cancelled);
 		return;
 	}
 	
-	// Get job interface
 	const TScriptInterface<IJobInterface>& JobInterface = JobQueue[CurrentJobIndex];
 	CurrentJob = JobInterface.GetObject();
+	CurrentJobStartTime = FPlatformTime::Seconds();
 	
-	UE_LOG(LogWorkflow, Log, TEXT("Executing job %d of %d"), CurrentJobIndex + 1, JobQueue.Num());
+	UE_LOG(LogWorkflow, Log, TEXT("Executing job %d of %d: %s"), 
+		CurrentJobIndex + 1, 
+		JobQueue.Num(),
+		CurrentJob ? *CurrentJob->GetClass()->GetName() : TEXT("Unknown"));
 	
-	// Execute the job, passing ourselves as the workflow manager interface
+	StartJobTimeoutTimer();
+	
 	TScriptInterface<IWorkflowManagerInterface> ManagerInterface;
 	ManagerInterface.SetObject(this);
 	ManagerInterface.SetInterface(Cast<IWorkflowManagerInterface>(this));
@@ -198,31 +254,180 @@ void UWorkflowSubsystem::ExecuteCurrentJob()
 	IJobInterface::Execute_Execute(JobInterface.GetObject(), ManagerInterface);
 }
 
-void UWorkflowSubsystem::FinishWorkflow(EWorkflowStatus FinalStatus, const FString& ErrorMessage)
+void UWorkflowSubsystem::FinishWorkflow(const EWorkflowStatus FinalStatus, const FString& ErrorMessage)
 {
-	UE_LOG(LogWorkflow, Log, TEXT("Workflow finished with status: %s%s"), 
+	const float TotalTime = GetWorkflowElapsedTime();
+	
+	UE_LOG(LogWorkflow, Log, TEXT("Workflow finished with status: %s (%.2fs)%s"), 
 		FinalStatus == EWorkflowStatus::Completed ? TEXT("Completed") :
 		FinalStatus == EWorkflowStatus::Failed ? TEXT("Failed") : TEXT("Cancelled"),
+		TotalTime,
 		ErrorMessage.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" - %s"), *ErrorMessage));
 	
-	Status = FinalStatus;
-	CurrentJob = nullptr;
+	// Clean up internal state (Context preserved so users can read job outputs)
+	CleanupInternalState();
 	
-	// Broadcast completion
+	Status = FinalStatus;
+	LastErrorMessage = ErrorMessage;
+	
 	OnWorkflowCompleted.Broadcast(FinalStatus, ErrorMessage);
 }
 
-void UWorkflowSubsystem::ResetState()
+void UWorkflowSubsystem::CleanupInternalState()
 {
+	ClearAllTimers();
 	JobQueue.Empty();
 	CurrentJob = nullptr;
 	CurrentJobIndex = 0;
 	bCancellationRequested = false;
+	CurrentJobStartTime = 0.0;
+	WorkflowStartTime = 0.0;
+	CurrentConfig = FWorkflowConfig();
+}
+
+void UWorkflowSubsystem::ResetState(const bool bBroadcastCancelled)
+{
+	const bool bWasRunning = IsRunning();
+	
+	CleanupInternalState();
+	Status = EWorkflowStatus::Idle;
 	LastErrorMessage.Empty();
 	
-	// Clear context for new workflow
+	// Clear context for fresh start
 	if (Context)
 	{
 		Context->Clear();
 	}
+	
+	if (bBroadcastCancelled && bWasRunning)
+	{
+		OnWorkflowCompleted.Broadcast(EWorkflowStatus::Cancelled, TEXT("Workflow was force cancelled"));
+	}
+}
+
+void UWorkflowSubsystem::ClearAllTimers()
+{
+	ClearJobTimeoutTimer();
+	ClearWorkflowTimeoutTimer();
+}
+
+void UWorkflowSubsystem::StartJobTimeoutTimer()
+{
+	if (CurrentConfig.JobTimeoutSeconds <= 0.0f)
+	{
+		return;
+	}
+	
+	FTimerManager* TimerManager = GetTimerManager();
+	if (!TimerManager)
+	{
+		UE_LOG(LogWorkflow, Warning, TEXT("Cannot start job timeout timer - no valid world"));
+		return;
+	}
+	
+	ClearJobTimeoutTimer();
+	
+	TimerManager->SetTimer(
+		JobTimeoutTimerHandle,
+		this,
+		&UWorkflowSubsystem::HandleJobTimeout,
+		CurrentConfig.JobTimeoutSeconds,
+		false
+	);
+	
+	UE_LOG(LogWorkflow, Verbose, TEXT("Job timeout timer started: %.1fs"), CurrentConfig.JobTimeoutSeconds);
+}
+
+void UWorkflowSubsystem::ClearJobTimeoutTimer()
+{
+	if (JobTimeoutTimerHandle.IsValid())
+	{
+		if (FTimerManager* TimerManager = GetTimerManager())
+		{
+			TimerManager->ClearTimer(JobTimeoutTimerHandle);
+		}
+		JobTimeoutTimerHandle.Invalidate();
+	}
+}
+
+void UWorkflowSubsystem::HandleJobTimeout()
+{
+	if (!IsRunning())
+	{
+		return;
+	}
+	
+	const float ElapsedTime = GetCurrentJobElapsedTime();
+	
+	UE_LOG(LogWorkflow, Warning, TEXT("Job %d timed out after %.2fs (limit: %.1fs)"), 
+		CurrentJobIndex, ElapsedTime, CurrentConfig.JobTimeoutSeconds);
+	
+	OnJobTimedOut.Broadcast(CurrentJobIndex, CurrentJob);
+	
+	if (CurrentConfig.bContinueOnJobTimeout)
+	{
+		UE_LOG(LogWorkflow, Log, TEXT("Continuing workflow after job timeout (bContinueOnJobTimeout=true)"));
+		OnJobStatusChanged.Broadcast(CurrentJobIndex, EJobResult::Failed, CurrentJob);
+		AdvanceToNextJob();
+	}
+	else
+	{
+		FinishWorkflow(EWorkflowStatus::Failed, 
+			FString::Printf(TEXT("Job %d timed out after %.1f seconds"), CurrentJobIndex, ElapsedTime));
+	}
+}
+
+void UWorkflowSubsystem::StartWorkflowTimeoutTimer()
+{
+	if (CurrentConfig.WorkflowTimeoutSeconds <= 0.0f)
+	{
+		return;
+	}
+	
+	FTimerManager* TimerManager = GetTimerManager();
+	if (!TimerManager)
+	{
+		UE_LOG(LogWorkflow, Warning, TEXT("Cannot start workflow timeout timer - no valid world"));
+		return;
+	}
+	
+	ClearWorkflowTimeoutTimer();
+	
+	TimerManager->SetTimer(
+		WorkflowTimeoutTimerHandle,
+		this,
+		&UWorkflowSubsystem::HandleWorkflowTimeout,
+		CurrentConfig.WorkflowTimeoutSeconds,
+		false
+	);
+	
+	UE_LOG(LogWorkflow, Verbose, TEXT("Workflow timeout timer started: %.1fs"), CurrentConfig.WorkflowTimeoutSeconds);
+}
+
+void UWorkflowSubsystem::ClearWorkflowTimeoutTimer()
+{
+	if (WorkflowTimeoutTimerHandle.IsValid())
+	{
+		if (FTimerManager* TimerManager = GetTimerManager())
+		{
+			TimerManager->ClearTimer(WorkflowTimeoutTimerHandle);
+		}
+		WorkflowTimeoutTimerHandle.Invalidate();
+	}
+}
+
+void UWorkflowSubsystem::HandleWorkflowTimeout()
+{
+	if (!IsRunning())
+	{
+		return;
+	}
+	
+	const float ElapsedTime = GetWorkflowElapsedTime();
+	
+	UE_LOG(LogWorkflow, Warning, TEXT("Workflow timed out after %.2fs (limit: %.1fs) at job %d/%d"), 
+		ElapsedTime, CurrentConfig.WorkflowTimeoutSeconds, CurrentJobIndex + 1, JobQueue.Num());
+	
+	FinishWorkflow(EWorkflowStatus::Failed, 
+		FString::Printf(TEXT("Workflow timed out after %.1f seconds"), ElapsedTime));
 }
