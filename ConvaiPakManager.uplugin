@@ -16,6 +16,11 @@
 	"Installed": false,
 	"Modules": [
 		{
+			"Name": "ConvaiJobSystem",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
 			"Name": "ConvaiPakManagerEditor",
 			"Type": "Editor",
 			"LoadingPhase": "PostEngineInit",
