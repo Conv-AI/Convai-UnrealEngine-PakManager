@@ -1,0 +1,44 @@
+// Copyright 2025 Convai Inc. All Rights Reserved.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "UObject/Interface.h"
+#include "WorkflowManagerInterface.h"
+#include "JobInterface.generated.h"
+
+UINTERFACE(BlueprintType, Blueprintable)
+class UJobInterface : public UInterface
+{
+	GENERATED_BODY()
+};
+
+/**
+ * Interface for workflow jobs.
+ * Any class can implement this interface to become executable within a workflow.
+ * 
+ * Contract:
+ * - Execute() will be called by the workflow manager
+ * - The job MUST call NotifyJobCompleted() from WorkflowBlueprintLibrary when done
+ * - Jobs can be synchronous or asynchronous internally
+ * - Jobs should check IsCancellationRequested() for long operations
+ */
+class CONVAIJOBSYSTEM_API IJobInterface
+{
+	GENERATED_BODY()
+
+public:
+	/**
+	 * Execute the job.
+	 * 
+	 * IMPORTANT: When execution completes (success or failure), you MUST call:
+	 *   UWorkflowBlueprintLibrary::NotifyJobCompleted(WorkflowManager, this, Result, OptionalErrorMessage)
+	 * 
+	 * For async operations, store the WorkflowManager reference and call
+	 * NotifyJobCompleted from your callback using the Blueprint library.
+	 * 
+	 * @param WorkflowManager Interface to the workflow manager for context access and completion notification
+	 */
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
+	void Execute(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager);
+};
