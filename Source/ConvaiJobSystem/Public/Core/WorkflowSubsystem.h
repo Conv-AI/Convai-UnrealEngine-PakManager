@@ -12,6 +12,7 @@ class UWorkflowContext;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnWorkflowStatusChanged, EWorkflowStatus, NewStatus, const FString&, Message);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnJobStatusChanged, int32, JobIndex, EJobResult, Result, UObject*, Job);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnJobRetry, int32, JobIndex, int32, RetryCount);
 
 /**
  * Default workflow manager provided by the module.
@@ -57,6 +58,9 @@ public:
 	int32 GetTotalJobCount() const { return JobQueue.Num(); }
 
 	UFUNCTION(BlueprintPure, Category = "Workflow")
+	int32 GetCurrentJobRetryCount() const { return CurrentRetryCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Workflow")
 	float GetCurrentJobElapsedTime() const;
 
 	UFUNCTION(BlueprintPure, Category = "Workflow")
@@ -68,19 +72,27 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
 	FOnJobStatusChanged OnJobStatusChanged;
 
+	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
+	FOnJobRetry OnJobRetry;
+
 protected:
 	void ExecuteCurrentJob();
 	void AdvanceToNextJob();
+	void RetryCurrentJob();
+	void ScheduleRetry(float DelaySeconds);
+	void HandleRetryTimer();
 	void FinishWorkflow(EWorkflowStatus FinalStatus, const FString& ErrorMessage = TEXT(""));
 	void CleanupInternalState();
 	void ResetState(bool bBroadcastCancelled);
 	void ClearAllTimers();
-	void StartJobTimeoutTimer();
+	void StartJobTimeoutTimer(float TimeoutSeconds);
 	void ClearJobTimeoutTimer();
 	void HandleJobTimeout();
 	void StartWorkflowTimeoutTimer();
 	void ClearWorkflowTimeoutTimer();
 	void HandleWorkflowTimeout();
+	FJobConfig GetCurrentJobConfig() const;
+	bool ShouldRetry(EJobResult Result, const FJobConfig& Config) const;
 
 private:
 	UPROPERTY()
@@ -93,12 +105,15 @@ private:
 	TObjectPtr<UObject> CurrentJob;
 
 	int32 CurrentJobIndex = 0;
+	int32 CurrentRetryCount = 0;
 	EWorkflowStatus Status = EWorkflowStatus::Idle;
 	bool bCancellationRequested = false;
 	FString LastErrorMessage;
-	FWorkflowConfig CurrentConfig;
+	FWorkflowConfig WorkflowConfig;
+	FJobConfig CurrentJobConfig;
 	double CurrentJobStartTime = 0.0;
 	double WorkflowStartTime = 0.0;
 	FTimerHandle JobTimeoutTimerHandle;
 	FTimerHandle WorkflowTimeoutTimerHandle;
+	FTimerHandle RetryTimerHandle;
 };

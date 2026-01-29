@@ -63,27 +63,42 @@ void UWorkflowSubsystem::OnJobCompleted(UObject* Job, const EJobResult Result, c
 	
 	OnJobStatusChanged.Broadcast(CurrentJobIndex, Result, Job);
 	
-	switch (Result)
+	if (Result == EJobResult::Success)
 	{
-	case EJobResult::Success:
 		AdvanceToNextJob();
-		break;
-	case EJobResult::Failed:
-		FinishWorkflow(EWorkflowStatus::Failed, ErrorMessage);
-		break;
-	case EJobResult::Timeout:
-		if (CurrentConfig.bContinueOnJobTimeout)
+		return;
+	}
+	
+	if (Result == EJobResult::Cancelled)
+	{
+		FinishWorkflow(EWorkflowStatus::Cancelled);
+		return;
+	}
+	
+	// Handle failure/timeout - check for retry
+	if (ShouldRetry(Result, CurrentJobConfig))
+	{
+		if (CurrentJobConfig.RetryDelaySeconds > 0.0f)
 		{
-			AdvanceToNextJob();
+			ScheduleRetry(CurrentJobConfig.RetryDelaySeconds);
 		}
 		else
 		{
-			FinishWorkflow(EWorkflowStatus::Timeout, TEXT("Job timed out"));
+			RetryCurrentJob();
 		}
-		break;
-	case EJobResult::Cancelled:
-		FinishWorkflow(EWorkflowStatus::Cancelled);
-		break;
+		return;
+	}
+	
+	// No retry - check if we should continue or fail workflow
+	if (CurrentJobConfig.bContinueWorkflowOnFailure)
+	{
+		UE_LOG(LogWorkflow, Log, TEXT("Job %d failed but continuing workflow"), CurrentJobIndex);
+		AdvanceToNextJob();
+	}
+	else
+	{
+		EWorkflowStatus FinalStatus = (Result == EJobResult::Timeout) ? EWorkflowStatus::Timeout : EWorkflowStatus::Failed;
+		FinishWorkflow(FinalStatus, ErrorMessage);
 	}
 }
 
@@ -118,11 +133,11 @@ bool UWorkflowSubsystem::ExecuteWorkflow(const FWorkflowConfig& Config, const TA
 	}
 	
 	ResetState(false);
-	CurrentConfig = Config;
+	WorkflowConfig = Config;
 	JobQueue = Jobs;
 	WorkflowStartTime = FPlatformTime::Seconds();
 	
-	UE_LOG(LogWorkflow, Log, TEXT("Starting workflow: %d jobs"), JobQueue.Num());
+	UE_LOG(LogWorkflow, Log, TEXT("Starting workflow with %d jobs"), JobQueue.Num());
 	
 	Status = EWorkflowStatus::Running;
 	OnWorkflowStatusChanged.Broadcast(Status, TEXT(""));
@@ -177,6 +192,7 @@ float UWorkflowSubsystem::GetWorkflowElapsedTime() const
 void UWorkflowSubsystem::AdvanceToNextJob()
 {
 	CurrentJobIndex++;
+	CurrentRetryCount = 0;
 	CurrentJob = nullptr;
 	
 	if (CurrentJobIndex >= JobQueue.Num())
@@ -191,6 +207,36 @@ void UWorkflowSubsystem::AdvanceToNextJob()
 	{
 		ExecuteCurrentJob();
 	}
+}
+
+void UWorkflowSubsystem::RetryCurrentJob()
+{
+	CurrentRetryCount++;
+	UE_LOG(LogWorkflow, Log, TEXT("Retrying job %d (attempt %d/%d)"), 
+		CurrentJobIndex, CurrentRetryCount + 1, CurrentJobConfig.MaxRetries + 1);
+	
+	OnJobRetry.Broadcast(CurrentJobIndex, CurrentRetryCount);
+	ExecuteCurrentJob();
+}
+
+void UWorkflowSubsystem::ScheduleRetry(float DelaySeconds)
+{
+	FTimerManager* TimerManager = GetTimerManager();
+	if (!TimerManager)
+	{
+		RetryCurrentJob();
+		return;
+	}
+	
+	UE_LOG(LogWorkflow, Log, TEXT("Scheduling retry for job %d in %.1fs"), CurrentJobIndex, DelaySeconds);
+	
+	TimerManager->SetTimer(RetryTimerHandle, this, &UWorkflowSubsystem::HandleRetryTimer, DelaySeconds, false);
+}
+
+void UWorkflowSubsystem::HandleRetryTimer()
+{
+	if (!IsRunning()) return;
+	RetryCurrentJob();
 }
 
 void UWorkflowSubsystem::ExecuteCurrentJob()
@@ -210,12 +256,16 @@ void UWorkflowSubsystem::ExecuteCurrentJob()
 	const TScriptInterface<IJobInterface>& JobInterface = JobQueue[CurrentJobIndex];
 	CurrentJob = JobInterface.GetObject();
 	CurrentJobStartTime = FPlatformTime::Seconds();
+	CurrentJobConfig = GetCurrentJobConfig();
 	
 	UE_LOG(LogWorkflow, Log, TEXT("Executing job %d/%d: %s"), 
 		CurrentJobIndex + 1, JobQueue.Num(),
 		CurrentJob ? *CurrentJob->GetClass()->GetName() : TEXT("Unknown"));
 	
-	StartJobTimeoutTimer();
+	if (CurrentJobConfig.TimeoutSeconds > 0.0f)
+	{
+		StartJobTimeoutTimer(CurrentJobConfig.TimeoutSeconds);
+	}
 	
 	TScriptInterface<IWorkflowManagerInterface> ManagerInterface;
 	ManagerInterface.SetObject(this);
@@ -243,10 +293,12 @@ void UWorkflowSubsystem::CleanupInternalState()
 	JobQueue.Empty();
 	CurrentJob = nullptr;
 	CurrentJobIndex = 0;
+	CurrentRetryCount = 0;
 	bCancellationRequested = false;
 	CurrentJobStartTime = 0.0;
 	WorkflowStartTime = 0.0;
-	CurrentConfig = FWorkflowConfig();
+	WorkflowConfig = FWorkflowConfig();
+	CurrentJobConfig = FJobConfig();
 }
 
 void UWorkflowSubsystem::ResetState(const bool bBroadcastCancelled)
@@ -272,21 +324,66 @@ void UWorkflowSubsystem::ResetState(const bool bBroadcastCancelled)
 	}
 }
 
+FJobConfig UWorkflowSubsystem::GetCurrentJobConfig() const
+{
+	if (CurrentJobIndex >= JobQueue.Num()) 
+	{
+		return WorkflowConfig.DefaultJobConfig;
+	}
+	
+	const TScriptInterface<IJobInterface>& JobInterface = JobQueue[CurrentJobIndex];
+
+	if (const UObject* JobObject = JobInterface.GetObject())
+	{
+		const FJobConfig Config = IJobInterface::Execute_GetJobConfig(JobObject);
+		return Config.bUseWorkflowConfig ? WorkflowConfig.DefaultJobConfig : Config;
+	}
+	
+	return WorkflowConfig.DefaultJobConfig;
+}
+
+bool UWorkflowSubsystem::ShouldRetry(const EJobResult Result, const FJobConfig& Config) const
+{
+	if (CurrentRetryCount >= Config.MaxRetries)
+	{
+		return false;
+	}
+	
+	if (Result == EJobResult::Timeout && Config.bRetryOnTimeout)
+	{
+		return true;
+	}
+	
+	if (Result == EJobResult::Failed && Config.bRetryOnFailure)
+	{
+		return true;
+	}
+	
+	return false;
+}
+
 void UWorkflowSubsystem::ClearAllTimers()
 {
 	ClearJobTimeoutTimer();
 	ClearWorkflowTimeoutTimer();
+	
+	if (RetryTimerHandle.IsValid())
+	{
+		if (FTimerManager* TimerManager = GetTimerManager())
+		{
+			TimerManager->ClearTimer(RetryTimerHandle);
+		}
+		RetryTimerHandle.Invalidate();
+	}
 }
 
-void UWorkflowSubsystem::StartJobTimeoutTimer()
+void UWorkflowSubsystem::StartJobTimeoutTimer(const float TimeoutSeconds)
 {
-	if (CurrentConfig.JobTimeoutSeconds <= 0.0f) return;
-	
 	FTimerManager* TimerManager = GetTimerManager();
 	if (!TimerManager) return;
 	
 	ClearJobTimeoutTimer();
-	TimerManager->SetTimer(JobTimeoutTimerHandle, this, &UWorkflowSubsystem::HandleJobTimeout, CurrentConfig.JobTimeoutSeconds, false);
+	TimerManager->SetTimer(JobTimeoutTimerHandle, this, &UWorkflowSubsystem::HandleJobTimeout, TimeoutSeconds, false);
 }
 
 void UWorkflowSubsystem::ClearJobTimeoutTimer()
@@ -308,7 +405,18 @@ void UWorkflowSubsystem::HandleJobTimeout()
 	UE_LOG(LogWorkflow, Warning, TEXT("Job %d timed out"), CurrentJobIndex);
 	OnJobStatusChanged.Broadcast(CurrentJobIndex, EJobResult::Timeout, CurrentJob);
 	
-	if (CurrentConfig.bContinueOnJobTimeout)
+	if (ShouldRetry(EJobResult::Timeout, CurrentJobConfig))
+	{
+		if (CurrentJobConfig.RetryDelaySeconds > 0.0f)
+		{
+			ScheduleRetry(CurrentJobConfig.RetryDelaySeconds);
+		}
+		else
+		{
+			RetryCurrentJob();
+		}
+	}
+	else if (CurrentJobConfig.bContinueWorkflowOnFailure)
 	{
 		AdvanceToNextJob();
 	}
@@ -320,13 +428,13 @@ void UWorkflowSubsystem::HandleJobTimeout()
 
 void UWorkflowSubsystem::StartWorkflowTimeoutTimer()
 {
-	if (CurrentConfig.WorkflowTimeoutSeconds <= 0.0f) return;
+	if (WorkflowConfig.WorkflowTimeoutSeconds <= 0.0f) return;
 	
 	FTimerManager* TimerManager = GetTimerManager();
 	if (!TimerManager) return;
 	
 	ClearWorkflowTimeoutTimer();
-	TimerManager->SetTimer(WorkflowTimeoutTimerHandle, this, &UWorkflowSubsystem::HandleWorkflowTimeout, CurrentConfig.WorkflowTimeoutSeconds, false);
+	TimerManager->SetTimer(WorkflowTimeoutTimerHandle, this, &UWorkflowSubsystem::HandleWorkflowTimeout, WorkflowConfig.WorkflowTimeoutSeconds, false);
 }
 
 void UWorkflowSubsystem::ClearWorkflowTimeoutTimer()

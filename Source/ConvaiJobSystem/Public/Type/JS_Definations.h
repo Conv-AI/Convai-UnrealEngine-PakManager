@@ -27,16 +27,40 @@ enum class EWorkflowStatus : uint8
 };
 
 USTRUCT(BlueprintType)
+struct CONVAIJOBSYSTEM_API FJobConfig
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	bool bUseWorkflowConfig = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	float TimeoutSeconds = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	int32 MaxRetries = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	float RetryDelaySeconds = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	bool bRetryOnTimeout = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	bool bRetryOnFailure = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	bool bContinueWorkflowOnFailure = false;
+};
+
+USTRUCT(BlueprintType)
 struct CONVAIJOBSYSTEM_API FWorkflowConfig
 {
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
-	float JobTimeoutSeconds = 0.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
 	float WorkflowTimeoutSeconds = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
-	bool bContinueOnJobTimeout = false;
+	FJobConfig DefaultJobConfig;
 };

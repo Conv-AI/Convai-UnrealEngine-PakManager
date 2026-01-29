@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/Interface.h"
+#include "Type/JS_Definations.h"
 #include "WorkflowManagerInterface.h"
 #include "JobInterface.generated.h"
 
@@ -28,17 +29,9 @@ class CONVAIJOBSYSTEM_API IJobInterface
 	GENERATED_BODY()
 
 public:
-	/**
-	 * Execute the job.
-	 * 
-	 * IMPORTANT: When execution completes (success or failure), you MUST call:
-	 *   UWorkflowBlueprintLibrary::NotifyJobCompleted(WorkflowManager, this, Result, OptionalErrorMessage)
-	 * 
-	 * For async operations, store the WorkflowManager reference and call
-	 * NotifyJobCompleted from your callback using the Blueprint library.
-	 * 
-	 * @param WorkflowManager Interface to the workflow manager for context access and completion notification
-	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
 	void Execute(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager);
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
+	FJobConfig GetJobConfig() const;
 };
