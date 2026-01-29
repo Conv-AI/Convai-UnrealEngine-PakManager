@@ -10,10 +10,8 @@
 
 class UWorkflowContext;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnWorkflowCompleted, EWorkflowStatus, Status, const FString&, ErrorMessage);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnWorkflowStatusChanged, EWorkflowStatus, NewStatus, const FString&, Message);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnJobStatusChanged, int32, JobIndex, EJobResult, Result, UObject*, Job);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCancellationRequested);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnJobTimedOut, int32, JobIndex, UObject*, Job);
 
 /**
  * Default workflow manager provided by the module.
@@ -39,13 +37,13 @@ public:
 	virtual EWorkflowStatus GetStatus() const override { return Status; }
 	
 	UFUNCTION(BlueprintPure, Category = "Workflow")
-	virtual bool IsRunning() const override { return Status == EWorkflowStatus::Running; }
+	virtual bool IsRunning() const override { return Status == EWorkflowStatus::Running || Status == EWorkflowStatus::CancellationRequested; }
 	
 	UFUNCTION(BlueprintPure, Category = "Workflow")
 	virtual float GetProgress() const override;
 	
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
-	virtual UWorkflowContext* GetContext() const override;
+	virtual UWorkflowContext* GetContext() const override { return Context; }
 	
 	virtual void OnJobCompleted(UObject* Job, EJobResult Result, const FString& ErrorMessage = TEXT("")) override;
 	
@@ -65,16 +63,10 @@ public:
 	float GetWorkflowElapsedTime() const;
 
 	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
-	FOnWorkflowCompleted OnWorkflowCompleted;
+	FOnWorkflowStatusChanged OnWorkflowStatusChanged;
 
 	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
 	FOnJobStatusChanged OnJobStatusChanged;
-
-	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
-	FOnCancellationRequested OnCancellationRequested;
-
-	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
-	FOnJobTimedOut OnJobTimedOut;
 
 protected:
 	void ExecuteCurrentJob();
