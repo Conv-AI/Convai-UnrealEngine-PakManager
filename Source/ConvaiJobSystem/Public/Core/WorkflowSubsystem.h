@@ -10,7 +10,7 @@
 
 class UWorkflowContext;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnWorkflowCompleted, EWorkflowStatus, Status, const FString&,ErrorMessage);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnWorkflowCompleted, EWorkflowStatus, Status, const FString&, ErrorMessage);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnJobStatusChanged, int32, JobIndex, EJobResult, Result, UObject*, Job);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCancellationRequested);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnJobTimedOut, int32, JobIndex, UObject*, Job);
@@ -29,31 +29,34 @@ public:
 	virtual void Deinitialize() override;
 
 	// IWorkflowManagerInterface
-	virtual UWorkflowContext* GetContext() const override;
-	virtual void OnJobCompleted(UObject* Job, EJobResult Result, const FString& ErrorMessage = TEXT("")) override;
-	virtual bool IsCancellationRequested() const override;
-	// ~IWorkflowManagerInterface
+	UFUNCTION(BlueprintCallable, Category = "Workflow")
+	virtual bool ExecuteWorkflow(const FWorkflowConfig& Config, const TArray<TScriptInterface<IJobInterface>>& Jobs) override;
 	
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
-	bool ExecuteWorkflow(const FWorkflowConfig& Config, const TArray<TScriptInterface<IJobInterface>>& Jobs);
-
+	virtual void CancelWorkflow(bool bForce = false) override;
+	
+	UFUNCTION(BlueprintPure, Category = "Workflow")
+	virtual EWorkflowStatus GetStatus() const override { return Status; }
+	
+	UFUNCTION(BlueprintPure, Category = "Workflow")
+	virtual bool IsRunning() const override { return Status == EWorkflowStatus::Running; }
+	
+	UFUNCTION(BlueprintPure, Category = "Workflow")
+	virtual float GetProgress() const override;
+	
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
-	void CancelWorkflow(bool bForce = false);
-
+	virtual UWorkflowContext* GetContext() const override;
+	
+	virtual void OnJobCompleted(UObject* Job, EJobResult Result, const FString& ErrorMessage = TEXT("")) override;
+	
 	UFUNCTION(BlueprintPure, Category = "Workflow")
-	EWorkflowStatus GetStatus() const { return Status; }
-
-	UFUNCTION(BlueprintPure, Category = "Workflow")
-	bool IsRunning() const { return Status == EWorkflowStatus::Running; }
+	virtual bool IsCancellationRequested() const override { return bCancellationRequested; }
 
 	UFUNCTION(BlueprintPure, Category = "Workflow")
 	int32 GetCurrentJobIndex() const { return IsRunning() ? CurrentJobIndex : -1; }
 
 	UFUNCTION(BlueprintPure, Category = "Workflow")
 	int32 GetTotalJobCount() const { return JobQueue.Num(); }
-
-	UFUNCTION(BlueprintPure, Category = "Workflow")
-	float GetProgress() const;
 
 	UFUNCTION(BlueprintPure, Category = "Workflow")
 	float GetCurrentJobElapsedTime() const;
@@ -67,7 +70,6 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
 	FOnJobStatusChanged OnJobStatusChanged;
 
-	/** Jobs can bind to this for immediate cancellation notification */
 	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
 	FOnCancellationRequested OnCancellationRequested;
 

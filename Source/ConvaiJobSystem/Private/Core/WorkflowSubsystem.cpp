@@ -84,11 +84,6 @@ void UWorkflowSubsystem::OnJobCompleted(UObject* Job, const EJobResult Result, c
 	}
 }
 
-bool UWorkflowSubsystem::IsCancellationRequested() const
-{
-	return bCancellationRequested;
-}
-
 bool UWorkflowSubsystem::ExecuteWorkflow(const FWorkflowConfig& Config, const TArray<TScriptInterface<IJobInterface>>& Jobs)
 {
 	if (IsRunning())
