@@ -1,6 +1,6 @@
 // Copyright 2025 Convai Inc. All Rights Reserved.
 
-#include "WorkflowContext.h"
+#include "Core/WorkflowContext.h"
 
 void UWorkflowContext::SetValue(FGameplayTag Key, const FString& JsonValue)
 {

@@ -1,7 +1,7 @@
 // Copyright 2025 Convai Inc. All Rights Reserved.
 
-#include "WorkflowBlueprintLibrary.h"
-#include "WorkflowContext.h"
+#include "Utility/WorkflowBlueprintLibrary.h"
+#include "Core/WorkflowContext.h"
 
 UWorkflowContext* UWorkflowBlueprintLibrary::GetWorkflowContext(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager)
 {

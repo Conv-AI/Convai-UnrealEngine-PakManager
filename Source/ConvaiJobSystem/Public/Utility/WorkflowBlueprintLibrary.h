@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
-#include "WorkflowManagerInterface.h"
+#include "Interface/WorkflowManagerInterface.h"
 #include "WorkflowBlueprintLibrary.generated.h"
 
 class UWorkflowContext;

@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/Interface.h"
-#include "JobTypes.h"
+#include "Type/JobTypes.h"
 #include "WorkflowManagerInterface.generated.h"
 
 class UWorkflowContext;

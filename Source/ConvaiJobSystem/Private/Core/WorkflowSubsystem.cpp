@@ -1,8 +1,8 @@
 // Copyright 2025 Convai Inc. All Rights Reserved.
 
-#include "WorkflowSubsystem.h"
-#include "WorkflowContext.h"
-#include "JobInterface.h"
+#include "Core/WorkflowSubsystem.h"
+#include "Core/WorkflowContext.h"
+#include "Interface/JobInterface.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWorkflow, Log, All);
 

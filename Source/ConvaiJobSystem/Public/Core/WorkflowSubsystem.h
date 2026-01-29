@@ -4,9 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/EngineSubsystem.h"
-#include "JobTypes.h"
-#include "WorkflowManagerInterface.h"
-#include "JobInterface.h"
+#include "Type/JobTypes.h"
+#include "Interface/WorkflowManagerInterface.h"
+#include "Interface/JobInterface.h"
 #include "WorkflowSubsystem.generated.h"
 
 class UWorkflowContext;
