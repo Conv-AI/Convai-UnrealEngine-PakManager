@@ -3,8 +3,6 @@
 #include "ConvaiPakManagerEditor.h"
 #include "UI/SCPM_PakManagerWindow.h"
 #include "Utility/CPM_Log.h"
-#include "Services/CPM_WorkflowService.h"
-#include "Services/CPM_ConfigService.h"
 
 #include "ToolMenus.h"
 #include "Framework/Application/SlateApplication.h"
@@ -26,10 +24,6 @@ FConvaiPakManagerEditorModule& FConvaiPakManagerEditorModule::Get()
 void FConvaiPakManagerEditorModule::StartupModule()
 {
 	CPM_LOG(Log, TEXT("ConvaiPakManagerEditor module starting up"));
-
-	// Initialize services
-	FCPM_ConfigServiceManager::Initialize();
-	FCPM_WorkflowServiceManager::Initialize();
 
 	// Register the tab spawner immediately
 	RegisterTabSpawner();
@@ -63,10 +57,6 @@ void FConvaiPakManagerEditorModule::ShutdownModule()
 	UnregisterTabSpawner();
 
 	PakManagerWidget.Reset();
-
-	// Shutdown services (reverse order of initialization)
-	FCPM_WorkflowServiceManager::Shutdown();
-	FCPM_ConfigServiceManager::Shutdown();
 }
 
 void FConvaiPakManagerEditorModule::RegisterTabSpawner()
