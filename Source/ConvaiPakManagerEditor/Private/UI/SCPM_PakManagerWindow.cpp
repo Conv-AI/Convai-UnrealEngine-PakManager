@@ -6,6 +6,7 @@
 #include "SlateWidgets/CPM_SlateStyle.h"
 #include "Utility/CPM_Log.h"
 #include "Utility/CPM_UtilityLibrary.h"
+#include "Services/CPM_WorkflowService.h"
 
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SBorder.h"
@@ -14,6 +15,7 @@
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/SBoxPanel.h"
+#include "Widgets/Notifications/SProgressBar.h"
 #include "Styling/CoreStyle.h"
 #include "Misc/FileHelper.h"
 #include "Serialization/JsonReader.h"
@@ -131,7 +133,7 @@ TSharedRef<SWidget> SCPM_PakManagerWindow::BuildAssetInfoSection()
 			.KeyHintText(LOCTEXT("KeyHint", "Property"))
 			.ValueHintText(LOCTEXT("ValueHint", "Value"))
 			.ShowAddButton(true)
-			.MaxHeight(400.0f)
+			.MaxHeight(500.0f)
 			.OnListChanged(this, &SCPM_PakManagerWindow::HandleAssetInfoChanged)
 		];
 }
@@ -409,12 +411,53 @@ FReply SCPM_PakManagerWindow::HandlePackageClicked()
 		return FReply::Handled();
 	}
 	
+	auto WorkflowService = FCPM_WorkflowServiceManager::Get();
+	if (!WorkflowService.IsValid())
+	{
+		UpdateStatus(TEXT("Error: Workflow service unavailable"), true);
+		return FReply::Handled();
+	}
+	
+	if (WorkflowService->IsWorkflowRunning())
+	{
+		UpdateStatus(TEXT("Error: A workflow is already in progress"), true);
+		return FReply::Handled();
+	}
+	
+	// Build params
+	FCPM_CreateAssetParams Params;
+	Params.AssetInfo = GetAssetInfoPairs();
+	Params.AssetType = GetSelectedAssetType();
+	
+	// Subscribe to progress updates
+	WorkflowService->OnProgress().AddSP(this, &SCPM_PakManagerWindow::HandleWorkflowProgress);
+	
+	// Start the packaging workflow
+	CurrentOperation = WorkflowService->StartPackageWorkflow(Params);
+	
 	UpdateStatus(FString::Printf(TEXT("Packaging '%s'..."), *AssetName));
+	SetButtonsEnabled(false);
 	
-	// Log all the asset info
-	CPM_LOG(Log, TEXT("Asset Info JSON: %s"), *GetAssetInfoAsJson());
+	// Handle completion
+	TWeakPtr<SCPM_PakManagerWindow> WeakSelf = SharedThis(this);
+	CurrentOperation->OnComplete([WeakSelf](const TCPM_Result<TArray<FString>>& Result)
+	{
+		if (TSharedPtr<SCPM_PakManagerWindow> This = WeakSelf.Pin())
+		{
+			This->SetButtonsEnabled(true);
+			
+			if (Result.IsSuccess())
+			{
+				auto PakFiles = Result.GetValue();
+				This->UpdateStatus(FString::Printf(TEXT("Packaging complete! Generated %d pak files."), PakFiles.Num()));
+			}
+			else
+			{
+				This->UpdateStatus(FString::Printf(TEXT("Packaging failed: %s"), *Result.GetError()), true);
+			}
+		}
+	});
 	
-	// TODO: Implement packaging logic
 	return FReply::Handled();
 }
 
@@ -429,12 +472,53 @@ FReply SCPM_PakManagerWindow::HandleCreateClicked()
 		return FReply::Handled();
 	}
 	
+	auto WorkflowService = FCPM_WorkflowServiceManager::Get();
+	if (!WorkflowService.IsValid())
+	{
+		UpdateStatus(TEXT("Error: Workflow service unavailable"), true);
+		return FReply::Handled();
+	}
+	
+	if (WorkflowService->IsWorkflowRunning())
+	{
+		UpdateStatus(TEXT("Error: A workflow is already in progress"), true);
+		return FReply::Handled();
+	}
+	
+	// Build params
+	FCPM_CreateAssetParams Params;
+	Params.AssetInfo = GetAssetInfoPairs();
+	Params.AssetType = GetSelectedAssetType();
+	
+	// Subscribe to progress updates
+	WorkflowService->OnProgress().AddSP(this, &SCPM_PakManagerWindow::HandleWorkflowProgress);
+	
+	// Start the create asset workflow
+	CreateOperation = WorkflowService->StartCreateAssetWorkflow(Params);
+	
 	UpdateStatus(FString::Printf(TEXT("Creating asset '%s'..."), *AssetName));
+	SetButtonsEnabled(false);
 	
-	// Log all the asset info
-	CPM_LOG(Log, TEXT("Asset Info JSON: %s"), *GetAssetInfoAsJson());
+	// Handle completion
+	TWeakPtr<SCPM_PakManagerWindow> WeakSelf = SharedThis(this);
+	CreateOperation->OnComplete([WeakSelf](const TCPM_Result<FCPM_CreateAssetResult>& Result)
+	{
+		if (TSharedPtr<SCPM_PakManagerWindow> This = WeakSelf.Pin())
+		{
+			This->SetButtonsEnabled(true);
+			
+			if (Result.IsSuccess())
+			{
+				auto CreateResult = Result.GetValue();
+				This->UpdateStatus(FString::Printf(TEXT("Asset created successfully! ID: %s"), *CreateResult.AssetId));
+			}
+			else
+			{
+				This->UpdateStatus(FString::Printf(TEXT("Create failed: %s"), *Result.GetError()), true);
+			}
+		}
+	});
 	
-	// TODO: Implement create asset logic
 	return FReply::Handled();
 }
 
@@ -445,6 +529,32 @@ void SCPM_PakManagerWindow::UpdateStatus(const FString& Message, bool bIsError)
 		StatusText->SetText(FText::FromString(Message));
 		StatusText->SetColorAndOpacity(bIsError ? CPMStyle::Danger() : CPMStyle::HintTextColor());
 	}
+}
+
+void SCPM_PakManagerWindow::SetButtonsEnabled(bool bEnabled)
+{
+	if (PackageButton.IsValid())
+	{
+		PackageButton->SetEnabled(bEnabled);
+	}
+	if (CreateButton.IsValid())
+	{
+		CreateButton->SetEnabled(bEnabled);
+	}
+	if (CaptureThumbnailButton.IsValid())
+	{
+		CaptureThumbnailButton->SetEnabled(bEnabled);
+	}
+}
+
+void SCPM_PakManagerWindow::HandleWorkflowProgress(const FCPM_WorkflowProgress& Progress)
+{
+	// Update status with workflow progress
+	FString StatusMessage = FString::Printf(TEXT("[%d/%d] %s"), 
+		Progress.CurrentStepIndex, Progress.TotalSteps, *Progress.Message);
+	
+	bool bIsError = (Progress.State == ECPM_WorkflowState::Failed || Progress.State == ECPM_WorkflowState::Cancelled);
+	UpdateStatus(StatusMessage, bIsError);
 }
 
 #undef LOCTEXT_NAMESPACE

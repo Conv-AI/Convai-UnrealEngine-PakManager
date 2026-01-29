@@ -7,10 +7,13 @@
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Utility/CPM_Utils.h"
 #include "Types/CPM_WidgetTypes.h"
+#include "Infrastructure/CPM_AsyncOperation.h"
 
 class SCPM_KeyValueList;
 class SCPM_Button;
 class SImage;
+struct FCPM_WorkflowProgress;
+struct FCPM_CreateAssetResult;
 
 /**
  * Main Pak Manager Window - Slate UI for managing pak file creation and uploads
@@ -65,6 +68,14 @@ private:
 	FReply HandlePackageClicked();
 	FReply HandleCreateClicked();
 
+	// Workflow progress handler
+	void HandleWorkflowProgress(const FCPM_WorkflowProgress& Progress);
+
 	// Helpers
 	void UpdateStatus(const FString& Message, bool bIsError = false);
+	void SetButtonsEnabled(bool bEnabled);
+
+	// Active operations
+	TSharedPtr<FCPM_AsyncOperation<TArray<FString>>> CurrentOperation;
+	TSharedPtr<FCPM_AsyncOperation<FCPM_CreateAssetResult>> CreateOperation;
 };
