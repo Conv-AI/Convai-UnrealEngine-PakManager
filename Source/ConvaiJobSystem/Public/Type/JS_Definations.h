@@ -12,7 +12,8 @@ enum class EJobResult : uint8
 	Failed		UMETA(DisplayName = "Failed"),
 	Cancelled	UMETA(DisplayName = "Cancelled"),
 	Timeout		UMETA(DisplayName = "Timeout"),
-	Skipped		UMETA(DisplayName = "Skipped")
+	Skipped		UMETA(DisplayName = "Skipped"),
+	Retrying	UMETA(DisplayName = "Retrying")
 };
 
 UENUM(BlueprintType)

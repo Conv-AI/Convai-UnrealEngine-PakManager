@@ -92,7 +92,7 @@ void UWorkflowSubsystem::NotifyListenersJobStatus(const FJobStatusEvent& Event)
 	OnJobStatusChangedDelegate.Broadcast(Event);
 }
 
-void UWorkflowSubsystem::SetStatus(EWorkflowStatus NewStatus, const FString& Message)
+void UWorkflowSubsystem::SetStatus(const EWorkflowStatus NewStatus, const FString& Message)
 {
 	if (Status == NewStatus) return;
 	
@@ -116,9 +116,8 @@ void UWorkflowSubsystem::OnJobCompleted(const TScriptInterface<IJobInterface>& J
 	}
 	
 	ClearJobTimeoutTimer();
-	
-	UObject* JobObject = Job.GetObject();
-	if (JobObject != CurrentJob)
+
+	if (UObject* JobObject = Job.GetObject(); JobObject != CurrentJob)
 	{
 		UE_LOG(LogWorkflow, Warning, TEXT("OnJobCompleted: unexpected job"));
 		return;
@@ -158,7 +157,7 @@ void UWorkflowSubsystem::OnJobCompleted(const TScriptInterface<IJobInterface>& J
 	}
 	else
 	{
-		EWorkflowStatus FinalStatus = (Result == EJobResult::Timeout) ? EWorkflowStatus::Timeout : EWorkflowStatus::Failed;
+		const EWorkflowStatus FinalStatus = (Result == EJobResult::Timeout) ? EWorkflowStatus::Timeout : EWorkflowStatus::Failed;
 		FinishWorkflow(FinalStatus, ErrorMessage);
 	}
 }
@@ -314,6 +313,8 @@ void UWorkflowSubsystem::RetryCurrentJob()
 	CurrentJobProgress = 0.0f;
 	UE_LOG(LogWorkflow, Log, TEXT("Retrying job %d: %s (attempt %d/%d)"), 
 		CurrentJobIndex, *CurrentJobName, CurrentRetryCount + 1, CurrentJobConfig.MaxRetries + 1);
+	
+	BroadcastJobStatus(EJobResult::Retrying);
 	ExecuteCurrentJob();
 }
 
@@ -456,7 +457,7 @@ bool UWorkflowSubsystem::ShouldRetry(const EJobResult Result, const FJobConfig& 
 	return false;
 }
 
-void UWorkflowSubsystem::BroadcastJobStatus(EJobResult Result, const FString& ErrorMessage)
+void UWorkflowSubsystem::BroadcastJobStatus(const EJobResult Result, const FString& ErrorMessage)
 {
 	FJobStatusEvent Event;
 	Event.JobIndex = CurrentJobIndex;
