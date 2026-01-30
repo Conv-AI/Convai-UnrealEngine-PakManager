@@ -10,9 +10,8 @@
 
 class UWorkflowContext;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnWorkflowStatusChanged, EWorkflowStatus, NewStatus, const FString&, Message);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnJobStatusChanged, int32, JobIndex, EJobResult, Result, UObject*, Job);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnJobRetry, int32, JobIndex, int32, RetryCount);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWorkflowStatusChanged, const FWorkflowStatusEvent&, Event);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnJobStatusChanged, const FJobStatusEvent&, Event);
 
 /**
  * Default workflow manager provided by the module.
@@ -72,11 +71,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
 	FOnJobStatusChanged OnJobStatusChanged;
 
-	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
-	FOnJobRetry OnJobRetry;
-
 protected:
 	void ExecuteCurrentJob();
+	void CancelCurrentJob(bool bForce = false);
 	void AdvanceToNextJob();
 	void RetryCurrentJob();
 	void ScheduleRetry(float DelaySeconds);
@@ -93,6 +90,8 @@ protected:
 	void HandleWorkflowTimeout();
 	FJobConfig GetCurrentJobConfig() const;
 	bool ShouldRetry(EJobResult Result, const FJobConfig& Config) const;
+	void BroadcastJobStatus(EJobResult Result, const FString& ErrorMessage = TEXT(""));
+	void SetStatus(EWorkflowStatus NewStatus, const FString& Message = TEXT(""));
 
 private:
 	UPROPERTY()

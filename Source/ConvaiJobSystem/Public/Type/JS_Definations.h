@@ -34,23 +34,59 @@ struct CONVAIJOBSYSTEM_API FJobConfig
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
 	bool bUseWorkflowConfig = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job", meta = (EditCondition = "!bUseWorkflowConfig"))
 	float TimeoutSeconds = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job", meta = (EditCondition = "!bUseWorkflowConfig"))
 	int32 MaxRetries = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job", meta = (EditCondition = "!bUseWorkflowConfig"))
 	float RetryDelaySeconds = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job", meta = (EditCondition = "!bUseWorkflowConfig"))
 	bool bRetryOnTimeout = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job", meta = (EditCondition = "!bUseWorkflowConfig"))
 	bool bRetryOnFailure = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job", meta = (EditCondition = "!bUseWorkflowConfig"))
 	bool bContinueWorkflowOnFailure = false;
+};
+
+USTRUCT(BlueprintType)
+struct CONVAIJOBSYSTEM_API FJobStatusEvent
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Job")
+	int32 JobIndex = -1;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Job")
+	EJobResult Result = EJobResult::Failed;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Job")
+	TObjectPtr<UObject> Job = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Job")
+	int32 RetryCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Job")
+	FString ErrorMessage;
+};
+
+USTRUCT(BlueprintType)
+struct CONVAIJOBSYSTEM_API FWorkflowStatusEvent
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Workflow")
+	EWorkflowStatus Status = EWorkflowStatus::Idle;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Workflow")
+	FString Message;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Workflow")
+	float ElapsedTime = 0.0f;
 };
 
 USTRUCT(BlueprintType)

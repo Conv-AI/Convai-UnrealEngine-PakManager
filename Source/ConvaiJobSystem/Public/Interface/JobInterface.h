@@ -33,5 +33,8 @@ public:
 	void Execute(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager);
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
+	void Cancel(bool bForce = false);
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
 	FJobConfig GetJobConfig() const;
 };
