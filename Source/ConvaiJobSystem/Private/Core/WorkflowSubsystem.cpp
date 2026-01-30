@@ -3,6 +3,7 @@
 #include "Core/WorkflowSubsystem.h"
 #include "Core/WorkflowContext.h"
 #include "Interface/JobInterface.h"
+#include "Interface/WorkflowListenerInterface.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 
@@ -33,9 +34,62 @@ void UWorkflowSubsystem::Deinitialize()
 	{
 		ResetState(false);
 	}
+	Listeners.Empty();
 	Context = nullptr;
 	UE_LOG(LogWorkflow, Log, TEXT("WorkflowSubsystem deinitialized"));
 	Super::Deinitialize();
+}
+
+void UWorkflowSubsystem::AddListener(const TScriptInterface<IWorkflowListenerInterface>& Listener)
+{
+	if (Listener.GetObject() && !Listeners.Contains(Listener))
+	{
+		Listeners.Add(Listener);
+	}
+}
+
+void UWorkflowSubsystem::RemoveListener(const TScriptInterface<IWorkflowListenerInterface>& Listener)
+{
+	Listeners.Remove(Listener);
+}
+
+void UWorkflowSubsystem::NotifyListenersWorkflowStatus(const FWorkflowStatusEvent& Event)
+{
+	for (const auto& Listener : Listeners)
+	{
+		if (UObject* ListenerObj = Listener.GetObject())
+		{
+			IWorkflowListenerInterface::Execute_OnWorkflowStatusChanged(ListenerObj, Event);
+		}
+	}
+	
+	OnWorkflowStatusChangedDelegate.Broadcast(Event);
+}
+
+void UWorkflowSubsystem::NotifyListenersWorkflowProgress(const FWorkflowProgressEvent& Event)
+{
+	for (const auto& Listener : Listeners)
+	{
+		if (UObject* ListenerObj = Listener.GetObject())
+		{
+			IWorkflowListenerInterface::Execute_OnWorkflowProgressChanged(ListenerObj, Event);
+		}
+	}
+	
+	OnWorkflowProgressChangedDelegate.Broadcast(Event);
+}
+
+void UWorkflowSubsystem::NotifyListenersJobStatus(const FJobStatusEvent& Event)
+{
+	for (const auto& Listener : Listeners)
+	{
+		if (UObject* ListenerObj = Listener.GetObject())
+		{
+			IWorkflowListenerInterface::Execute_OnJobStatusChanged(ListenerObj, Event);
+		}
+	}
+	
+	OnJobStatusChangedDelegate.Broadcast(Event);
 }
 
 void UWorkflowSubsystem::SetStatus(EWorkflowStatus NewStatus, const FString& Message)
@@ -49,10 +103,11 @@ void UWorkflowSubsystem::SetStatus(EWorkflowStatus NewStatus, const FString& Mes
 	Event.Status = NewStatus;
 	Event.Message = Message;
 	Event.ElapsedTime = GetWorkflowElapsedTime();
-	OnWorkflowStatusChanged.Broadcast(Event);
+	
+	NotifyListenersWorkflowStatus(Event);
 }
 
-void UWorkflowSubsystem::OnJobCompleted(UObject* Job, const EJobResult Result, const FString& ErrorMessage)
+void UWorkflowSubsystem::OnJobCompleted(const TScriptInterface<IJobInterface>& Job, const EJobResult Result, const FString& ErrorMessage)
 {
 	if (!IsRunning())
 	{
@@ -62,11 +117,10 @@ void UWorkflowSubsystem::OnJobCompleted(UObject* Job, const EJobResult Result, c
 	
 	ClearJobTimeoutTimer();
 	
-	if (Job != CurrentJob)
+	UObject* JobObject = Job.GetObject();
+	if (JobObject != CurrentJob)
 	{
-		UE_LOG(LogWorkflow, Warning, TEXT("OnJobCompleted: unexpected job. Expected: %s, Got: %s"),
-			CurrentJob ? *CurrentJob->GetName() : TEXT("null"),
-			Job ? *Job->GetName() : TEXT("null"));
+		UE_LOG(LogWorkflow, Warning, TEXT("OnJobCompleted: unexpected job"));
 		return;
 	}
 	
@@ -107,6 +161,26 @@ void UWorkflowSubsystem::OnJobCompleted(UObject* Job, const EJobResult Result, c
 		EWorkflowStatus FinalStatus = (Result == EJobResult::Timeout) ? EWorkflowStatus::Timeout : EWorkflowStatus::Failed;
 		FinishWorkflow(FinalStatus, ErrorMessage);
 	}
+}
+
+void UWorkflowSubsystem::ReportJobProgress(const TScriptInterface<IJobInterface>& Job, float Progress)
+{
+	if (!IsRunning() || Job.GetObject() != CurrentJob) return;
+	
+	CurrentJobProgress = FMath::Clamp(Progress, 0.0f, 1.0f);
+	BroadcastWorkflowProgress();
+}
+
+void UWorkflowSubsystem::BroadcastWorkflowProgress()
+{
+	FWorkflowProgressEvent Event;
+	Event.Progress = GetProgress();
+	Event.CurrentJobIndex = CurrentJobIndex;
+	Event.TotalJobs = JobQueue.Num();
+	Event.CurrentJobName = CurrentJobName;
+	Event.CurrentJobProgress = CurrentJobProgress;
+	
+	NotifyListenersWorkflowProgress(Event);
 }
 
 bool UWorkflowSubsystem::ExecuteWorkflow(const FWorkflowConfig& Config, const TArray<TScriptInterface<IJobInterface>>& Jobs)
@@ -182,7 +256,11 @@ void UWorkflowSubsystem::CancelCurrentJob(bool bForce)
 
 float UWorkflowSubsystem::GetProgress() const
 {
-	return JobQueue.Num() > 0 ? static_cast<float>(CurrentJobIndex) / static_cast<float>(JobQueue.Num()) : 0.0f;
+	if (JobQueue.Num() == 0) return 0.0f;
+	
+	float BaseProgress = static_cast<float>(CurrentJobIndex) / static_cast<float>(JobQueue.Num());
+	float JobContribution = CurrentJobProgress / static_cast<float>(JobQueue.Num());
+	return BaseProgress + JobContribution;
 }
 
 float UWorkflowSubsystem::GetCurrentJobElapsedTime() const
@@ -203,6 +281,8 @@ void UWorkflowSubsystem::AdvanceToNextJob()
 {
 	CurrentJobIndex++;
 	CurrentRetryCount = 0;
+	CurrentJobProgress = 0.0f;
+	CurrentJobName.Empty();
 	CurrentJob = nullptr;
 	
 	if (CurrentJobIndex >= JobQueue.Num())
@@ -219,11 +299,21 @@ void UWorkflowSubsystem::AdvanceToNextJob()
 	}
 }
 
+void UWorkflowSubsystem::SkipCurrentJob()
+{
+	UE_LOG(LogWorkflow, Log, TEXT("Skipping job %d/%d: %s (condition not met)"), 
+		CurrentJobIndex + 1, JobQueue.Num(), *CurrentJobName);
+	
+	BroadcastJobStatus(EJobResult::Skipped);
+	AdvanceToNextJob();
+}
+
 void UWorkflowSubsystem::RetryCurrentJob()
 {
 	CurrentRetryCount++;
-	UE_LOG(LogWorkflow, Log, TEXT("Retrying job %d (attempt %d/%d)"), 
-		CurrentJobIndex, CurrentRetryCount + 1, CurrentJobConfig.MaxRetries + 1);
+	CurrentJobProgress = 0.0f;
+	UE_LOG(LogWorkflow, Log, TEXT("Retrying job %d: %s (attempt %d/%d)"), 
+		CurrentJobIndex, *CurrentJobName, CurrentRetryCount + 1, CurrentJobConfig.MaxRetries + 1);
 	ExecuteCurrentJob();
 }
 
@@ -263,12 +353,21 @@ void UWorkflowSubsystem::ExecuteCurrentJob()
 	const TScriptInterface<IJobInterface>& JobInterface = JobQueue[CurrentJobIndex];
 	CurrentJob = JobInterface.GetObject();
 	CurrentJobStartTime = FPlatformTime::Seconds();
+	CurrentJobProgress = 0.0f;
 	CurrentJobConfig = GetCurrentJobConfig();
 	
+	CurrentJobName = CurrentJobConfig.Name.IsEmpty() 
+		? (CurrentJob ? CurrentJob->GetClass()->GetName() : TEXT("Unknown"))
+		: CurrentJobConfig.Name;
+	
+	if (!IJobInterface::Execute_ShouldExecute(CurrentJob, Context))
+	{
+		SkipCurrentJob();
+		return;
+	}
+	
 	UE_LOG(LogWorkflow, Log, TEXT("Executing job %d/%d: %s (attempt %d)"), 
-		CurrentJobIndex + 1, JobQueue.Num(),
-		CurrentJob ? *CurrentJob->GetClass()->GetName() : TEXT("Unknown"),
-		CurrentRetryCount + 1);
+		CurrentJobIndex + 1, JobQueue.Num(), *CurrentJobName, CurrentRetryCount + 1);
 	
 	if (CurrentJobConfig.TimeoutSeconds > 0.0f)
 	{
@@ -300,6 +399,8 @@ void UWorkflowSubsystem::CleanupInternalState()
 	CurrentJob = nullptr;
 	CurrentJobIndex = 0;
 	CurrentRetryCount = 0;
+	CurrentJobProgress = 0.0f;
+	CurrentJobName.Empty();
 	bCancellationRequested = false;
 	CurrentJobStartTime = 0.0;
 	WorkflowStartTime = 0.0;
@@ -361,9 +462,11 @@ void UWorkflowSubsystem::BroadcastJobStatus(EJobResult Result, const FString& Er
 	Event.JobIndex = CurrentJobIndex;
 	Event.Result = Result;
 	Event.Job = CurrentJob;
+	Event.JobName = CurrentJobName;
 	Event.RetryCount = CurrentRetryCount;
 	Event.ErrorMessage = ErrorMessage;
-	OnJobStatusChanged.Broadcast(Event);
+	
+	NotifyListenersJobStatus(Event);
 }
 
 void UWorkflowSubsystem::ClearAllTimers()
@@ -406,7 +509,7 @@ void UWorkflowSubsystem::HandleJobTimeout()
 {
 	if (!IsRunning()) return;
 	
-	UE_LOG(LogWorkflow, Warning, TEXT("Job %d timed out"), CurrentJobIndex);
+	UE_LOG(LogWorkflow, Warning, TEXT("Job %d timed out: %s"), CurrentJobIndex, *CurrentJobName);
 	CancelCurrentJob();
 	BroadcastJobStatus(EJobResult::Timeout, TEXT("Job timed out"));
 	
@@ -458,7 +561,7 @@ void UWorkflowSubsystem::HandleWorkflowTimeout()
 {
 	if (!IsRunning()) return;
 	
-	UE_LOG(LogWorkflow, Warning, TEXT("Workflow timed out at job %d/%d"), CurrentJobIndex + 1, JobQueue.Num());
+	UE_LOG(LogWorkflow, Warning, TEXT("Workflow timed out at job %d/%d: %s"), CurrentJobIndex + 1, JobQueue.Num(), *CurrentJobName);
 	CancelCurrentJob();
 	FinishWorkflow(EWorkflowStatus::Timeout, TEXT("Workflow timed out"));
 }

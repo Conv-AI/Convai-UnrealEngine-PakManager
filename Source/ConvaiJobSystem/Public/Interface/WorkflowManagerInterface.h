@@ -9,6 +9,7 @@
 
 class UWorkflowContext;
 class IJobInterface;
+class IWorkflowListenerInterface;
 
 UINTERFACE(BlueprintType, MinimalAPI)
 class UWorkflowManagerInterface : public UInterface
@@ -27,6 +28,9 @@ public:
 	virtual bool IsRunning() const = 0;
 	virtual float GetProgress() const = 0;
 	virtual UWorkflowContext* GetContext() const = 0;
-	virtual void OnJobCompleted(UObject* Job, EJobResult Result, const FString& ErrorMessage = TEXT("")) = 0;
+	virtual void OnJobCompleted(const TScriptInterface<IJobInterface>& Job, EJobResult Result, const FString& ErrorMessage = TEXT("")) = 0;
+	virtual void ReportJobProgress(const TScriptInterface<IJobInterface>& Job, float Progress) = 0;
 	virtual bool IsCancellationRequested() const = 0;
+	virtual void AddListener(const TScriptInterface<IWorkflowListenerInterface>& Listener) = 0;
+	virtual void RemoveListener(const TScriptInterface<IWorkflowListenerInterface>& Listener) = 0;
 };

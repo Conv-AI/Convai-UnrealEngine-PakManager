@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Interface/WorkflowManagerInterface.h"
+#include "Interface/JobInterface.h"
 #include "WorkflowBlueprintLibrary.generated.h"
 
 class UWorkflowContext;
@@ -41,7 +42,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Workflow", meta = (DisplayName = "Notify Job Completed"))
 	static void NotifyJobCompleted(
 		const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
-		UObject* Job,
+		const TScriptInterface<IJobInterface>& Job,
 		EJobResult Result,
 		const FString& ErrorMessage = TEXT(""));
 
@@ -63,4 +64,28 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "Workflow", meta = (DisplayName = "Is Workflow Manager Valid"))
 	static bool IsWorkflowManagerValid(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager);
+
+	/**
+	 * Report progress for the current job (0.0 to 1.0).
+	 * Call this periodically during long-running jobs for UI feedback.
+	 * 
+	 * @param WorkflowManager The workflow manager interface
+	 * @param Job The job object reporting progress (pass 'self')
+	 * @param Progress Current progress from 0.0 to 1.0
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Workflow", meta = (DisplayName = "Report Job Progress"))
+	static void ReportJobProgress(
+		const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
+		const TScriptInterface<IJobInterface>& Job,
+		float Progress);
+
+	UFUNCTION(BlueprintCallable, Category = "Workflow", meta = (DisplayName = "Add Workflow Listener"))
+	static void AddWorkflowListener(
+		const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
+		const TScriptInterface<IWorkflowListenerInterface>& Listener);
+
+	UFUNCTION(BlueprintCallable, Category = "Workflow", meta = (DisplayName = "Remove Workflow Listener"))
+	static void RemoveWorkflowListener(
+		const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
+		const TScriptInterface<IWorkflowListenerInterface>& Listener);
 };

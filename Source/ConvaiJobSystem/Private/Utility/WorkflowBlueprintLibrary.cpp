@@ -2,6 +2,7 @@
 
 #include "Utility/WorkflowBlueprintLibrary.h"
 #include "Core/WorkflowContext.h"
+#include "Interface/WorkflowListenerInterface.h"
 
 UWorkflowContext* UWorkflowBlueprintLibrary::GetWorkflowContext(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager)
 {
@@ -14,7 +15,7 @@ UWorkflowContext* UWorkflowBlueprintLibrary::GetWorkflowContext(const TScriptInt
 
 void UWorkflowBlueprintLibrary::NotifyJobCompleted(
 	const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
-	UObject* Job,
+	const TScriptInterface<IJobInterface>& Job,
 	EJobResult Result,
 	const FString& ErrorMessage)
 {
@@ -40,4 +41,35 @@ bool UWorkflowBlueprintLibrary::IsCancellationRequested(const TScriptInterface<I
 bool UWorkflowBlueprintLibrary::IsWorkflowManagerValid(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager)
 {
 	return WorkflowManager.GetInterface() != nullptr;
+}
+
+void UWorkflowBlueprintLibrary::ReportJobProgress(
+	const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
+	const TScriptInterface<IJobInterface>& Job,
+	float Progress)
+{
+	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
+	{
+		Interface->ReportJobProgress(Job, Progress);
+	}
+}
+
+void UWorkflowBlueprintLibrary::AddWorkflowListener(
+	const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
+	const TScriptInterface<IWorkflowListenerInterface>& Listener)
+{
+	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
+	{
+		Interface->AddListener(Listener);
+	}
+}
+
+void UWorkflowBlueprintLibrary::RemoveWorkflowListener(
+	const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
+	const TScriptInterface<IWorkflowListenerInterface>& Listener)
+{
+	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
+	{
+		Interface->RemoveListener(Listener);
+	}
 }

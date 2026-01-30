@@ -8,6 +8,8 @@
 #include "WorkflowManagerInterface.h"
 #include "JobInterface.generated.h"
 
+class UWorkflowContext;
+
 UINTERFACE(BlueprintType, Blueprintable)
 class UJobInterface : public UInterface
 {
@@ -37,4 +39,7 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
 	FJobConfig GetJobConfig() const;
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
+	bool ShouldExecute(UWorkflowContext* Context) const;
 };

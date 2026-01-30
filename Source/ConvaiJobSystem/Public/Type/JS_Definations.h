@@ -11,7 +11,8 @@ enum class EJobResult : uint8
 	Success		UMETA(DisplayName = "Success"),
 	Failed		UMETA(DisplayName = "Failed"),
 	Cancelled	UMETA(DisplayName = "Cancelled"),
-	Timeout		UMETA(DisplayName = "Timeout")
+	Timeout		UMETA(DisplayName = "Timeout"),
+	Skipped		UMETA(DisplayName = "Skipped")
 };
 
 UENUM(BlueprintType)
@@ -30,6 +31,12 @@ USTRUCT(BlueprintType)
 struct CONVAIJOBSYSTEM_API FJobConfig
 {
 	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	FString Name;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	FString Description;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
 	bool bUseWorkflowConfig = true;
@@ -68,10 +75,34 @@ struct CONVAIJOBSYSTEM_API FJobStatusEvent
 	TObjectPtr<UObject> Job = nullptr;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Job")
+	FString JobName;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Job")
 	int32 RetryCount = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Job")
 	FString ErrorMessage;
+};
+
+USTRUCT(BlueprintType)
+struct CONVAIJOBSYSTEM_API FWorkflowProgressEvent
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Workflow")
+	float Progress = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Workflow")
+	int32 CurrentJobIndex = -1;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Workflow")
+	int32 TotalJobs = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Workflow")
+	FString CurrentJobName;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Workflow")
+	float CurrentJobProgress = 0.0f;
 };
 
 USTRUCT(BlueprintType)

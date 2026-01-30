@@ -5,12 +5,15 @@
 #include "CoreMinimal.h"
 #include "Subsystems/EngineSubsystem.h"
 #include "Interface/WorkflowManagerInterface.h"
+#include "Interface/WorkflowListenerInterface.h"
 #include "Interface/JobInterface.h"
 #include "WorkflowSubsystem.generated.h"
 
 class UWorkflowContext;
+class IWorkflowListenerInterface;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWorkflowStatusChanged, const FWorkflowStatusEvent&, Event);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWorkflowProgressChanged, const FWorkflowProgressEvent&, Event);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnJobStatusChanged, const FJobStatusEvent&, Event);
 
 /**
@@ -25,6 +28,15 @@ class CONVAIJOBSYSTEM_API UWorkflowSubsystem : public UEngineSubsystem, public I
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+	
+	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
+	FOnWorkflowStatusChanged OnWorkflowStatusChangedDelegate;
+
+	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
+	FOnWorkflowProgressChanged OnWorkflowProgressChangedDelegate;
+
+	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
+	FOnJobStatusChanged OnJobStatusChangedDelegate;
 
 	// IWorkflowManagerInterface
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
@@ -45,7 +57,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
 	virtual UWorkflowContext* GetContext() const override { return Context; }
 	
-	virtual void OnJobCompleted(UObject* Job, EJobResult Result, const FString& ErrorMessage = TEXT("")) override;
+	UFUNCTION(BlueprintCallable, Category = "Workflow")
+	virtual void AddListener(const TScriptInterface<IWorkflowListenerInterface>& Listener) override;
+	
+	UFUNCTION(BlueprintCallable, Category = "Workflow")
+	virtual void RemoveListener(const TScriptInterface<IWorkflowListenerInterface>& Listener) override;
 	
 	UFUNCTION(BlueprintPure, Category = "Workflow")
 	virtual bool IsCancellationRequested() const override { return bCancellationRequested; }
@@ -65,14 +81,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Workflow")
 	float GetWorkflowElapsedTime() const;
 
-	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
-	FOnWorkflowStatusChanged OnWorkflowStatusChanged;
+	UFUNCTION(BlueprintPure, Category = "Workflow")
+	float GetCurrentJobProgress() const { return CurrentJobProgress; }
 
-	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
-	FOnJobStatusChanged OnJobStatusChanged;
+	UFUNCTION(BlueprintPure, Category = "Workflow")
+	FString GetCurrentJobName() const { return CurrentJobName; }
+		
+	virtual void OnJobCompleted(const TScriptInterface<IJobInterface>& Job, EJobResult Result, const FString& ErrorMessage = TEXT("")) override;
+	virtual void ReportJobProgress(const TScriptInterface<IJobInterface>& Job, float Progress) override;
 
 protected:
 	void ExecuteCurrentJob();
+	void SkipCurrentJob();
 	void CancelCurrentJob(bool bForce = false);
 	void AdvanceToNextJob();
 	void RetryCurrentJob();
@@ -91,7 +111,11 @@ protected:
 	FJobConfig GetCurrentJobConfig() const;
 	bool ShouldRetry(EJobResult Result, const FJobConfig& Config) const;
 	void BroadcastJobStatus(EJobResult Result, const FString& ErrorMessage = TEXT(""));
+	void BroadcastWorkflowProgress();
 	void SetStatus(EWorkflowStatus NewStatus, const FString& Message = TEXT(""));
+	void NotifyListenersWorkflowStatus(const FWorkflowStatusEvent& Event);
+	void NotifyListenersWorkflowProgress(const FWorkflowProgressEvent& Event);
+	void NotifyListenersJobStatus(const FJobStatusEvent& Event);
 
 private:
 	UPROPERTY()
@@ -101,10 +125,15 @@ private:
 	TArray<TScriptInterface<IJobInterface>> JobQueue;
 
 	UPROPERTY()
+	TArray<TScriptInterface<IWorkflowListenerInterface>> Listeners;
+
+	UPROPERTY()
 	TObjectPtr<UObject> CurrentJob;
 
 	int32 CurrentJobIndex = 0;
 	int32 CurrentRetryCount = 0;
+	float CurrentJobProgress = 0.0f;
+	FString CurrentJobName;
 	EWorkflowStatus Status = EWorkflowStatus::Idle;
 	bool bCancellationRequested = false;
 	FString LastErrorMessage;
