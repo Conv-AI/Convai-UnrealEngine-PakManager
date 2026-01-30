@@ -22,33 +22,38 @@ public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 	
+	/*
+	* EWorkflowEventType → WHAT happened (event trigger)
+	* EWorkflowStatus → CURRENT workflow state
+	* EJobResult → Job outcome/state (Pending → InProgress → terminal state)
+	*/
 	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
 	FOnWorkflowEvent OnWorkflowEvent;
 	
 	// IWorkflowManagerInterface
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
-	virtual bool ExecuteWorkflow(const FWorkflowConfig& Config, const TArray<TScriptInterface<IJobInterface>>& Jobs) override;
+	virtual bool IExecuteWorkflow(const FWorkflowRequest& Request) override;
 	
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
-	virtual void CancelWorkflow(bool bForce = false) override;
+	virtual void ICancelWorkflow(bool bForce = false) override;
 	
 	UFUNCTION(BlueprintPure, Category = "Workflow")
-	virtual FWorkflowStatusInfo GetStatusInfo() override;
+	virtual FWorkflowStatusInfo IGetStatusInfo() override;
 	
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
-	virtual UWorkflowContext* GetContext() override { return Context; }
+	virtual UWorkflowContext* IGetContext() override { return Context; }
 	
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
-	virtual void AddListener(const TScriptInterface<IWorkflowListenerInterface>& Listener) override;
+	virtual void IAddListener(const TScriptInterface<IWorkflowListenerInterface>& Listener) override;
 	
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
-	virtual void RemoveListener(const TScriptInterface<IWorkflowListenerInterface>& Listener) override;
+	virtual void IRemoveListener(const TScriptInterface<IWorkflowListenerInterface>& Listener) override;
 	
 	UFUNCTION(BlueprintPure, Category = "Workflow")
 	bool IsRunning() const { return StatusInfo.Status == EWorkflowStatus::Running || StatusInfo.Status == EWorkflowStatus::Cancelling; }
 	
-	virtual void OnJobCompleted(const TScriptInterface<IJobInterface>& Job, EJobResult Result, const FString& ErrorMessage = TEXT("")) override;
-	virtual void ReportJobProgress(const TScriptInterface<IJobInterface>& Job, float Progress) override;
+	virtual void IOnJobCompleted(const FJobCompletionInfo& CompletionInfo) override;
+	virtual void IReportJobProgress(const FJobProgressInfo& ProgressInfo) override;
 	
 protected:
 	void ExecuteCurrentJob();

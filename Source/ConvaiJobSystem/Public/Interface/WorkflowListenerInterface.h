@@ -19,5 +19,6 @@ class CONVAIJOBSYSTEM_API IWorkflowListenerInterface
 
 public:
 	UFUNCTION(BlueprintNativeEvent, Category = "Workflow")
-	void OnWorkflowEvent(EWorkflowEventType EventType, const FWorkflowStatusInfo& StatusInfo);
+	void IOnWorkflowEvent(EWorkflowEventType EventType, const FWorkflowStatusInfo& StatusInfo);
+	virtual void IOnWorkflowEvent_Implementation(EWorkflowEventType EventType, const FWorkflowStatusInfo& StatusInfo) {}
 };

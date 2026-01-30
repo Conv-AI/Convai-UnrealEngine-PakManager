@@ -24,9 +24,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Workflow", meta = (DisplayName = "Notify Job Completed"))
 	static void NotifyJobCompleted(
 		const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
-		const TScriptInterface<IJobInterface>& Job,
-		EJobResult Result,
-		const FString& ErrorMessage = TEXT(""));
+		const FJobCompletionInfo& CompletionInfo);
 
 	UFUNCTION(BlueprintPure, Category = "Workflow", meta = (DisplayName = "Is Workflow Manager Valid"))
 	static bool IsWorkflowManagerValid(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager);
@@ -34,8 +32,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Workflow", meta = (DisplayName = "Report Job Progress"))
 	static void ReportJobProgress(
 		const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
-		const TScriptInterface<IJobInterface>& Job,
-		float Progress);
+		const FJobProgressInfo& ProgressInfo);
 
 	UFUNCTION(BlueprintCallable, Category = "Workflow", meta = (DisplayName = "Add Workflow Listener"))
 	static void AddWorkflowListener(

@@ -6,6 +6,7 @@
 #include "JS_Definations.generated.h"
 
 class IJobInterface;
+class IWorkflowListenerInterface;
 
 UENUM(BlueprintType)
 enum class EJobResult : uint8
@@ -105,6 +106,9 @@ struct CONVAIJOBSYSTEM_API FJobStatusInfo
 	float Progress = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Job")
+	FText ProgressText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Job")
 	float ElapsedTime = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Job")
@@ -145,4 +149,49 @@ struct CONVAIJOBSYSTEM_API FWorkflowConfig
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
 	FJobConfig DefaultJobConfig;
+};
+
+USTRUCT(BlueprintType)
+struct CONVAIJOBSYSTEM_API FJobCompletionInfo
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	TScriptInterface<IJobInterface> Job;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	EJobResult Result = EJobResult::Failed;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	FString ErrorMessage;
+};
+
+USTRUCT(BlueprintType)
+struct CONVAIJOBSYSTEM_API FJobProgressInfo
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	TScriptInterface<IJobInterface> Job;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float Progress = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	FText ProgressText;
+};
+
+USTRUCT(BlueprintType)
+struct CONVAIJOBSYSTEM_API FWorkflowRequest
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
+	FWorkflowConfig Config;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
+	TArray<TScriptInterface<IJobInterface>> Jobs;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
+	TArray<TScriptInterface<IWorkflowListenerInterface>> Listeners;
 };

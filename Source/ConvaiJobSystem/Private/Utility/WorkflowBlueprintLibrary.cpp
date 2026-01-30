@@ -3,7 +3,6 @@
 #include "Utility/WorkflowBlueprintLibrary.h"
 #include "Core/WorkflowContext.h"
 #include "Interface/WorkflowManagerInterface.h"
-#include "Interface/JobInterface.h"
 #include "Interface/WorkflowListenerInterface.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWorkflowBP, Log, All);
@@ -12,20 +11,18 @@ UWorkflowContext* UWorkflowBlueprintLibrary::GetWorkflowContext(const TScriptInt
 {
 	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
 	{
-		return Interface->GetContext();
+		return Interface->IGetContext();
 	}
 	return nullptr;
 }
 
 void UWorkflowBlueprintLibrary::NotifyJobCompleted(
 	const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
-	const TScriptInterface<IJobInterface>& Job,
-	EJobResult Result,
-	const FString& ErrorMessage)
+	const FJobCompletionInfo& CompletionInfo)
 {
 	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
 	{
-		Interface->OnJobCompleted(Job, Result, ErrorMessage);
+		Interface->IOnJobCompleted(CompletionInfo);
 	}
 	else
 	{
@@ -40,12 +37,11 @@ bool UWorkflowBlueprintLibrary::IsWorkflowManagerValid(const TScriptInterface<IW
 
 void UWorkflowBlueprintLibrary::ReportJobProgress(
 	const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
-	const TScriptInterface<IJobInterface>& Job,
-	float Progress)
+	const FJobProgressInfo& ProgressInfo)
 {
 	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
 	{
-		Interface->ReportJobProgress(Job, Progress);
+		Interface->IReportJobProgress(ProgressInfo);
 	}
 }
 
@@ -55,7 +51,7 @@ void UWorkflowBlueprintLibrary::AddWorkflowListener(
 {
 	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
 	{
-		Interface->AddListener(Listener);
+		Interface->IAddListener(Listener);
 	}
 }
 
@@ -65,7 +61,7 @@ void UWorkflowBlueprintLibrary::RemoveWorkflowListener(
 {
 	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
 	{
-		Interface->RemoveListener(Listener);
+		Interface->IRemoveListener(Listener);
 	}
 }
 
@@ -73,7 +69,7 @@ FWorkflowStatusInfo UWorkflowBlueprintLibrary::GetWorkflowStatusInfo(const TScri
 {
 	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
 	{
-		return Interface->GetStatusInfo();
+		return Interface->IGetStatusInfo();
 	}
 	return FWorkflowStatusInfo();
 }

@@ -32,14 +32,18 @@ class CONVAIJOBSYSTEM_API IJobInterface
 
 public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
-	void Execute(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager);
+	void IExecute(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager);
+	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager) {}
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
-	void Cancel(bool bForce = false);
+	void ICancel(bool bForce = false);
+	virtual void ICancel_Implementation(bool bForce) {}
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
-	FJobConfig GetJobConfig() const;
+	FJobConfig IGetJobConfig() const;
+	virtual FJobConfig IGetJobConfig_Implementation() const { return FJobConfig(); }
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
-	bool ShouldExecute(UWorkflowContext* Context) const;
+	bool IShouldSkip(UWorkflowContext* Context) const;
+	virtual bool IShouldSkip_Implementation(UWorkflowContext* Context) const { return false; }
 };
