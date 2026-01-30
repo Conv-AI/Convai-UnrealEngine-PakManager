@@ -2,7 +2,11 @@
 
 #include "Utility/WorkflowBlueprintLibrary.h"
 #include "Core/WorkflowContext.h"
+#include "Interface/WorkflowManagerInterface.h"
+#include "Interface/JobInterface.h"
 #include "Interface/WorkflowListenerInterface.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogWorkflowBP, Log, All);
 
 UWorkflowContext* UWorkflowBlueprintLibrary::GetWorkflowContext(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager)
 {
@@ -25,17 +29,8 @@ void UWorkflowBlueprintLibrary::NotifyJobCompleted(
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("NotifyJobCompleted called with invalid WorkflowManager"));
+		UE_LOG(LogWorkflowBP, Error, TEXT("NotifyJobCompleted called with invalid WorkflowManager"));
 	}
-}
-
-bool UWorkflowBlueprintLibrary::IsCancellationRequested(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager)
-{
-	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
-	{
-		return Interface->IsCancellationRequested();
-	}
-	return false;
 }
 
 bool UWorkflowBlueprintLibrary::IsWorkflowManagerValid(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager)
@@ -72,4 +67,13 @@ void UWorkflowBlueprintLibrary::RemoveWorkflowListener(
 	{
 		Interface->RemoveListener(Listener);
 	}
+}
+
+FWorkflowStatusInfo UWorkflowBlueprintLibrary::GetWorkflowStatusInfo(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager)
+{
+	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
+	{
+		return Interface->GetStatusInfo();
+	}
+	return FWorkflowStatusInfo();
 }
