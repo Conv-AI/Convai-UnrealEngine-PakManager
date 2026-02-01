@@ -32,7 +32,10 @@ public:
 	
 	// IWorkflowManagerInterface
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
-	virtual bool IExecuteWorkflow(const FWorkflowRequest& Request) override;
+	virtual bool IExecuteWorkflowFromJobs(const FWorkflowRequestFromJobs& Request) override;
+	
+	UFUNCTION(BlueprintCallable, Category = "Workflow")
+	virtual bool IExecuteWorkflowFromJobDefinitions(const FWorkflowRequestFromJobDefinitions& Request) override;
 	
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
 	virtual void ICancelWorkflow(bool bForce = false) override;

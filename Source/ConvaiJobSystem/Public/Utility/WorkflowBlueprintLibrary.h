@@ -46,4 +46,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Workflow", meta = (DisplayName = "Get Workflow Status Info"))
 	static FWorkflowStatusInfo GetWorkflowStatusInfo(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager);
+	
+	UFUNCTION(BlueprintCallable, Category = "Workflow", meta = (DisplayName = "Create Jobs From Definitions"))
+	static bool CreateJobsFromDefinitions( UObject* Outer, const TArray<FJobDefinition>& JobDefinitions,
+		TArray<TScriptInterface<IJobInterface>>& OutJobs);
 };

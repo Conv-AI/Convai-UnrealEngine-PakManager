@@ -22,7 +22,8 @@ class CONVAIJOBSYSTEM_API IWorkflowManagerInterface
 	GENERATED_BODY()
 
 public:
-	virtual bool IExecuteWorkflow(const FWorkflowRequest& Request) = 0;
+	virtual bool IExecuteWorkflowFromJobs(const FWorkflowRequestFromJobs& Request) = 0;
+	virtual bool IExecuteWorkflowFromJobDefinitions(const FWorkflowRequestFromJobDefinitions& Request) = 0;
 	virtual void ICancelWorkflow(bool bForce = false) = 0;
 	virtual FWorkflowStatusInfo IGetStatusInfo() = 0;
 	virtual UWorkflowContext* IGetContext() = 0;

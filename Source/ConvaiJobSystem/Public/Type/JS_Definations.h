@@ -182,16 +182,51 @@ struct CONVAIJOBSYSTEM_API FJobProgressInfo
 };
 
 USTRUCT(BlueprintType)
-struct CONVAIJOBSYSTEM_API FWorkflowRequest
+struct CONVAIJOBSYSTEM_API FJobDefinition
+{
+	GENERATED_BODY()
+
+	/** The job class to instantiate. Must implement IJobInterface. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	TSubclassOf<UObject> JobClass;
+
+	/** Optional per-job configuration override. Will be passed in IInitialize */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Job")
+	FJobConfig JobConfig;
+};
+
+USTRUCT(BlueprintType)
+struct CONVAIJOBSYSTEM_API FWorkflowRequestOptions
 {
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
-	FWorkflowConfig Config;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
-	TArray<TScriptInterface<IJobInterface>> Jobs;
+	FWorkflowConfig WorkflowConfig;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
 	TArray<TScriptInterface<IWorkflowListenerInterface>> Listeners;
+};
+
+USTRUCT(BlueprintType)
+struct CONVAIJOBSYSTEM_API FWorkflowRequestFromJobs
+{
+	GENERATED_BODY()
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
+	FWorkflowRequestOptions Options;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
+	TArray<TScriptInterface<IJobInterface>> Jobs;
+};
+
+USTRUCT(BlueprintType)
+struct CONVAIJOBSYSTEM_API FWorkflowRequestFromJobDefinitions
+{
+	GENERATED_BODY()
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
+	FWorkflowRequestOptions Options;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
+	TArray<FJobDefinition> JobDefinitions;
 };

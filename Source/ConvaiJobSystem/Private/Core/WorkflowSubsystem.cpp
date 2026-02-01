@@ -4,6 +4,7 @@
 #include "Core/WorkflowContext.h"
 #include "Interface/JobInterface.h"
 #include "Interface/WorkflowListenerInterface.h"
+#include "Utility/WorkflowBlueprintLibrary.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 
@@ -129,7 +130,27 @@ void UWorkflowSubsystem::BroadcastEvent(const EWorkflowEventType EventType)
 	OnWorkflowEvent.Broadcast(EventType, StatusInfo);
 }
 
-bool UWorkflowSubsystem::IExecuteWorkflow(const FWorkflowRequest& Request)
+bool UWorkflowSubsystem::IExecuteWorkflowFromJobDefinitions(const FWorkflowRequestFromJobDefinitions& Request)
+{
+	if (IsRunning())
+	{
+		UE_LOG(LogWorkflow, Warning, TEXT("Cannot start workflow - already running"));
+		return false;
+	}
+	
+	FWorkflowRequestFromJobs ConvertedRequest;
+	ConvertedRequest.Options = Request.Options;
+	
+	if (!UWorkflowBlueprintLibrary::CreateJobsFromDefinitions(this, Request.JobDefinitions, ConvertedRequest.Jobs))
+	{
+		UE_LOG(LogWorkflow, Error, TEXT("Failed to create jobs from definitions"));
+		return false;
+	}
+	
+	return IExecuteWorkflowFromJobs(ConvertedRequest);
+}
+
+bool UWorkflowSubsystem::IExecuteWorkflowFromJobs(const FWorkflowRequestFromJobs& Request)
 {
 	if (IsRunning())
 	{
@@ -155,12 +176,12 @@ bool UWorkflowSubsystem::IExecuteWorkflow(const FWorkflowRequest& Request)
 	
 	ResetState();
 	
-	for (const auto& Listener : Request.Listeners)
+	for (const auto& Listener : Request.Options.Listeners)
 	{
 		IAddListener(Listener);
 	}
 	
-	WorkflowConfig = Request.Config;
+	WorkflowConfig = Request.Options.WorkflowConfig;
 	JobQueue = Request.Jobs;
 	WorkflowStartTime = FPlatformTime::Seconds();
 	

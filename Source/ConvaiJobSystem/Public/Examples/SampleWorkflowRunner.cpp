@@ -119,23 +119,22 @@ void ASampleWorkflowRunner::RunDemoWorkflow()
 	CreatedJobs.Add(Job5);
 
 	// Configure the workflow
-	FWorkflowRequest Request;
-	Request.Config.WorkflowTimeoutSeconds = WorkflowTimeoutSeconds;
-	Request.Config.DefaultJobConfig.MaxRetries = DefaultMaxRetries;
-	Request.Config.DefaultJobConfig.RetryDelaySeconds = DefaultRetryDelaySeconds;
-	Request.Config.DefaultJobConfig.bRetryOnFailure = true;
+	FWorkflowRequestFromJobs Request;
+	Request.Options.WorkflowConfig.WorkflowTimeoutSeconds = WorkflowTimeoutSeconds;
+	Request.Options.WorkflowConfig.DefaultJobConfig.MaxRetries = DefaultMaxRetries;
+	Request.Options.WorkflowConfig.DefaultJobConfig.RetryDelaySeconds = DefaultRetryDelaySeconds;
+	Request.Options.WorkflowConfig.DefaultJobConfig.bRetryOnFailure = true;
 	Request.Jobs = CreatedJobs;
 
 	// Add ourselves as a listener
 	TScriptInterface<IWorkflowListenerInterface> Listener;
 	Listener.SetObject(this);
 	Listener.SetInterface(this);
-	Request.Listeners.Add(Listener);
+	Request.Options.Listeners.Add(Listener);
 
 	// Start the workflow
-	const bool bStarted = WorkflowManager->IExecuteWorkflow(Request);
-	
-	if (bStarted)
+
+	if (const bool bStarted = WorkflowManager->IExecuteWorkflowFromJobs(Request))
 	{
 		UE_LOG(LogWorkflowDemo, Log, TEXT("Workflow started successfully with %d jobs"), CreatedJobs.Num());
 	}

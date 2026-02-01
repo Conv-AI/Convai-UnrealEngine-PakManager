@@ -32,6 +32,10 @@ class CONVAIJOBSYSTEM_API IJobInterface
 
 public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
+	void IInitialize(const FJobConfig& Config);
+	virtual void IInitialize_Implementation(const FJobConfig& Config) {}
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
 	void IExecute(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager);
 	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager) {}
 
