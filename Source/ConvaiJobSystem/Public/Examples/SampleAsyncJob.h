@@ -31,7 +31,7 @@ public:
 	FJobConfig JobConfig;
 
 	// IJobInterface
-	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager) override;
+	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) override;
 	virtual void ICancel_Implementation(bool bForce) override;
 	virtual FJobConfig IGetJobConfig_Implementation() const override { return JobConfig; }
 
@@ -40,7 +40,7 @@ private:
 	void CompleteJob();
 
 	UPROPERTY()
-	TScriptInterface<IWorkflowManagerInterface> CachedWorkflowManager;
+	TScriptInterface<IWorkflowInterface> CachedWorkflow;
 
 	FTimerHandle ProgressTimerHandle;
 	int32 CurrentStep = 0;
@@ -72,7 +72,7 @@ public:
 	USampleFailingJob();
 
 	// IJobInterface
-	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager) override;
+	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) override;
 	virtual void ICancel_Implementation(bool bForce) override;
 	virtual FJobConfig IGetJobConfig_Implementation() const override { return JobConfig; }
 
@@ -80,7 +80,7 @@ private:
 	void AttemptCompletion();
 
 	UPROPERTY()
-	TScriptInterface<IWorkflowManagerInterface> CachedWorkflowManager;
+	TScriptInterface<IWorkflowInterface> CachedWorkflow;
 
 	FTimerHandle ExecutionTimerHandle;
 	bool bIsCancelled = false;
@@ -105,7 +105,7 @@ public:
 	FJobConfig JobConfig;
 
 	// IJobInterface
-	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager) override;
+	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) override;
 	virtual bool IShouldSkip_Implementation(UWorkflowContext* Context) const override;
 	virtual FJobConfig IGetJobConfig_Implementation() const override { return JobConfig; }
 };
@@ -129,6 +129,6 @@ public:
 	FJobConfig JobConfig;
 
 	// IJobInterface
-	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager) override;
+	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) override;
 	virtual FJobConfig IGetJobConfig_Implementation() const override { return JobConfig; }
 };

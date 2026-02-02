@@ -10,7 +10,7 @@
 class IWorkflowListenerInterface;
 class IJobInterface;
 class UWorkflowContext;
-class IWorkflowManagerInterface;
+class IWorkflowInterface;
 
 UCLASS()
 class CONVAIJOBSYSTEM_API UWorkflowBlueprintLibrary : public UBlueprintFunctionLibrary
@@ -19,35 +19,37 @@ class CONVAIJOBSYSTEM_API UWorkflowBlueprintLibrary : public UBlueprintFunctionL
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Workflow", meta = (DisplayName = "Get Workflow Context"))
-	static UWorkflowContext* GetWorkflowContext(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager);
+	static UWorkflowContext* GetWorkflowContext(const TScriptInterface<IWorkflowInterface>& Workflow);
 
 	UFUNCTION(BlueprintCallable, Category = "Workflow", meta = (DisplayName = "Notify Job Completed"))
 	static void NotifyJobCompleted(
-		const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
+		const TScriptInterface<IWorkflowInterface>& Workflow,
 		const FJobCompletionInfo& CompletionInfo);
 
-	UFUNCTION(BlueprintPure, Category = "Workflow", meta = (DisplayName = "Is Workflow Manager Valid"))
-	static bool IsWorkflowManagerValid(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager);
+	UFUNCTION(BlueprintPure, Category = "Workflow", meta = (DisplayName = "Is Workflow Valid"))
+	static bool IsWorkflowValid(const TScriptInterface<IWorkflowInterface>& Workflow);
 
 	UFUNCTION(BlueprintCallable, Category = "Workflow", meta = (DisplayName = "Report Job Progress"))
 	static void ReportJobProgress(
-		const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
+		const TScriptInterface<IWorkflowInterface>& Workflow,
 		const FJobProgressInfo& ProgressInfo);
 
 	UFUNCTION(BlueprintCallable, Category = "Workflow", meta = (DisplayName = "Add Workflow Listener"))
 	static void AddWorkflowListener(
-		const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
+		const TScriptInterface<IWorkflowInterface>& Workflow,
 		const TScriptInterface<IWorkflowListenerInterface>& Listener);
 
 	UFUNCTION(BlueprintCallable, Category = "Workflow", meta = (DisplayName = "Remove Workflow Listener"))
 	static void RemoveWorkflowListener(
-		const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
+		const TScriptInterface<IWorkflowInterface>& Workflow,
 		const TScriptInterface<IWorkflowListenerInterface>& Listener);
 
 	UFUNCTION(BlueprintPure, Category = "Workflow", meta = (DisplayName = "Get Workflow Status Info"))
-	static FWorkflowStatusInfo GetWorkflowStatusInfo(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager);
+	static FWorkflowStatusInfo GetWorkflowStatusInfo(const TScriptInterface<IWorkflowInterface>& Workflow);
 	
 	UFUNCTION(BlueprintCallable, Category = "Workflow", meta = (DisplayName = "Create Jobs From Definitions"))
-	static bool CreateJobsFromDefinitions( UObject* Outer, const TArray<FJobDefinition>& JobDefinitions,
+	static bool CreateJobsFromDefinitions(
+		UObject* Outer,
+		const TArray<FJobDefinition>& JobDefinitions,
 		TArray<TScriptInterface<IJobInterface>>& OutJobs);
 };

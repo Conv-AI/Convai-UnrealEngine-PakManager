@@ -7,11 +7,10 @@
 #include "Type/JS_Definations.h"
 #include "WorkflowManagerInterface.generated.h"
 
-class UWorkflowContext;
-class IJobInterface;
+class IWorkflowInterface;
 class IWorkflowListenerInterface;
 
-UINTERFACE(BlueprintType, MinimalAPI)
+UINTERFACE(MinimalAPI)
 class UWorkflowManagerInterface : public UInterface
 {
 	GENERATED_BODY()
@@ -22,13 +21,13 @@ class CONVAIJOBSYSTEM_API IWorkflowManagerInterface
 	GENERATED_BODY()
 
 public:
-	virtual bool IExecuteWorkflowFromJobs(const FWorkflowRequestFromJobs& Request) = 0;
-	virtual bool IExecuteWorkflowFromJobDefinitions(const FWorkflowRequestFromJobDefinitions& Request) = 0;
-	virtual void ICancelWorkflow(bool bForce = false) = 0;
-	virtual FWorkflowStatusInfo IGetStatusInfo() = 0;
-	virtual UWorkflowContext* IGetContext() = 0;
-	virtual void IOnJobCompleted(const FJobCompletionInfo& CompletionInfo) = 0;
-	virtual void IReportJobProgress(const FJobProgressInfo& ProgressInfo) = 0;
-	virtual void IAddListener(const TScriptInterface<IWorkflowListenerInterface>& Listener) = 0;
-	virtual void IRemoveListener(const TScriptInterface<IWorkflowListenerInterface>& Listener) = 0;
+	virtual FWorkflowHandle ICreateWorkflowFromJobs(const FCreateWorkflowFromJobsParams& Params) = 0;
+	virtual FWorkflowHandle ICreateWorkflowFromJobDefinitions(const FCreateWorkflowFromJobDefinitionsParams& Params) = 0;
+	virtual bool IStartWorkflow(const FWorkflowHandle& Handle) = 0;
+
+	virtual bool ICancelWorkflow(const FWorkflowHandle& Handle, bool bForce = false) = 0;
+	virtual bool ICancelAllWorkflows(bool bForce = false) = 0;
+
+	virtual TScriptInterface<IWorkflowInterface> IGetWorkflow(const FWorkflowHandle& Handle) const = 0;
+	virtual TArray<FWorkflowHandle> IGetAllWorkflowHandles() const = 0;
 };

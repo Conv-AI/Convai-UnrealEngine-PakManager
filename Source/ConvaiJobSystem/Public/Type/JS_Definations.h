@@ -24,6 +24,7 @@ UENUM(BlueprintType)
 enum class EWorkflowStatus : uint8
 {
 	Idle		UMETA(DisplayName = "Idle"),
+	Initialized	UMETA(DisplayName = "Initialized"),
 	Running		UMETA(DisplayName = "Running"),
 	Cancelling	UMETA(DisplayName = "Cancelling"),
 	Completed	UMETA(DisplayName = "Completed"),
@@ -47,6 +48,28 @@ enum class EWorkflowEventType : uint8
 	JobSkipped			UMETA(DisplayName = "Job Skipped"),
 	JobRetrying			UMETA(DisplayName = "Job Retrying"),
 	ProgressUpdated		UMETA(DisplayName = "Progress Updated")
+};
+
+USTRUCT(BlueprintType)
+struct CONVAIJOBSYSTEM_API FWorkflowHandle
+{
+	GENERATED_BODY()
+
+	FWorkflowHandle() = default;
+	explicit FWorkflowHandle(const FGuid& InId) : Id(InId) {}
+
+	UPROPERTY(BlueprintReadOnly, Category = "Workflow")
+	FGuid Id;
+
+	bool IsValid() const { return Id.IsValid(); }
+
+	static FWorkflowHandle Generate() { return FWorkflowHandle(FGuid::NewGuid()); }
+	static FWorkflowHandle Invalid() { return FWorkflowHandle(); }
+
+	bool operator==(const FWorkflowHandle& Other) const { return Id == Other.Id; }
+	bool operator!=(const FWorkflowHandle& Other) const { return Id != Other.Id; }
+
+	friend uint32 GetTypeHash(const FWorkflowHandle& Handle) { return GetTypeHash(Handle.Id); }
 };
 
 USTRUCT(BlueprintType)
@@ -119,6 +142,9 @@ USTRUCT(BlueprintType)
 struct CONVAIJOBSYSTEM_API FWorkflowStatusInfo
 {
 	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Workflow")
+	FWorkflowHandle Handle;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Workflow")
 	EWorkflowStatus Status = EWorkflowStatus::Idle;
@@ -229,4 +255,28 @@ struct CONVAIJOBSYSTEM_API FWorkflowRequestFromJobDefinitions
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
 	TArray<FJobDefinition> JobDefinitions;
+};
+
+USTRUCT(BlueprintType)
+struct CONVAIJOBSYSTEM_API FCreateWorkflowFromJobsParams
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
+	FWorkflowRequestFromJobs Request;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
+	bool bStartImmediately = true;
+};
+
+USTRUCT(BlueprintType)
+struct CONVAIJOBSYSTEM_API FCreateWorkflowFromJobDefinitionsParams
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
+	FWorkflowRequestFromJobDefinitions Request;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workflow")
+	bool bStartImmediately = true;
 };

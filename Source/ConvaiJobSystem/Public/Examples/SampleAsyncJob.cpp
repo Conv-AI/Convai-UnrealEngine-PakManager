@@ -11,9 +11,9 @@ DEFINE_LOG_CATEGORY_STATIC(LogSampleJob, Log, All);
 // USampleAsyncJob
 //////////////////////////////////////////////////////////////////////////
 
-void USampleAsyncJob::IExecute_Implementation(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager)
+void USampleAsyncJob::IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow)
 {
-	CachedWorkflowManager = WorkflowManager;
+	CachedWorkflow = Workflow;
 	CurrentStep = 0;
 	bIsCancelled = false;
 
@@ -47,12 +47,12 @@ void USampleAsyncJob::ICancel_Implementation(bool bForce)
 
 	UE_LOG(LogSampleJob, Log, TEXT("SampleAsyncJob: Cancelled (force=%s)"), bForce ? TEXT("true") : TEXT("false"));
 
-	if (CachedWorkflowManager.GetInterface())
+	if (CachedWorkflow.GetInterface())
 	{
 		FJobCompletionInfo Completion;
 		Completion.Job = this;
 		Completion.Result = EJobResult::Cancelled;
-		CachedWorkflowManager->IOnJobCompleted(Completion);
+		CachedWorkflow->IOnJobCompleted(Completion);
 	}
 }
 
@@ -65,13 +65,13 @@ void USampleAsyncJob::SimulateProgress()
 
 	UE_LOG(LogSampleJob, Verbose, TEXT("SampleAsyncJob: Progress %.0f%%"), Progress * 100.0f);
 
-	if (CachedWorkflowManager.GetInterface())
+	if (CachedWorkflow.GetInterface())
 	{
 		FJobProgressInfo ProgressInfo;
 		ProgressInfo.Job = this;
 		ProgressInfo.Progress = Progress;
 		ProgressInfo.ProgressText = FText::FromString(FString::Printf(TEXT("Processing step %d of %d..."), CurrentStep, ProgressSteps));
-		CachedWorkflowManager->IReportJobProgress(ProgressInfo);
+		CachedWorkflow->IReportJobProgress(ProgressInfo);
 	}
 
 	if (CurrentStep >= ProgressSteps)
@@ -88,12 +88,12 @@ void USampleAsyncJob::CompleteJob()
 {
 	UE_LOG(LogSampleJob, Log, TEXT("SampleAsyncJob: Completed successfully"));
 
-	if (CachedWorkflowManager.GetInterface())
+	if (CachedWorkflow.GetInterface())
 	{
 		FJobCompletionInfo Completion;
 		Completion.Job = this;
 		Completion.Result = EJobResult::Success;
-		CachedWorkflowManager->IOnJobCompleted(Completion);
+		CachedWorkflow->IOnJobCompleted(Completion);
 	}
 }
 
@@ -111,9 +111,9 @@ USampleFailingJob::USampleFailingJob()
 	JobConfig.bRetryOnFailure = true;
 }
 
-void USampleFailingJob::IExecute_Implementation(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager)
+void USampleFailingJob::IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow)
 {
-	CachedWorkflowManager = WorkflowManager;
+	CachedWorkflow = Workflow;
 	bIsCancelled = false;
 
 	UE_LOG(LogSampleJob, Log, TEXT("SampleFailingJob: Executing (failure probability: %.0f%%)"), 
@@ -145,12 +145,12 @@ void USampleFailingJob::ICancel_Implementation(bool bForce)
 
 	UE_LOG(LogSampleJob, Log, TEXT("SampleFailingJob: Cancelled"));
 
-	if (CachedWorkflowManager.GetInterface())
+	if (CachedWorkflow.GetInterface())
 	{
 		FJobCompletionInfo Completion;
 		Completion.Job = this;
 		Completion.Result = EJobResult::Cancelled;
-		CachedWorkflowManager->IOnJobCompleted(Completion);
+		CachedWorkflow->IOnJobCompleted(Completion);
 	}
 }
 
@@ -175,9 +175,9 @@ void USampleFailingJob::AttemptCompletion()
 		Completion.Result = EJobResult::Success;
 	}
 
-	if (CachedWorkflowManager.GetInterface())
+	if (CachedWorkflow.GetInterface())
 	{
-		CachedWorkflowManager->IOnJobCompleted(Completion);
+		CachedWorkflow->IOnJobCompleted(Completion);
 	}
 }
 
@@ -185,14 +185,14 @@ void USampleFailingJob::AttemptCompletion()
 // USampleConditionalJob
 //////////////////////////////////////////////////////////////////////////
 
-void USampleConditionalJob::IExecute_Implementation(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager)
+void USampleConditionalJob::IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow)
 {
 	UE_LOG(LogSampleJob, Log, TEXT("SampleConditionalJob: Executing (required key was found)"));
 
 	FJobCompletionInfo Completion;
 	Completion.Job = this;
 	Completion.Result = EJobResult::Success;
-	WorkflowManager->IOnJobCompleted(Completion);
+	Workflow->IOnJobCompleted(Completion);
 }
 
 bool USampleConditionalJob::IShouldSkip_Implementation(UWorkflowContext* Context) const
@@ -224,9 +224,9 @@ bool USampleConditionalJob::IShouldSkip_Implementation(UWorkflowContext* Context
 // USampleContextWriterJob
 //////////////////////////////////////////////////////////////////////////
 
-void USampleContextWriterJob::IExecute_Implementation(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager)
+void USampleContextWriterJob::IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow)
 {
-	if (UWorkflowContext* Context = WorkflowManager->IGetContext())
+	if (UWorkflowContext* Context = Workflow->IGetContext())
 	{
 		for (const auto& Pair : DataToWrite)
 		{
@@ -239,5 +239,5 @@ void USampleContextWriterJob::IExecute_Implementation(const TScriptInterface<IWo
 	FJobCompletionInfo Completion;
 	Completion.Job = this;
 	Completion.Result = EJobResult::Success;
-	WorkflowManager->IOnJobCompleted(Completion);
+	Workflow->IOnJobCompleted(Completion);
 }

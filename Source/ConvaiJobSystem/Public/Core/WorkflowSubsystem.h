@@ -5,13 +5,9 @@
 #include "CoreMinimal.h"
 #include "Subsystems/EngineSubsystem.h"
 #include "Interface/WorkflowManagerInterface.h"
-#include "Interface/WorkflowListenerInterface.h"
-#include "Interface/JobInterface.h"
 #include "WorkflowSubsystem.generated.h"
 
-class UWorkflowContext;
-
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnWorkflowEvent, EWorkflowEventType, EventType, const FWorkflowStatusInfo&, StatusInfo);
+class UWorkflow;
 
 UCLASS()
 class CONVAIJOBSYSTEM_API UWorkflowSubsystem : public UEngineSubsystem, public IWorkflowManagerInterface
@@ -21,81 +17,39 @@ class CONVAIJOBSYSTEM_API UWorkflowSubsystem : public UEngineSubsystem, public I
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
-	
-	/*
-	* EWorkflowEventType → WHAT happened (event trigger)
-	* EWorkflowStatus → CURRENT workflow state
-	* EJobResult → Job outcome/state (Pending → InProgress → terminal state)
-	*/
-	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
-	FOnWorkflowEvent OnWorkflowEvent;
-	
+
 	// IWorkflowManagerInterface
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
-	virtual bool IExecuteWorkflowFromJobs(const FWorkflowRequestFromJobs& Request) override;
-	
+	virtual FWorkflowHandle ICreateWorkflowFromJobs(const FCreateWorkflowFromJobsParams& Params) override;
+
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
-	virtual bool IExecuteWorkflowFromJobDefinitions(const FWorkflowRequestFromJobDefinitions& Request) override;
-	
+	virtual FWorkflowHandle ICreateWorkflowFromJobDefinitions(const FCreateWorkflowFromJobDefinitionsParams& Params) override;
+
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
-	virtual void ICancelWorkflow(bool bForce = false) override;
-	
+	virtual bool IStartWorkflow(const FWorkflowHandle& Handle) override;
+
+	UFUNCTION(BlueprintCallable, Category = "Workflow")
+	virtual bool ICancelWorkflow(const FWorkflowHandle& Handle, bool bForce = false) override;
+
+	UFUNCTION(BlueprintCallable, Category = "Workflow")
+	virtual bool ICancelAllWorkflows(bool bForce = false) override;
+
+	UFUNCTION(BlueprintCallable, Category = "Workflow")
+	virtual TScriptInterface<IWorkflowInterface> IGetWorkflow(const FWorkflowHandle& Handle) const override;
+
+	UFUNCTION(BlueprintCallable, Category = "Workflow")
+	virtual TArray<FWorkflowHandle> IGetAllWorkflowHandles() const override;
+
 	UFUNCTION(BlueprintPure, Category = "Workflow")
-	virtual FWorkflowStatusInfo IGetStatusInfo() override;
-	
+	int32 GetActiveWorkflowCount() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
-	virtual UWorkflowContext* IGetContext() override { return Context; }
-	
+	bool RemoveWorkflow(const FWorkflowHandle& Handle);
+
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
-	virtual void IAddListener(const TScriptInterface<IWorkflowListenerInterface>& Listener) override;
-	
-	UFUNCTION(BlueprintCallable, Category = "Workflow")
-	virtual void IRemoveListener(const TScriptInterface<IWorkflowListenerInterface>& Listener) override;
-	
-	UFUNCTION(BlueprintPure, Category = "Workflow")
-	bool IsRunning() const { return StatusInfo.Status == EWorkflowStatus::Running || StatusInfo.Status == EWorkflowStatus::Cancelling; }
-	
-	virtual void IOnJobCompleted(const FJobCompletionInfo& CompletionInfo) override;
-	virtual void IReportJobProgress(const FJobProgressInfo& ProgressInfo) override;
-	
-protected:
-	void ExecuteCurrentJob();
-	void AdvanceToNextJob();
-	void RetryCurrentJob();
-	void SkipCurrentJob();
-	void FinishWorkflow(EWorkflowStatus FinalStatus, const FString& ErrorMessage = TEXT(""));
-	void ResetState();
-	
-	void HandleJobTimeout();
-	void HandleWorkflowTimeout();
-	void HandleRetryTimer();
-	
-	void BroadcastEvent(EWorkflowEventType EventType);
-	void UpdateComputedFields();
-	
-	FJobConfig GetEffectiveJobConfig() const;
-	bool ShouldRetry(EJobResult Result) const;
+	void RemoveCompletedWorkflows();
 
 private:
 	UPROPERTY()
-	TObjectPtr<UWorkflowContext> Context;
-
-	UPROPERTY()
-	TArray<TScriptInterface<IJobInterface>> JobQueue;
-
-	UPROPERTY()
-	TArray<TScriptInterface<IWorkflowListenerInterface>> Listeners;
-
-	UPROPERTY()
-	TObjectPtr<UObject> CurrentJobObject;
-
-	FWorkflowStatusInfo StatusInfo;
-	FWorkflowConfig WorkflowConfig;
-	FJobConfig CurrentJobConfig;
-	double JobStartTime = 0.0;
-	double WorkflowStartTime = 0.0;
-	
-	FTimerHandle JobTimeoutHandle;
-	FTimerHandle WorkflowTimeoutHandle;
-	FTimerHandle RetryHandle;
+	TMap<FWorkflowHandle, TObjectPtr<UWorkflow>> Workflows;
 };

@@ -2,15 +2,15 @@
 
 #include "Utility/WorkflowBlueprintLibrary.h"
 #include "Core/WorkflowContext.h"
-#include "Interface/WorkflowManagerInterface.h"
+#include "Interface/WorkflowInterface.h"
 #include "Interface/WorkflowListenerInterface.h"
 #include "Interface/JobInterface.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWorkflowBP, Log, All);
 
-UWorkflowContext* UWorkflowBlueprintLibrary::GetWorkflowContext(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager)
+UWorkflowContext* UWorkflowBlueprintLibrary::GetWorkflowContext(const TScriptInterface<IWorkflowInterface>& Workflow)
 {
-	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
+	if (IWorkflowInterface* Interface = Workflow.GetInterface())
 	{
 		return Interface->IGetContext();
 	}
@@ -18,64 +18,66 @@ UWorkflowContext* UWorkflowBlueprintLibrary::GetWorkflowContext(const TScriptInt
 }
 
 void UWorkflowBlueprintLibrary::NotifyJobCompleted(
-	const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
+	const TScriptInterface<IWorkflowInterface>& Workflow,
 	const FJobCompletionInfo& CompletionInfo)
 {
-	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
+	if (IWorkflowInterface* Interface = Workflow.GetInterface())
 	{
 		Interface->IOnJobCompleted(CompletionInfo);
 	}
 	else
 	{
-		UE_LOG(LogWorkflowBP, Error, TEXT("NotifyJobCompleted called with invalid WorkflowManager"));
+		UE_LOG(LogWorkflowBP, Error, TEXT("NotifyJobCompleted called with invalid Workflow"));
 	}
 }
 
-bool UWorkflowBlueprintLibrary::IsWorkflowManagerValid(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager)
+bool UWorkflowBlueprintLibrary::IsWorkflowValid(const TScriptInterface<IWorkflowInterface>& Workflow)
 {
-	return WorkflowManager.GetInterface() != nullptr;
+	return Workflow.GetInterface() != nullptr;
 }
 
 void UWorkflowBlueprintLibrary::ReportJobProgress(
-	const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
+	const TScriptInterface<IWorkflowInterface>& Workflow,
 	const FJobProgressInfo& ProgressInfo)
 {
-	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
+	if (IWorkflowInterface* Interface = Workflow.GetInterface())
 	{
 		Interface->IReportJobProgress(ProgressInfo);
 	}
 }
 
 void UWorkflowBlueprintLibrary::AddWorkflowListener(
-	const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
+	const TScriptInterface<IWorkflowInterface>& Workflow,
 	const TScriptInterface<IWorkflowListenerInterface>& Listener)
 {
-	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
+	if (IWorkflowInterface* Interface = Workflow.GetInterface())
 	{
 		Interface->IAddListener(Listener);
 	}
 }
 
 void UWorkflowBlueprintLibrary::RemoveWorkflowListener(
-	const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager,
+	const TScriptInterface<IWorkflowInterface>& Workflow,
 	const TScriptInterface<IWorkflowListenerInterface>& Listener)
 {
-	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
+	if (IWorkflowInterface* Interface = Workflow.GetInterface())
 	{
 		Interface->IRemoveListener(Listener);
 	}
 }
 
-FWorkflowStatusInfo UWorkflowBlueprintLibrary::GetWorkflowStatusInfo(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager)
+FWorkflowStatusInfo UWorkflowBlueprintLibrary::GetWorkflowStatusInfo(const TScriptInterface<IWorkflowInterface>& Workflow)
 {
-	if (IWorkflowManagerInterface* Interface = WorkflowManager.GetInterface())
+	if (IWorkflowInterface* Interface = Workflow.GetInterface())
 	{
 		return Interface->IGetStatusInfo();
 	}
 	return FWorkflowStatusInfo();
 }
 
-bool UWorkflowBlueprintLibrary::CreateJobsFromDefinitions(UObject* Outer, const TArray<FJobDefinition>& JobDefinitions,
+bool UWorkflowBlueprintLibrary::CreateJobsFromDefinitions(
+	UObject* Outer,
+	const TArray<FJobDefinition>& JobDefinitions,
 	TArray<TScriptInterface<IJobInterface>>& OutJobs)
 {
 	OutJobs.Empty();
@@ -121,8 +123,6 @@ bool UWorkflowBlueprintLibrary::CreateJobsFromDefinitions(UObject* Outer, const 
 			OutJobs.Empty();
 			return false;
 		}
-		
-		IJobInterface::Execute_IInitialize(JobObject, Definition.JobConfig);
 		
 		TScriptInterface<IJobInterface> JobInterface;
 		JobInterface.SetObject(JobObject);

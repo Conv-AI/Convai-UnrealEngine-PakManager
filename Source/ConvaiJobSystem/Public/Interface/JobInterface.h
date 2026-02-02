@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "UObject/Interface.h"
 #include "Type/JS_Definations.h"
-#include "WorkflowManagerInterface.h"
+#include "WorkflowInterface.h"
 #include "JobInterface.generated.h"
 
 class UWorkflowContext;
@@ -32,12 +32,12 @@ class CONVAIJOBSYSTEM_API IJobInterface
 
 public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
-	void IInitialize(const FJobConfig& Config);
-	virtual void IInitialize_Implementation(const FJobConfig& Config) {}
+	void IInitialize(const FJobConfig& Config, const TScriptInterface<IWorkflowInterface>& Workflow);
+	virtual void IInitialize_Implementation(const FJobConfig& Config, const TScriptInterface<IWorkflowInterface>& Workflow) {}
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
-	void IExecute(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager);
-	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowManagerInterface>& WorkflowManager) {}
+	void IExecute(const TScriptInterface<IWorkflowInterface>& Workflow);
+	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) {}
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
 	void ICancel(bool bForce = false);
