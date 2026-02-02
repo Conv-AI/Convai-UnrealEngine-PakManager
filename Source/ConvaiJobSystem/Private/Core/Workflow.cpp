@@ -107,7 +107,7 @@ void UWorkflow::BroadcastEvent(const EWorkflowEventType EventType)
 		}
 	}
 
-	OnWorkflowEvent.Broadcast(EventType, StatusInfo);
+	EventCallback.ExecuteIfBound(EventType, StatusInfo);
 }
 
 bool UWorkflow::IInitializeFromJobDefinitions(const FWorkflowRequestFromJobDefinitions& Request)

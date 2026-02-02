@@ -9,6 +9,8 @@
 
 class UWorkflow;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnWorkflowEvent, EWorkflowEventType, EventType, const FWorkflowStatusInfo&, StatusInfo);
+
 UCLASS()
 class CONVAIJOBSYSTEM_API UWorkflowManagerSubsystem : public UEngineSubsystem, public IWorkflowManagerInterface
 {
@@ -48,6 +50,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Workflow")
 	void RemoveCompletedWorkflows();
+
+	/** Global delegate for all workflow events. Filter by StatusInfo.Handle if needed. */
+	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
+	FOnWorkflowEvent OnWorkflowEvent;
+
+	void HandleWorkflowEvent(EWorkflowEventType EventType, const FWorkflowStatusInfo& StatusInfo);
 
 private:
 	UPROPERTY()

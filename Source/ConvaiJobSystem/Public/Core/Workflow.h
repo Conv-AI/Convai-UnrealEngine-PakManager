@@ -11,7 +11,7 @@
 
 class UWorkflowContext;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnWorkflowInstanceEvent, EWorkflowEventType, EventType, const FWorkflowStatusInfo&, StatusInfo);
+DECLARE_DELEGATE_TwoParams(FWorkflowEventCallback, EWorkflowEventType, const FWorkflowStatusInfo&);
 
 UCLASS()
 class CONVAIJOBSYSTEM_API UWorkflow : public UObject, public IWorkflowInterface
@@ -20,9 +20,7 @@ class CONVAIJOBSYSTEM_API UWorkflow : public UObject, public IWorkflowInterface
 
 public:
 	void SetHandle(const FWorkflowHandle& InHandle) { Handle = InHandle; }
-
-	UPROPERTY(BlueprintAssignable, Category = "Workflow|Events")
-	FOnWorkflowInstanceEvent OnWorkflowEvent;
+	void SetEventCallback(const FWorkflowEventCallback& Callback) { EventCallback = Callback; }
 
 	// IWorkflowInterface
 	virtual bool IInitializeFromJobs(const FWorkflowRequestFromJobs& Request) override;
@@ -67,6 +65,7 @@ protected:
 
 private:
 	FWorkflowHandle Handle;
+	FWorkflowEventCallback EventCallback;
 
 	UPROPERTY()
 	TObjectPtr<UWorkflowContext> Context;

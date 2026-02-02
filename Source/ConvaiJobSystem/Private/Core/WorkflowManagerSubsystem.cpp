@@ -26,6 +26,7 @@ FWorkflowHandle UWorkflowManagerSubsystem::ICreateWorkflowFromJobs(const FCreate
 
 	UWorkflow* Workflow = NewObject<UWorkflow>(this);
 	Workflow->SetHandle(Handle);
+	Workflow->SetEventCallback(FWorkflowEventCallback::CreateUObject(this, &UWorkflowManagerSubsystem::HandleWorkflowEvent));
 
 	if (!Workflow->IInitializeFromJobs(Params.Request))
 	{
@@ -50,6 +51,7 @@ FWorkflowHandle UWorkflowManagerSubsystem::ICreateWorkflowFromJobDefinitions(con
 
 	UWorkflow* Workflow = NewObject<UWorkflow>(this);
 	Workflow->SetHandle(Handle);
+	Workflow->SetEventCallback(FWorkflowEventCallback::CreateUObject(this, &UWorkflowManagerSubsystem::HandleWorkflowEvent));
 
 	if (!Workflow->IInitializeFromJobDefinitions(Params.Request))
 	{
@@ -195,4 +197,9 @@ void UWorkflowManagerSubsystem::RemoveCompletedWorkflows()
 	{
 		UE_LOG(LogWorkflowManager, Log, TEXT("Removed %d completed workflows"), ToRemove.Num());
 	}
+}
+
+void UWorkflowManagerSubsystem::HandleWorkflowEvent(EWorkflowEventType EventType, const FWorkflowStatusInfo& StatusInfo)
+{
+	OnWorkflowEvent.Broadcast(EventType, StatusInfo);
 }
