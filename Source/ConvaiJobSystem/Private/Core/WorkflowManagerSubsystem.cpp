@@ -1,18 +1,18 @@
 // Copyright 2025 Convai Inc. All Rights Reserved.
 
-#include "Core/WorkflowSubsystem.h"
+#include "Core/WorkflowManagerSubsystem.h"
 #include "Core/Workflow.h"
 #include "Interface/WorkflowInterface.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWorkflowManager, Log, All);
 
-void UWorkflowSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+void UWorkflowManagerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 	UE_LOG(LogWorkflowManager, Log, TEXT("WorkflowSubsystem initialized"));
 }
 
-void UWorkflowSubsystem::Deinitialize()
+void UWorkflowManagerSubsystem::Deinitialize()
 {
 	ICancelAllWorkflows(true);
 	Workflows.Empty();
@@ -20,7 +20,7 @@ void UWorkflowSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
-FWorkflowHandle UWorkflowSubsystem::ICreateWorkflowFromJobs(const FCreateWorkflowFromJobsParams& Params)
+FWorkflowHandle UWorkflowManagerSubsystem::ICreateWorkflowFromJobs(const FCreateWorkflowFromJobsParams& Params)
 {
 	FWorkflowHandle Handle = FWorkflowHandle::Generate();
 
@@ -44,7 +44,7 @@ FWorkflowHandle UWorkflowSubsystem::ICreateWorkflowFromJobs(const FCreateWorkflo
 	return Handle;
 }
 
-FWorkflowHandle UWorkflowSubsystem::ICreateWorkflowFromJobDefinitions(const FCreateWorkflowFromJobDefinitionsParams& Params)
+FWorkflowHandle UWorkflowManagerSubsystem::ICreateWorkflowFromJobDefinitions(const FCreateWorkflowFromJobDefinitionsParams& Params)
 {
 	const FWorkflowHandle Handle = FWorkflowHandle::Generate();
 
@@ -68,7 +68,7 @@ FWorkflowHandle UWorkflowSubsystem::ICreateWorkflowFromJobDefinitions(const FCre
 	return Handle;
 }
 
-bool UWorkflowSubsystem::IStartWorkflow(const FWorkflowHandle& Handle)
+bool UWorkflowManagerSubsystem::IStartWorkflow(const FWorkflowHandle& Handle)
 {
 	if (const TObjectPtr<UWorkflow>* WorkflowPtr = Workflows.Find(Handle))
 	{
@@ -84,7 +84,7 @@ bool UWorkflowSubsystem::IStartWorkflow(const FWorkflowHandle& Handle)
 	return false;
 }
 
-bool UWorkflowSubsystem::ICancelWorkflow(const FWorkflowHandle& Handle, bool bForce)
+bool UWorkflowManagerSubsystem::ICancelWorkflow(const FWorkflowHandle& Handle, bool bForce)
 {
 	if (const TObjectPtr<UWorkflow>* WorkflowPtr = Workflows.Find(Handle))
 	{
@@ -99,7 +99,7 @@ bool UWorkflowSubsystem::ICancelWorkflow(const FWorkflowHandle& Handle, bool bFo
 	return false;
 }
 
-bool UWorkflowSubsystem::ICancelAllWorkflows(bool bForce)
+bool UWorkflowManagerSubsystem::ICancelAllWorkflows(bool bForce)
 {
 	bool bAnyCancelled = false;
 	for (auto& Pair : Workflows)
@@ -116,7 +116,7 @@ bool UWorkflowSubsystem::ICancelAllWorkflows(bool bForce)
 	return bAnyCancelled;
 }
 
-TScriptInterface<IWorkflowInterface> UWorkflowSubsystem::IGetWorkflow(const FWorkflowHandle& Handle) const
+TScriptInterface<IWorkflowInterface> UWorkflowManagerSubsystem::IGetWorkflow(const FWorkflowHandle& Handle) const
 {
 	if (const TObjectPtr<UWorkflow>* WorkflowPtr = Workflows.Find(Handle))
 	{
@@ -131,14 +131,14 @@ TScriptInterface<IWorkflowInterface> UWorkflowSubsystem::IGetWorkflow(const FWor
 	return TScriptInterface<IWorkflowInterface>();
 }
 
-TArray<FWorkflowHandle> UWorkflowSubsystem::IGetAllWorkflowHandles() const
+TArray<FWorkflowHandle> UWorkflowManagerSubsystem::IGetAllWorkflowHandles() const
 {
 	TArray<FWorkflowHandle> Handles;
 	Workflows.GetKeys(Handles);
 	return Handles;
 }
 
-int32 UWorkflowSubsystem::GetActiveWorkflowCount() const
+int32 UWorkflowManagerSubsystem::GetActiveWorkflowCount() const
 {
 	int32 Count = 0;
 	for (const auto& Pair : Workflows)
@@ -154,7 +154,7 @@ int32 UWorkflowSubsystem::GetActiveWorkflowCount() const
 	return Count;
 }
 
-bool UWorkflowSubsystem::RemoveWorkflow(const FWorkflowHandle& Handle)
+bool UWorkflowManagerSubsystem::RemoveWorkflow(const FWorkflowHandle& Handle)
 {
 	if (const TObjectPtr<UWorkflow>* WorkflowPtr = Workflows.Find(Handle))
 	{
@@ -168,7 +168,7 @@ bool UWorkflowSubsystem::RemoveWorkflow(const FWorkflowHandle& Handle)
 	return Workflows.Remove(Handle) > 0;
 }
 
-void UWorkflowSubsystem::RemoveCompletedWorkflows()
+void UWorkflowManagerSubsystem::RemoveCompletedWorkflows()
 {
 	TArray<FWorkflowHandle> ToRemove;
 

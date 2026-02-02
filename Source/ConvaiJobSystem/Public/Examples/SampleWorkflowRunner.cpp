@@ -2,7 +2,7 @@
 
 #include "Examples/SampleWorkflowRunner.h"
 #include "Examples/SampleAsyncJob.h"
-#include "Core/WorkflowSubsystem.h"
+#include "Core/WorkflowManagerSubsystem.h"
 #include "Core/WorkflowContext.h"
 #include "Interface/WorkflowInterface.h"
 #include "Engine/Engine.h"
@@ -18,7 +18,7 @@ void ASampleWorkflowRunner::BeginPlay()
 {
 	Super::BeginPlay();
 
-	WorkflowManager = GEngine->GetEngineSubsystem<UWorkflowSubsystem>();
+	WorkflowManager = GEngine->GetEngineSubsystem<UWorkflowManagerSubsystem>();
 }
 
 void ASampleWorkflowRunner::EndPlay(const EEndPlayReason::Type EndPlayReason)

@@ -47,6 +47,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Workflow", meta = (DisplayName = "Get Workflow Status Info"))
 	static FWorkflowStatusInfo GetWorkflowStatusInfo(const TScriptInterface<IWorkflowInterface>& Workflow);
 	
+	/** Creates job instances from definitions. Calls IPreInitialize() on each job. */
 	UFUNCTION(BlueprintCallable, Category = "Workflow", meta = (DisplayName = "Create Jobs From Definitions"))
 	static bool CreateJobsFromDefinitions(
 		UObject* Outer,

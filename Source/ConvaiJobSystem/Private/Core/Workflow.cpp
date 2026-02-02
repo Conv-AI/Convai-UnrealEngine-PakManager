@@ -175,6 +175,7 @@ bool UWorkflow::InitializeWorkflowInternal(
 	WorkflowInterface.SetObject(this);
 	WorkflowInterface.SetInterface(Cast<IWorkflowInterface>(this));
 
+	// Bind all jobs to this workflow (IPreInitialize was already called during job creation)
 	for (const TScriptInterface<IJobInterface>& Job : JobQueue)
 	{
 		if (UObject* JobObject = Job.GetObject())

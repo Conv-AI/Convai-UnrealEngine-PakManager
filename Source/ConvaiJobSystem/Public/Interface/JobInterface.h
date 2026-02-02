@@ -18,18 +18,18 @@ class UJobInterface : public UInterface
 
 /**
  * Interface for workflow jobs.
- * Any class can implement this interface to become executable within a workflow.
  * 
- * Lifecycle:
- * 1. IPreInitialize() - Called when job is created from definition (configuration phase)
- * 2. IInitialize() - Called when job is added to workflow (workflow binding phase)
+ * Lifecycle (definition-based jobs):
+ * 1. IPreInitialize(Definition) - Called by CreateJobsFromDefinitions
+ * 2. IInitialize(Workflow) - Called when job is added to workflow
  * 3. IExecute() - Called to run the job
- * 4. ICancel() - Called if workflow is canceled
  * 
- * Contract:
- * - The job MUST call NotifyJobCompleted() from WorkflowBlueprintLibrary when Execute finishes
- * - Jobs can be synchronous or asynchronous internally
- * - Jobs should respect cancellation requests
+ * Lifecycle (user-created jobs):
+ * 1. IInitialize(Workflow) - Called when job is added to workflow
+ * 2. IExecute() - Called to run the job
+ * 
+ * Note: User-created jobs should configure themselves before being added to workflow.
+ * The job MUST call NotifyJobCompleted() when Execute finishes.
  */
 class CONVAIJOBSYSTEM_API IJobInterface
 {

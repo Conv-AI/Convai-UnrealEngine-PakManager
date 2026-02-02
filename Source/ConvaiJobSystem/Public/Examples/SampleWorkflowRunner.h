@@ -13,7 +13,7 @@ class USampleAsyncJob;
 class USampleFailingJob;
 class USampleConditionalJob;
 class USampleContextWriterJob;
-class UWorkflowSubsystem;
+class UWorkflowManagerSubsystem;
 
 /**
  * Sample actor demonstrating complete workflow system usage.
@@ -85,7 +85,7 @@ private:
 	FString GetEventTypeName(EWorkflowEventType EventType) const;
 
 	UPROPERTY()
-	TObjectPtr<UWorkflowSubsystem> WorkflowManager;
+	TObjectPtr<UWorkflowManagerSubsystem> WorkflowManager;
 
 	FWorkflowHandle CurrentWorkflowHandle;
 

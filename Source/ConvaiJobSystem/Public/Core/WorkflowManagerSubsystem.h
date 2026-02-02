@@ -5,12 +5,12 @@
 #include "CoreMinimal.h"
 #include "Subsystems/EngineSubsystem.h"
 #include "Interface/WorkflowManagerInterface.h"
-#include "WorkflowSubsystem.generated.h"
+#include "WorkflowManagerSubsystem.generated.h"
 
 class UWorkflow;
 
 UCLASS()
-class CONVAIJOBSYSTEM_API UWorkflowSubsystem : public UEngineSubsystem, public IWorkflowManagerInterface
+class CONVAIJOBSYSTEM_API UWorkflowManagerSubsystem : public UEngineSubsystem, public IWorkflowManagerInterface
 {
 	GENERATED_BODY()
 
