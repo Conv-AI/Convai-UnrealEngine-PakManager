@@ -2,11 +2,25 @@
 
 #include "Utility/WorkflowBlueprintLibrary.h"
 #include "Core/WorkflowContext.h"
+#include "Core/WorkflowManagerSubsystem.h"
 #include "Interface/WorkflowInterface.h"
 #include "Interface/WorkflowListenerInterface.h"
 #include "Interface/JobInterface.h"
+#include "Engine/Engine.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWorkflowBP, Log, All);
+
+namespace 
+{
+	UWorkflowManagerSubsystem* GetWorkflowManager()
+	{
+		if (GEngine)
+		{
+			return GEngine->GetEngineSubsystem<UWorkflowManagerSubsystem>();
+		}
+		return nullptr;
+	}
+}
 
 UWorkflowContext* UWorkflowBlueprintLibrary::GetWorkflowContext(const TScriptInterface<IWorkflowInterface>& Workflow)
 {
@@ -136,4 +150,44 @@ bool UWorkflowBlueprintLibrary::CreateJobsFromDefinitions(
 	}
 	
 	return true;
+}
+
+FWorkflowHandle UWorkflowBlueprintLibrary::CreateWorkflowFromJobs(const FCreateWorkflowFromJobsParams& Params)
+{
+	if (UWorkflowManagerSubsystem* Manager = GetWorkflowManager())
+	{
+		return Manager->ICreateWorkflowFromJobs(Params);
+	}
+	UE_LOG(LogWorkflowBP, Error, TEXT("CreateWorkflowFromJobs: WorkflowManagerSubsystem not available"));
+	return FWorkflowHandle::Invalid();
+}
+
+FWorkflowHandle UWorkflowBlueprintLibrary::CreateWorkflowFromJobDefinitions(const FCreateWorkflowFromJobDefinitionsParams& Params)
+{
+	if (UWorkflowManagerSubsystem* Manager = GetWorkflowManager())
+	{
+		return Manager->ICreateWorkflowFromJobDefinitions(Params);
+	}
+	UE_LOG(LogWorkflowBP, Error, TEXT("CreateWorkflowFromJobDefinitions: WorkflowManagerSubsystem not available"));
+	return FWorkflowHandle::Invalid();
+}
+
+bool UWorkflowBlueprintLibrary::CancelWorkflow(const FWorkflowHandle& Handle, bool bForce)
+{
+	if (UWorkflowManagerSubsystem* Manager = GetWorkflowManager())
+	{
+		return Manager->ICancelWorkflow(Handle, bForce);
+	}
+	UE_LOG(LogWorkflowBP, Error, TEXT("CancelWorkflow: WorkflowManagerSubsystem not available"));
+	return false;
+}
+
+bool UWorkflowBlueprintLibrary::CancelAllWorkflows(bool bForce)
+{
+	if (UWorkflowManagerSubsystem* Manager = GetWorkflowManager())
+	{
+		return Manager->ICancelAllWorkflows(bForce);
+	}
+	UE_LOG(LogWorkflowBP, Error, TEXT("CancelAllWorkflows: WorkflowManagerSubsystem not available"));
+	return false;
 }
