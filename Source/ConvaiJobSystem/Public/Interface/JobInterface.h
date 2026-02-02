@@ -20,11 +20,16 @@ class UJobInterface : public UInterface
  * Interface for workflow jobs.
  * Any class can implement this interface to become executable within a workflow.
  * 
+ * Lifecycle:
+ * 1. IPreInitialize() - Called when job is created from definition (configuration phase)
+ * 2. IInitialize() - Called when job is added to workflow (workflow binding phase)
+ * 3. IExecute() - Called to run the job
+ * 4. ICancel() - Called if workflow is canceled
+ * 
  * Contract:
- * - Execute() will be called by the workflow manager
- * - The job MUST call NotifyJobCompleted() from WorkflowBlueprintLibrary when done
+ * - The job MUST call NotifyJobCompleted() from WorkflowBlueprintLibrary when Execute finishes
  * - Jobs can be synchronous or asynchronous internally
- * - Jobs should check IsCancellationRequested() for long operations
+ * - Jobs should respect cancellation requests
  */
 class CONVAIJOBSYSTEM_API IJobInterface
 {
@@ -32,12 +37,16 @@ class CONVAIJOBSYSTEM_API IJobInterface
 
 public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
-	void IInitialize(const FJobConfig& Config, const TScriptInterface<IWorkflowInterface>& Workflow);
-	virtual void IInitialize_Implementation(const FJobConfig& Config, const TScriptInterface<IWorkflowInterface>& Workflow) {}
+	void IPreInitialize(const FJobDefinition& Definition);
+	virtual void IPreInitialize_Implementation(const FJobDefinition& Definition) {}
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
-	void IExecute(const TScriptInterface<IWorkflowInterface>& Workflow);
-	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) {}
+	void IInitialize(const TScriptInterface<IWorkflowInterface>& Workflow);
+	virtual void IInitialize_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) {}
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
+	void IExecute();
+	virtual void IExecute_Implementation() {}
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Job")
 	void ICancel(bool bForce = false);

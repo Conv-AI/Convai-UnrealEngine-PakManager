@@ -123,6 +123,8 @@ bool UWorkflowBlueprintLibrary::CreateJobsFromDefinitions(
 			OutJobs.Empty();
 			return false;
 		}
+
+		IJobInterface::Execute_IPreInitialize(JobObject, Definition);
 		
 		TScriptInterface<IJobInterface> JobInterface;
 		JobInterface.SetObject(JobObject);

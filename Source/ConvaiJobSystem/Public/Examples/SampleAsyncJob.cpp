@@ -11,9 +11,18 @@ DEFINE_LOG_CATEGORY_STATIC(LogSampleJob, Log, All);
 // USampleAsyncJob
 //////////////////////////////////////////////////////////////////////////
 
-void USampleAsyncJob::IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow)
+void USampleAsyncJob::IPreInitialize_Implementation(const FJobDefinition& Definition)
+{
+	JobConfig = Definition.JobConfig;
+}
+
+void USampleAsyncJob::IInitialize_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow)
 {
 	CachedWorkflow = Workflow;
+}
+
+void USampleAsyncJob::IExecute_Implementation()
+{
 	CurrentStep = 0;
 	bIsCancelled = false;
 
@@ -103,7 +112,6 @@ void USampleAsyncJob::CompleteJob()
 
 USampleFailingJob::USampleFailingJob()
 {
-	// Configure retry settings by default
 	JobConfig.Name = TEXT("Failing Job");
 	JobConfig.bOverrideWorkflowDefaults = true;
 	JobConfig.MaxRetries = 5;
@@ -111,9 +119,18 @@ USampleFailingJob::USampleFailingJob()
 	JobConfig.bRetryOnFailure = true;
 }
 
-void USampleFailingJob::IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow)
+void USampleFailingJob::IPreInitialize_Implementation(const FJobDefinition& Definition)
+{
+	JobConfig = Definition.JobConfig;
+}
+
+void USampleFailingJob::IInitialize_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow)
 {
 	CachedWorkflow = Workflow;
+}
+
+void USampleFailingJob::IExecute_Implementation()
+{
 	bIsCancelled = false;
 
 	UE_LOG(LogSampleJob, Log, TEXT("SampleFailingJob: Executing (failure probability: %.0f%%)"), 
@@ -185,14 +202,27 @@ void USampleFailingJob::AttemptCompletion()
 // USampleConditionalJob
 //////////////////////////////////////////////////////////////////////////
 
-void USampleConditionalJob::IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow)
+void USampleConditionalJob::IPreInitialize_Implementation(const FJobDefinition& Definition)
+{
+	JobConfig = Definition.JobConfig;
+}
+
+void USampleConditionalJob::IInitialize_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow)
+{
+	CachedWorkflow = Workflow;
+}
+
+void USampleConditionalJob::IExecute_Implementation()
 {
 	UE_LOG(LogSampleJob, Log, TEXT("SampleConditionalJob: Executing (required key was found)"));
 
-	FJobCompletionInfo Completion;
-	Completion.Job = this;
-	Completion.Result = EJobResult::Success;
-	Workflow->IOnJobCompleted(Completion);
+	if (CachedWorkflow.GetInterface())
+	{
+		FJobCompletionInfo Completion;
+		Completion.Job = this;
+		Completion.Result = EJobResult::Success;
+		CachedWorkflow->IOnJobCompleted(Completion);
+	}
 }
 
 bool USampleConditionalJob::IShouldSkip_Implementation(UWorkflowContext* Context) const
@@ -224,20 +254,33 @@ bool USampleConditionalJob::IShouldSkip_Implementation(UWorkflowContext* Context
 // USampleContextWriterJob
 //////////////////////////////////////////////////////////////////////////
 
-void USampleContextWriterJob::IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow)
+void USampleContextWriterJob::IPreInitialize_Implementation(const FJobDefinition& Definition)
 {
-	if (UWorkflowContext* Context = Workflow->IGetContext())
-	{
-		for (const auto& Pair : DataToWrite)
-		{
-			Context->SetValue(Pair.Key, Pair.Value);
-			UE_LOG(LogSampleJob, Log, TEXT("SampleContextWriterJob: Set '%s' = '%s'"), 
-				*Pair.Key.ToString(), *Pair.Value);
-		}
-	}
+	JobConfig = Definition.JobConfig;
+}
 
-	FJobCompletionInfo Completion;
-	Completion.Job = this;
-	Completion.Result = EJobResult::Success;
-	Workflow->IOnJobCompleted(Completion);
+void USampleContextWriterJob::IInitialize_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow)
+{
+	CachedWorkflow = Workflow;
+}
+
+void USampleContextWriterJob::IExecute_Implementation()
+{
+	if (CachedWorkflow.GetInterface())
+	{
+		if (UWorkflowContext* Context = CachedWorkflow->IGetContext())
+		{
+			for (const auto& Pair : DataToWrite)
+			{
+				Context->SetValue(Pair.Key, Pair.Value);
+				UE_LOG(LogSampleJob, Log, TEXT("SampleContextWriterJob: Set '%s' = '%s'"), 
+					*Pair.Key.ToString(), *Pair.Value);
+			}
+		}
+
+		FJobCompletionInfo Completion;
+		Completion.Job = this;
+		Completion.Result = EJobResult::Success;
+		CachedWorkflow->IOnJobCompleted(Completion);
+	}
 }

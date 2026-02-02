@@ -18,20 +18,19 @@ class CONVAIJOBSYSTEM_API USampleAsyncJob : public UObject, public IJobInterface
 	GENERATED_BODY()
 
 public:
-	// Duration of the simulated async task in seconds
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample Job")
 	float TaskDurationSeconds = 3.0f;
 
-	// Number of progress updates during execution
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample Job")
 	int32 ProgressSteps = 5;
 
-	// Job configuration
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample Job")
 	FJobConfig JobConfig;
 
 	// IJobInterface
-	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) override;
+	virtual void IPreInitialize_Implementation(const FJobDefinition& Definition) override;
+	virtual void IInitialize_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) override;
+	virtual void IExecute_Implementation() override;
 	virtual void ICancel_Implementation(bool bForce) override;
 	virtual FJobConfig IGetJobConfig_Implementation() const override { return JobConfig; }
 
@@ -57,22 +56,21 @@ class CONVAIJOBSYSTEM_API USampleFailingJob : public UObject, public IJobInterfa
 	GENERATED_BODY()
 
 public:
-	// Probability of failure (0.0 = never fail, 1.0 = always fail)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample Job", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float FailureProbability = 0.7f;
 
-	// Simulated execution time before success/failure
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample Job")
 	float ExecutionTimeSeconds = 0.5f;
 
-	// Job configuration with retry settings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample Job")
 	FJobConfig JobConfig;
 
 	USampleFailingJob();
 
 	// IJobInterface
-	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) override;
+	virtual void IPreInitialize_Implementation(const FJobDefinition& Definition) override;
+	virtual void IInitialize_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) override;
+	virtual void IExecute_Implementation() override;
 	virtual void ICancel_Implementation(bool bForce) override;
 	virtual FJobConfig IGetJobConfig_Implementation() const override { return JobConfig; }
 
@@ -96,18 +94,22 @@ class CONVAIJOBSYSTEM_API USampleConditionalJob : public UObject, public IJobInt
 	GENERATED_BODY()
 
 public:
-	// The context key that must exist for this job to execute
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample Job")
 	FGameplayTag RequiredContextKey;
 
-	// Job configuration
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample Job")
 	FJobConfig JobConfig;
 
 	// IJobInterface
-	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) override;
+	virtual void IPreInitialize_Implementation(const FJobDefinition& Definition) override;
+	virtual void IInitialize_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) override;
+	virtual void IExecute_Implementation() override;
 	virtual bool IShouldSkip_Implementation(UWorkflowContext* Context) const override;
 	virtual FJobConfig IGetJobConfig_Implementation() const override { return JobConfig; }
+
+private:
+	UPROPERTY()
+	TScriptInterface<IWorkflowInterface> CachedWorkflow;
 };
 
 /**
@@ -120,15 +122,19 @@ class CONVAIJOBSYSTEM_API USampleContextWriterJob : public UObject, public IJobI
 	GENERATED_BODY()
 
 public:
-	// Key-value pairs to write to context
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample Job")
 	TMap<FGameplayTag, FString> DataToWrite;
 
-	// Job configuration
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample Job")
 	FJobConfig JobConfig;
 
 	// IJobInterface
-	virtual void IExecute_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) override;
+	virtual void IPreInitialize_Implementation(const FJobDefinition& Definition) override;
+	virtual void IInitialize_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) override;
+	virtual void IExecute_Implementation() override;
 	virtual FJobConfig IGetJobConfig_Implementation() const override { return JobConfig; }
+
+private:
+	UPROPERTY()
+	TScriptInterface<IWorkflowInterface> CachedWorkflow;
 };

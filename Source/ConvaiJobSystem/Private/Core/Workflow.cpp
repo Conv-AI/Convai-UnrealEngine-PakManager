@@ -179,8 +179,7 @@ bool UWorkflow::InitializeWorkflowInternal(
 	{
 		if (UObject* JobObject = Job.GetObject())
 		{
-			const FJobConfig JobConfig = IJobInterface::Execute_IGetJobConfig(JobObject);
-			IJobInterface::Execute_IInitialize(JobObject, JobConfig, WorkflowInterface);
+			IJobInterface::Execute_IInitialize(JobObject, WorkflowInterface);
 		}
 	}
 
@@ -386,10 +385,7 @@ void UWorkflow::ExecuteCurrentJob()
 			FTimerDelegate::CreateUObject(this, &UWorkflow::HandleJobTimeout));
 	}
 
-	TScriptInterface<IWorkflowInterface> WorkflowInterface;
-	WorkflowInterface.SetObject(this);
-	WorkflowInterface.SetInterface(Cast<IWorkflowInterface>(this));
-	IJobInterface::Execute_IExecute(CurrentJobObject, WorkflowInterface);
+	IJobInterface::Execute_IExecute(CurrentJobObject);
 }
 
 void UWorkflow::AdvanceToNextJob()
