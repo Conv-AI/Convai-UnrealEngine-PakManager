@@ -35,6 +35,24 @@ namespace CPMStyle
 	
 	/** Danger color when hovered */
 	CONVAIPAKMANAGEREDITOR_API FLinearColor DangerHover();
+
+	/** Warning/caution color */
+	CONVAIPAKMANAGEREDITOR_API FLinearColor Warning();
+
+	/** Warning color when hovered */
+	CONVAIPAKMANAGEREDITOR_API FLinearColor WarningHover();
+
+	/** Informational color */
+	CONVAIPAKMANAGEREDITOR_API FLinearColor Info();
+
+	/** Info color when hovered */
+	CONVAIPAKMANAGEREDITOR_API FLinearColor InfoHover();
+
+	/** Success/positive color */
+	CONVAIPAKMANAGEREDITOR_API FLinearColor Success();
+
+	/** Success color when hovered */
+	CONVAIPAKMANAGEREDITOR_API FLinearColor SuccessHover();
 	
 	/** Input field background color */
 	CONVAIPAKMANAGEREDITOR_API FLinearColor InputBackground();

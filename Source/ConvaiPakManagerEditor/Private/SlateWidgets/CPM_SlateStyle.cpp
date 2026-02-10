@@ -44,6 +44,36 @@ namespace CPMStyle
 		return FLinearColor(0.906f, 0.333f, 0.333f, 1.0f); // Lighter red on hover
 	}
 
+	FLinearColor Warning()
+	{
+		return FLinearColor(0.886f, 0.651f, 0.196f, 1.0f); // #E2A632 - Amber
+	}
+
+	FLinearColor WarningHover()
+	{
+		return FLinearColor(0.941f, 0.733f, 0.290f, 1.0f); // Lighter amber on hover
+	}
+
+	FLinearColor Info()
+	{
+		return FLinearColor(0.224f, 0.486f, 0.855f, 1.0f); // Same as Primary - blue
+	}
+
+	FLinearColor InfoHover()
+	{
+		return FLinearColor(0.294f, 0.557f, 0.925f, 1.0f); // Same as PrimaryHover
+	}
+
+	FLinearColor Success()
+	{
+		return FLinearColor(0.290f, 0.686f, 0.314f, 1.0f); // #4AAF50 - Green
+	}
+
+	FLinearColor SuccessHover()
+	{
+		return FLinearColor(0.373f, 0.773f, 0.396f, 1.0f); // Lighter green on hover
+	}
+
 	FLinearColor InputBackground()
 	{
 		return FLinearColor(0.08f, 0.09f, 0.10f, 1.0f); // Very dark input bg

@@ -158,3 +158,16 @@ enum class ECPM_TextStyle : uint8
 	Button		UMETA(DisplayName = "Button")
 };
 
+/**
+ * Enum for alert banner severity types.
+ * Controls the color scheme and icon of SCPM_AlertBanner.
+ */
+UENUM(BlueprintType)
+enum class ECPM_AlertType : uint8
+{
+	Error		UMETA(DisplayName = "Error"),
+	Warning		UMETA(DisplayName = "Warning"),
+	Info		UMETA(DisplayName = "Info"),
+	Success		UMETA(DisplayName = "Success")
+};
+
