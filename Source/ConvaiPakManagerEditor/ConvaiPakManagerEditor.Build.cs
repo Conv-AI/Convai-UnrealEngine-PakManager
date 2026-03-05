@@ -26,6 +26,7 @@ public class ConvaiPakManagerEditor : ModuleRules
 				"UnrealEd",
 				"WebBrowser",
 				"Convai",
+				"ConvaiJobSystem",
 				"ApplicationCore",
 				"UMGEditor",
 				"Blutility",

@@ -3,7 +3,12 @@
 #include "UI/SCPM_PakManagerWindow.h"
 #include "SlateWidgets/Widgets/SCPM_KeyValueList.h"
 #include "SlateWidgets/Core/SCPM_Button.h"
+#include "SlateWidgets/Composite/SCPM_AlertBanner.h"
 #include "SlateWidgets/CPM_SlateStyle.h"
+#include "Jobs/CPM_VersionCheckJobs.h"
+#include "Utility/WorkflowBlueprintLibrary.h"
+#include "Core/Workflow.h"
+#include "Core/WorkflowManagerSubsystem.h"
 #include "Utility/CPM_Log.h"
 #include "Utility/CPM_UtilityLibrary.h"
 
@@ -21,6 +26,14 @@
 
 #define LOCTEXT_NAMESPACE "SCPM_PakManagerWindow"
 
+SCPM_PakManagerWindow::~SCPM_PakManagerWindow()
+{
+	if (VersionValidationHandle.IsValid())
+	{
+		UWorkflowBlueprintLibrary::CancelWorkflow(VersionValidationHandle, true);
+	}
+}
+
 void SCPM_PakManagerWindow::Construct(const FArguments& InArgs)
 {
 	ChildSlot
@@ -30,53 +43,74 @@ void SCPM_PakManagerWindow::Construct(const FArguments& InArgs)
 		.BorderBackgroundColor(CPMStyle::Background())
 		.Padding(0)
 		[
-			SNew(SScrollBox)
-			+ SScrollBox::Slot()
+			SNew(SVerticalBox)
+
+			// Version Validation Alert Banner (hidden by default)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
 			[
-				SNew(SVerticalBox)
-				
-				// Header
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(CPMStyle::ContentPadding())
+				SAssignNew(VersionAlertBanner, SCPM_AlertBanner)
+				.AlertType(ECPM_AlertType::Error)
+				.Message(FText::GetEmpty())
+				.ActionButtonText(LOCTEXT("RetryValidation", "Retry"))
+				.OnClose(FSimpleDelegate::CreateSP(this, &SCPM_PakManagerWindow::DismissVersionAlert))
+				.OnActionClicked(FSimpleDelegate::CreateSP(this, &SCPM_PakManagerWindow::RunVersionValidation))
+				.Visibility(EVisibility::Collapsed)
+			]
+
+			+ SVerticalBox::Slot()
+			.FillHeight(1.0f)
+			[
+				SNew(SScrollBox)
+				+ SScrollBox::Slot()
 				[
-					BuildHeaderSection()
-				]
-				
-				// Asset Info Section (KeyValueList with asset_type dropdown)
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(CPMStyle::ContentPadding())
-				[
-					BuildAssetInfoSection()
-				]
-				
-				// Thumbnail Section
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(CPMStyle::ContentPadding())
-				[
-					BuildThumbnailSection()
-				]
-				
-				// Action Buttons
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(CPMStyle::ContentPadding())
-				[
-					BuildActionButtonsSection()
-				]
-				
-				// Status Section
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(CPMStyle::ContentPadding())
-				[
-					BuildStatusSection()
+					SNew(SVerticalBox)
+					
+					// Header
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(CPMStyle::ContentPadding())
+					[
+						BuildHeaderSection()
+					]
+					
+					// Asset Info Section (KeyValueList with asset_type dropdown)
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(CPMStyle::ContentPadding())
+					[
+						BuildAssetInfoSection()
+					]
+					
+					// Thumbnail Section
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(CPMStyle::ContentPadding())
+					[
+						BuildThumbnailSection()
+					]
+					
+					// Action Buttons
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(CPMStyle::ContentPadding())
+					[
+						BuildActionButtonsSection()
+					]
+					
+					// Status Section
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(CPMStyle::ContentPadding())
+					[
+						BuildStatusSection()
+					]
 				]
 			]
 		]
 	];
+
+	RunVersionValidation();
 }
 
 TSharedRef<SWidget> SCPM_PakManagerWindow::BuildHeaderSection()
@@ -444,6 +478,94 @@ void SCPM_PakManagerWindow::UpdateStatus(const FString& Message, bool bIsError)
 	{
 		StatusText->SetText(FText::FromString(Message));
 		StatusText->SetColorAndOpacity(bIsError ? CPMStyle::Danger() : CPMStyle::HintTextColor());
+	}
+}
+
+// Version Validation
+void SCPM_PakManagerWindow::RunVersionValidation()
+{
+	if (VersionValidationHandle.IsValid())
+	{
+		UWorkflowBlueprintLibrary::CancelWorkflow(VersionValidationHandle, true);
+	}
+
+	DismissVersionAlert();
+	UpdateStatus(TEXT("Validating versions..."));
+
+	auto* PakVersionJob = NewObject<UCPM_PakManagerVersionCheckJob>();
+	auto* UEVersionJob = NewObject<UCPM_ModdingToolUEVersionCheckJob>();
+
+	TArray<TScriptInterface<IJobInterface>> Jobs;
+	Jobs.Add(TScriptInterface<IJobInterface>(PakVersionJob));
+	Jobs.Add(TScriptInterface<IJobInterface>(UEVersionJob));
+
+	FWorkflowRequestFromJobs Request;
+	Request.Jobs = Jobs;
+
+	FCreateWorkflowFromJobsParams Params;
+	Params.Request = Request;
+	Params.bStartImmediately = false;
+
+	VersionValidationHandle = UWorkflowBlueprintLibrary::CreateWorkflowFromJobs(Params);
+
+	if (!VersionValidationHandle.IsValid())
+	{
+		UpdateStatus(TEXT("Failed to create version validation workflow"), true);
+		return;
+	}
+
+	UWorkflowManagerSubsystem* Manager = GEngine->GetEngineSubsystem<UWorkflowManagerSubsystem>();
+	TScriptInterface<IWorkflowInterface> WorkflowInterface = Manager->IGetWorkflow(VersionValidationHandle);
+	if (UWorkflow* Workflow = Cast<UWorkflow>(WorkflowInterface.GetObject()))
+	{
+		TWeakPtr<SCPM_PakManagerWindow> WeakWindow(SharedThis(this));
+		Workflow->SetEventCallback(FWorkflowEventCallback::CreateLambda(
+			[WeakWindow, Manager](EWorkflowEventType EventType, const FWorkflowStatusInfo& StatusInfo)
+			{
+				Manager->HandleWorkflowEvent(EventType, StatusInfo);
+
+				if (TSharedPtr<SCPM_PakManagerWindow> PinnedWindow = WeakWindow.Pin())
+				{
+					PinnedWindow->OnVersionValidationEvent(EventType, StatusInfo);
+				}
+			}));
+
+		Workflow->IStartWorkflow();
+	}
+}
+
+void SCPM_PakManagerWindow::DismissVersionAlert()
+{
+	if (VersionAlertBanner.IsValid())
+	{
+		VersionAlertBanner->Hide();
+	}
+}
+
+void SCPM_PakManagerWindow::OnVersionValidationEvent(EWorkflowEventType EventType, const FWorkflowStatusInfo& StatusInfo)
+{
+	switch (EventType)
+	{
+	case EWorkflowEventType::WorkflowCompleted:
+		DismissVersionAlert();
+		UpdateStatus(TEXT("Ready"));
+		break;
+
+	case EWorkflowEventType::WorkflowFailed:
+		if (VersionAlertBanner.IsValid())
+		{
+			VersionAlertBanner->SetMessage(FText::FromString(StatusInfo.ErrorMessage));
+			VersionAlertBanner->Show();
+		}
+		UpdateStatus(TEXT("Version validation failed"), true);
+		break;
+
+	case EWorkflowEventType::JobStarted:
+		UpdateStatus(FString::Printf(TEXT("Checking: %s..."), *StatusInfo.CurrentJob.Name));
+		break;
+
+	default:
+		break;
 	}
 }
 

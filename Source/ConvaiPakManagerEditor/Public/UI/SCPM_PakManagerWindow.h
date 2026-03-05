@@ -7,8 +7,10 @@
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Utility/CPM_Utils.h"
 #include "Types/CPM_WidgetTypes.h"
+#include "Type/JS_Definations.h"
 
 class SCPM_KeyValueList;
+class SCPM_AlertBanner;
 class SCPM_Button;
 class SImage;
 
@@ -20,6 +22,8 @@ class CONVAIPAKMANAGEREDITOR_API SCPM_PakManagerWindow : public SCompoundWidget
 public:
 	SLATE_BEGIN_ARGS(SCPM_PakManagerWindow) {}
 	SLATE_END_ARGS()
+
+	virtual ~SCPM_PakManagerWindow();
 
 	/** Constructs this widget */
 	void Construct(const FArguments& InArgs);
@@ -38,6 +42,7 @@ public:
 
 private:
 	// UI Elements
+	TSharedPtr<SCPM_AlertBanner> VersionAlertBanner;
 	TSharedPtr<SCPM_KeyValueList> AssetInfoList;
 	TSharedPtr<SImage> ThumbnailImage;
 	TSharedPtr<SCPM_Button> CaptureThumbnailButton;
@@ -47,6 +52,12 @@ private:
 
 	// Current state
 	FSlateBrush ThumbnailBrush;
+
+	// Version validation
+	FWorkflowHandle VersionValidationHandle;
+	void RunVersionValidation();
+	void DismissVersionAlert();
+	void OnVersionValidationEvent(EWorkflowEventType EventType, const FWorkflowStatusInfo& StatusInfo);
 
 	// UI Building helpers
 	TSharedRef<SWidget> BuildHeaderSection();
