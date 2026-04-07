@@ -22,6 +22,8 @@
 #include "Slate/SceneViewport.h"
 #include "FileUtilities/ZipArchiveWriter.h"
 #include "Editor.h"
+#include "EditorAssetLibrary.h"
+#include "EditorUtilityLibrary.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
@@ -30,6 +32,7 @@
 #include "Editor/EditorEngine.h" // For GEditor
 #include "Elements/Interfaces/TypedElementWorldInterface.h" // For ITypedElementWorldInterface
 #include "Elements/Framework/TypedElementHandle.h" // For FTypedElementHandle
+#include "Kismet/KismetSystemLibrary.h"
 
 void UConvaiPakManagerEditorUtils::CPM_MarkAssetDirty(UObject* Asset)
 {
@@ -519,8 +522,22 @@ AActor* UConvaiPakManagerEditorUtils::SpawnAndSnapActorToView(UClass* ActorClass
     return SpawnedActor;
 }
 
+TArray<UObject*> UConvaiPakManagerEditorUtils::CPM_BeginTransactionAndGetSelectedAssets(const FString& Context,
+	const FText& Description)
+{
+	UKismetSystemLibrary::BeginTransaction(Context, Description, nullptr);
+	return UEditorUtilityLibrary::GetSelectedAssets();
+}
+
+void UConvaiPakManagerEditorUtils::CPM_SaveLoadedAssetAndEndTransaction(const TArray<UObject*>& LoadedAssets)
+{	
+	UEditorAssetLibrary::CheckoutLoadedAssets(LoadedAssets);
+	UEditorAssetLibrary::SaveLoadedAssets(LoadedAssets);
+	UKismetSystemLibrary::EndTransaction();
+}
+
 bool UConvaiPakManagerEditorUtils::GetPackageDependencies(const FName& PackageName, const TArray<FString>& FilterPaths, 
-	TSet<FName>& AllDependencies, TSet<FString>& ExternalObjectsPaths, TSet<FName>& ExcludedDependencies)
+                                                          TSet<FName>& AllDependencies, TSet<FString>& ExternalObjectsPaths, TSet<FName>& ExcludedDependencies)
 {
 	if (PackageName.IsNone())
 	{

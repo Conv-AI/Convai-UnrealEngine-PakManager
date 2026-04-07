@@ -48,7 +48,13 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static AActor* SpawnAndSnapActorToView(UClass* ActorClass);
+	
+	UFUNCTION(BlueprintCallable, Category = "Convai|Editor")
+	static TArray<UObject*> CPM_BeginTransactionAndGetSelectedAssets(const FString& Context, const FText& Description);
 
+	UFUNCTION(BlueprintCallable, Category = "Convai|Editor")
+	static void CPM_SaveLoadedAssetAndEndTransaction(const TArray<UObject*>& LoadedAssets);
+	
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static bool GetPackageDependencies(const FName& PackageName, const TArray<FString>& FilterPaths, TSet<FName>& AllDependencies, TSet<FString>& ExternalObjectsPaths, TSet<FName>& ExcludedDependencies);
 
