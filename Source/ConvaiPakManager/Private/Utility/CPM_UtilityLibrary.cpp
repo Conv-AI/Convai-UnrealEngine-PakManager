@@ -1,6 +1,7 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Utility/CPM_UtilityLibrary.h"
+#include "ConvaiPakManager.h"
 #include "DesktopPlatformModule.h"
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
@@ -25,7 +26,6 @@
 #include "Serialization/JsonWriter.h"
 #include "Utility/CPM_Log.h"
 #include "Interfaces/IPluginManager.h"
-
 #include "Misc/Paths.h"
 #include "HAL/PlatformProcess.h"
 #include "Misc/ScopeExit.h"
@@ -36,6 +36,47 @@
 #include <shellapi.h>
 #include "Windows/HideWindowsPlatformTypes.h"
 #endif
+
+namespace 
+{
+	const TMap<FString, FString>& GetDefaultCustomParams()
+	{
+		static const TMap<FString, FString> Defaults = {
+			{TEXT("CPM_AssetVersionPrefix"),       TEXT("")},
+			{TEXT("CPM_AssetVersionSuffix"),       TEXT("")}
+		};
+		return Defaults;
+	}
+	
+	FString GetCommandLineFlagValueAsString(const FString& Flag, const FString& DefaultValue)
+	{
+		FString Value;
+
+		// Check for the "-Flag=" and get its value as a string
+		if (FParse::Value(FCommandLine::Get(), *(Flag + "="), Value))
+		{
+			Value.TrimStartInline();
+			Value.TrimEndInline();
+			return Value;
+		}
+
+		return DefaultValue; // Return default if not found or empty
+	}
+
+	FString ResolveCustomParam(const TCHAR* Key)
+	{
+		const auto& Defaults = GetDefaultCustomParams();
+		const FString* DefaultPtr = Defaults.Find(Key);
+		FString Value = DefaultPtr ? *DefaultPtr : TEXT("");
+
+		if (const FString* FoundValue = FConvaiPakManagerModule::Get().GetConvaiPakManagerSettings()->CustomPrams.Find(Key))
+		{
+			Value = *FoundValue;
+		}
+
+		return GetCommandLineFlagValueAsString(Key, Value);
+	}
+}
 
 FString UCPM_UtilityLibrary::OpenFileDialog(const TArray<FString>& Extensions)
 {
@@ -1284,4 +1325,40 @@ int64 UCPM_UtilityLibrary::CPM_GetFileSize(const FString& FilePath)
 	}
 
 	return IFileManager::Get().FileSize(*FilePath);
+}
+
+FString UCPM_UtilityLibrary::CPM_GetAssetVersionString(ECPM_Platform Platform)
+{
+	const FString EngineMajorMinor = FString::Printf(TEXT("%d.%d"), ENGINE_MAJOR_VERSION, ENGINE_MINOR_VERSION);
+
+	FString PlatformString;
+	switch (Platform)
+	{
+	case ECPM_Platform::Windows: PlatformString = TEXT("Windows"); break;
+	case ECPM_Platform::Linux:   PlatformString = TEXT("Linux");   break;
+	case ECPM_Platform::Raw:     PlatformString = TEXT("Raw");     break;
+	default: break;
+	}
+
+	const FString Prefix = ResolveCustomParam(TEXT("CPM_AssetVersionPrefix")).TrimStartAndEnd();
+	const FString Suffix = ResolveCustomParam(TEXT("CPM_AssetVersionSuffix")).TrimStartAndEnd();
+
+	FString Result = FString::Printf(TEXT("ue-%s"), *EngineMajorMinor);
+
+	if (!Prefix.IsEmpty())
+	{
+		Result = Prefix + Result;
+	}
+
+	if (!PlatformString.IsEmpty())
+	{
+		Result += FString::Printf(TEXT("-%s"), *PlatformString);
+	}
+
+	if (!Suffix.IsEmpty())
+	{
+		Result += Suffix;
+	}
+
+	return Result;
 }
