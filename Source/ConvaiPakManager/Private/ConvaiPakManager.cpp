@@ -2,7 +2,9 @@
 
 #include "ConvaiPakManager.h"
 
+#if WITH_EDITOR
 #include "ISettingsModule.h"
+#endif
 
 #define LOCTEXT_NAMESPACE "FConvaiPakManagerModule"
 
@@ -11,6 +13,7 @@ void FConvaiPakManagerModule::StartupModule()
 	ConvaiPakManagerSettings = NewObject<UCPM_Settings>(GetTransientPackage(), "ConvaiPakManagerSettings", RF_Standalone);
 	ConvaiPakManagerSettings->AddToRoot();
 
+#if WITH_EDITOR
 	// Register settings
 	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
 	{
@@ -19,14 +22,17 @@ void FConvaiPakManagerModule::StartupModule()
 			LOCTEXT("RuntimeSettingsDescription", "Configure Convai Pak Manager settings"),
 			ConvaiPakManagerSettings);
 	}
+#endif
 }
 
 void FConvaiPakManagerModule::ShutdownModule()
 {
+#if WITH_EDITOR
 	if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
 	{
 		SettingsModule->UnregisterSettings("Project", "Plugins", "ConvaiPakManager");
 	}
+#endif
 
 	if (ConvaiPakManagerSettings)
 	{

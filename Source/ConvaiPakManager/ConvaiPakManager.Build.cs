@@ -26,6 +26,11 @@ public class ConvaiPakManager : ModuleRules
 		{
 			PrivateDependencyModuleNames.Add("DesktopPlatform");
 		}
+
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.Add("Settings");
+		}
 		
 		const bool bEnableLogging = true;
 		PublicDefinitions.Add("CONVAI_PAK_MANAGER_LOG=" + (bEnableLogging ? "1" : "0"));
