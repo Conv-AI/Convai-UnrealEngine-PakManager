@@ -220,8 +220,12 @@ bool UCPM_UploadPakAssetProxy::ConfigureRequest(TSharedRef<CONVAI_HTTP_REQUEST_I
 	Request->SetHeader(TEXT("x-goog-content-length-range"), TEXT("0,10485760000"));
 	
 	TWeakObjectPtr<UCPM_UploadPakAssetProxy> WeakThis(this);
+	#if !USE_CONVAI_HTTP && (ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 4))
+	Request->OnRequestProgress64().BindLambda(
+#else
 	Request->OnRequestProgress().BindLambda(
-	[WeakThis](CONVAI_HTTP_REQUEST_PTR InRequest, uint64 BytesSent, uint64 BytesReceived)
+#endif
+	[WeakThis](CONVAI_HTTP_REQUEST_PTR InRequest, CONVAI_HTTP_DOWN_PROGRESS_TYPE BytesSent, CONVAI_HTTP_DOWN_PROGRESS_TYPE BytesReceived)
 	{
 		if (!WeakThis.IsValid())
 		{

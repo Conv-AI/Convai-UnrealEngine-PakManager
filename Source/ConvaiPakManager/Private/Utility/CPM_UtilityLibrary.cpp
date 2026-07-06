@@ -371,7 +371,7 @@ bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FC
             {
                 for (const auto& Pair : (*UploadUrlsObj)->Values)
                 {
-                    FString UrlKey = Pair.Key;
+                    FString UrlKey = *Pair.Key;
                     FString UrlValue;
                     if (Pair.Value->TryGetString(UrlValue))
                     {
