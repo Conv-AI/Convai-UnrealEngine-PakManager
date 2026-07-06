@@ -11,7 +11,7 @@ UCPM_GetGithubRepoFileProxy* UCPM_GetGithubRepoFileProxy::GetGithubRepoFileProxy
 	return Proxy;
 }
 
-bool UCPM_GetGithubRepoFileProxy::ConfigureRequest(TSharedRef<IConvaihttpRequest> Request, const TCHAR* Verb)
+bool UCPM_GetGithubRepoFileProxy::ConfigureRequest(TSharedRef<CONVAI_HTTP_REQUEST_INTERFACE> Request, const TCHAR* Verb)
 {
 	if (!Super::ConfigureRequest(Request, ConvaiHttpConstants::GET))
 	{
