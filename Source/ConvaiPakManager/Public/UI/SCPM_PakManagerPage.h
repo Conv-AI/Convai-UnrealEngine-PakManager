@@ -4,8 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Publish/CPM_PublishTypes.h"
+#include "UI/Pages/SBasePage.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
-#include "Widgets/SCompoundWidget.h"
 
 class SEditableTextBox;
 class SRoundedProgressBar;
@@ -22,8 +22,13 @@ class UConvaiPakEditorSubsystem;
  *
  * Built from the Convai SDK's widget kit rather than a private one, so it looks like the rest of the
  * SDK and so roughly two thousand lines of reimplemented form controls do not exist. See docs/adr/0006.
+ *
+ * MUST derive from SBasePage. The shell's navigation casts every page it is handed to SBasePage* and
+ * calls a virtual on the result, so a page that is merely some other widget reads a wrong vtable and
+ * takes the editor down with it. Deriving is the contract, and the type check that follows the cast
+ * cannot catch a violation of it - it is a virtual call, so it needs the vtable it means to verify.
  */
-class CONVAIPAKMANAGER_API SCPM_PakManagerPage : public SCompoundWidget
+class CONVAIPAKMANAGER_API SCPM_PakManagerPage : public SBasePage
 {
 public:
 	SLATE_BEGIN_ARGS(SCPM_PakManagerPage) {}
@@ -31,6 +36,9 @@ public:
 
 	void Construct(const FArguments& InArgs);
 	virtual ~SCPM_PakManagerPage() override;
+
+	/** Re-reads the panel whenever the creator navigates to it, so it never shows stale state. */
+	virtual void OnPageActivated() override;
 
 private:
 	TSharedRef<SWidget> BuildProjectSection() const;

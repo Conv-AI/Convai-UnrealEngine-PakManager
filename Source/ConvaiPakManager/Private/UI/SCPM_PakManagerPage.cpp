@@ -199,6 +199,24 @@ TSharedRef<SWidget> SCPM_PakManagerPage::BuildStatusSection()
 		];
 }
 
+void SCPM_PakManagerPage::OnPageActivated()
+{
+	// Chunks can appear and disappear while the panel is closed - a creator adds a Primary Asset
+	// Label, or the Modding Tool regenerates one - so the set is re-read here rather than only at
+	// construction, which happens once for the lifetime of the shell.
+	if (const UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
+	{
+		ChunkIds = Subsystem->GetChunkIds();
+	}
+
+	if (!ChunkIds.Contains(SelectedChunkId))
+	{
+		SelectedChunkId = ChunkIds.IsEmpty() ? INDEX_NONE : ChunkIds[0];
+	}
+
+	RefreshFromChunk();
+}
+
 void SCPM_PakManagerPage::RefreshFromChunk()
 {
 	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
