@@ -16,8 +16,9 @@ public class ConvaiPakManagerEditor : ModuleRules
 				"Engine",
 				"InputCore",
 				"UMG",
-				"UMGEditor", 
-				"ConvaiPakManager", 
+				"UMGEditor",
+				"ConvaiPakManager",
+				"ConvaiJobSystem",
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
@@ -43,6 +44,7 @@ public class ConvaiPakManagerEditor : ModuleRules
                 "RenderCore",
                 "FileUtilities",
                 "AssetRegistry",
+                "Json",
                 "Projects"  // For IPluginManager
 			}
 			);

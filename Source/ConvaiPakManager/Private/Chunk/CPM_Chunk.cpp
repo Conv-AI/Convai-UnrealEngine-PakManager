@@ -162,6 +162,11 @@ FString GetModdingMetadataPath(const int32 ChunkId)
 	return FPaths::Combine(GetStateDirectory(ChunkId), FString::Printf(TEXT("ModdingMetaData_%d.txt"), ChunkId));
 }
 
+FString GetThumbnailPath(const int32 ChunkId)
+{
+	return FPaths::Combine(GetStateDirectory(ChunkId), FString::Printf(TEXT("Thumbnail_%d.png"), ChunkId));
+}
+
 EMigrationResult MigrateLegacyLayoutIn(
 	const FString& EssentialsDirectory,
 	const int32 ChunkId,

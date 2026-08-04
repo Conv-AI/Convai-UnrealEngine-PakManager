@@ -46,4 +46,29 @@ public:
 	{
 		return MaxChunksPerProject > 0 && ExistingChunkCount >= MaxChunksPerProject;
 	}
+
+	/** Repository holding the Publish Policy Convai publishes. */
+	UPROPERTY(config, EditAnywhere, Category = "Publish Policy")
+	FString PolicyRepository = TEXT("Conv-AI/Convai-UnrealEngine-ModdingTool");
+
+	/**
+	 * Branch or tag to read the Publish Policy from.
+	 *
+	 * A tag makes a policy change ship deliberately; tracking a branch makes it reach every creator
+	 * the instant it merges, with no step in between where anyone looks at it.
+	 */
+	UPROPERTY(config, EditAnywhere, Category = "Publish Policy")
+	FString PolicyRef = TEXT("main");
+
+	UPROPERTY(config, EditAnywhere, Category = "Publish Policy")
+	FString PolicyPath = TEXT("resources/asset_uploader_config.json");
+
+	/**
+	 * Read the Publish Policy from this file instead of from the repository. Empty to use the repository.
+	 *
+	 * The escape hatch for publishing that must not depend on a public repository being reachable -
+	 * internal pipelines, and anyone genuinely offline. Set deliberately, per project.
+	 */
+	UPROPERTY(config, EditAnywhere, Category = "Publish Policy", meta = (FilePathFilter = "json"))
+	FString PolicyOverrideFile;
 };

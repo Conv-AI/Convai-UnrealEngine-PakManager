@@ -17,7 +17,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCPM_OnCancelledDelegate);
 
 /* Create and update base proxy*/
 UCLASS()
-class UCPM_CreateUpdatePakAssetBaseProxy : public UConvaiAPIBaseProxy
+class CONVAIPAKMANAGER_API UCPM_CreateUpdatePakAssetBaseProxy : public UConvaiAPIBaseProxy
 {
 	GENERATED_BODY()
 	
@@ -33,7 +33,7 @@ protected:
 
 /* Create Proxy */
 UCLASS()
-class UCPM_CreatePakAssetProxy : public UCPM_CreateUpdatePakAssetBaseProxy
+class CONVAIPAKMANAGER_API UCPM_CreatePakAssetProxy : public UCPM_CreateUpdatePakAssetBaseProxy
 {
 	GENERATED_BODY()
 
@@ -47,6 +47,15 @@ public:
 	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", DisplayName = "Convai Create Pak Asset"), Category = "Convai|PakManager")
 	static UCPM_CreatePakAssetProxy* CreatePakAssetProxy(const FCPM_CreatePakAssetParams& Params);
 
+	/**
+	 * The server's answer, verbatim.
+	 *
+	 * What a Chunk records about its Asset must be what the server said, not a re-serialisation of
+	 * the parsed struct - the record is the only copy of the AssetID in the creator's world, and a
+	 * lossy round trip through our own parser is not a thing to discover later.
+	 */
+	const FString& GetResponseString() const { return ResponseString; }
+
 protected:
 	virtual void HandleSuccess() override;
 	virtual void HandleFailure() override;
@@ -54,7 +63,7 @@ protected:
 
 /* Update Proxy */
 UCLASS()
-class UCPM_UpdatePakAssetProxy : public UCPM_CreateUpdatePakAssetBaseProxy
+class CONVAIPAKMANAGER_API UCPM_UpdatePakAssetProxy : public UCPM_CreateUpdatePakAssetBaseProxy
 {
 	GENERATED_BODY()
 
@@ -129,7 +138,7 @@ private:
 
 /** Get Asset */
 UCLASS()
-class UCPM_GetAssetMetaDataProxy : public UConvaiAPIBaseProxy
+class CONVAIPAKMANAGER_API UCPM_GetAssetMetaDataProxy : public UConvaiAPIBaseProxy
 {
 	GENERATED_BODY()
 
@@ -161,7 +170,7 @@ public:
 
 /** Delete Asset*/
 UCLASS()
-class UCPM_DeleteAssetProxy : public UConvaiAPIBaseProxy
+class CONVAIPAKMANAGER_API UCPM_DeleteAssetProxy : public UConvaiAPIBaseProxy
 {
 	GENERATED_BODY()
 public:

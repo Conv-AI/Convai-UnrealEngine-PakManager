@@ -285,7 +285,13 @@ enum class ECPM_AssetManagerStatus : uint8
 	
 	Delete_Begin        UMETA(DisplayName = "Deleting Asset"),
 	Delete_Success      UMETA(DisplayName = "Deleted Asset"),
-	Delete_Failed       UMETA(DisplayName = "Delete Asset Failed")
+	Delete_Failed       UMETA(DisplayName = "Delete Asset Failed"),
+
+	Archiving_Begin     UMETA(DisplayName = "Archiving Project"),
+
+	// One value rather than one per phase: a creator cancels a Publish, not a step, and which step
+	// it was in is already carried by the status's own step name.
+	Publish_Cancelled   UMETA(DisplayName = "Cancelled")
 };
 
 UENUM(BlueprintType)

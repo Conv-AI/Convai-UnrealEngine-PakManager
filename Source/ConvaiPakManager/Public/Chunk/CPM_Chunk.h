@@ -69,6 +69,9 @@ CONVAIPAKMANAGER_API FString GetPakMetadataPath(int32 ChunkId);
 /** Where this Chunk records what the Modding Tool decided about it - project, plugin, Asset Type. */
 CONVAIPAKMANAGER_API FString GetModdingMetadataPath(int32 ChunkId);
 
+/** The captured thumbnail for this Chunk. May not exist; a Chunk can be published without one. */
+CONVAIPAKMANAGER_API FString GetThumbnailPath(int32 ChunkId);
+
 /** Result of one migration attempt, so a caller can tell "nothing to do" from "could not". */
 enum class EMigrationResult : uint8
 {

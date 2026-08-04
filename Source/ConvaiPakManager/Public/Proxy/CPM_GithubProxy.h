@@ -9,7 +9,7 @@
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_OnGetGithubRepoFile, const FString&, ResponseString);
 
 UCLASS()
-class UCPM_GetGithubRepoFileProxy : public UConvaiAPIBaseProxy
+class CONVAIPAKMANAGER_API UCPM_GetGithubRepoFileProxy : public UConvaiAPIBaseProxy
 {
 	GENERATED_BODY()
 
