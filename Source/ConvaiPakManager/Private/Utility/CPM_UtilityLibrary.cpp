@@ -1,6 +1,7 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Utility/CPM_UtilityLibrary.h"
+#include "Chunk/CPM_Chunk.h"
 #include "DesktopPlatformModule.h"
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
@@ -200,7 +201,7 @@ void UCPM_UtilityLibrary::GetAssetMetaDataString(FString& MetaData)
 
 FString UCPM_UtilityLibrary::GetPakMetadataFilePath()
 {
-	return FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("PakMetaData")) + TEXT(".json");
+	return ConvaiPakManager::Chunk::GetPakMetadataPath(ConvaiPakManager::Chunk::GetSoleChunkId());
 }
 
 FString UCPM_UtilityLibrary::CPM_GetCacheDirectory()
@@ -247,7 +248,7 @@ FString UCPM_UtilityLibrary::GetPakFilePathFromChunkID(const ECPM_Platform Platf
 
 void UCPM_UtilityLibrary::GetModdingMetadata(FCPM_ModdingMetadata& OutData)
 {
-	const FString FilePath = FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("ModdingMetaData")) + TEXT(".txt");
+	const FString FilePath = ConvaiPakManager::Chunk::GetModdingMetadataPath(ConvaiPakManager::Chunk::GetSoleChunkId());
 	FString FileContent;
 
 	if (!FFileHelper::LoadFileToString(FileContent, *FilePath))
@@ -393,7 +394,7 @@ bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FC
 
 FString UCPM_UtilityLibrary::GetCreateAssetDataFilePath()
 {
-	return FPaths::Combine(FPaths::ProjectDir(), TEXT("ConvaiEssentials"), TEXT("CreateAssetData")) + TEXT(".json");
+	return ConvaiPakManager::Chunk::GetCreateAssetDataPath(ConvaiPakManager::Chunk::GetSoleChunkId());
 }
 
 bool UCPM_UtilityLibrary::ShouldCreateAsset()

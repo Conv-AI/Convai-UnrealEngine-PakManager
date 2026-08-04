@@ -11,9 +11,11 @@ public class ConvaiPakManager : ModuleRules
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"Core", "PakFile", "ImageWrapper", "Convai", "AssetRegistry" }
+				// DeveloperSettings is public: UCPM_PakManagerSettings derives from UDeveloperSettings
+				// in a public header, so every module including it needs the base class too.
+				"Core", "PakFile", "ImageWrapper", "Convai", "AssetRegistry", "DeveloperSettings" }
 			);
-		
+
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{

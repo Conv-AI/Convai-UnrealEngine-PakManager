@@ -5,7 +5,8 @@
 #include "CoreMinimal.h"
 #include "Logging/LogMacros.h"
 
-DECLARE_LOG_CATEGORY_EXTERN(ConvaiPakManagerLog, Log, All);
+// Exported: one category for the whole plugin, and the editor module logs to it too.
+CONVAIPAKMANAGER_API DECLARE_LOG_CATEGORY_EXTERN(ConvaiPakManagerLog, Log, All);
 
 // Use the macro from the Build.cs definition
 #if CONVAI_PAK_MANAGER_LOG
