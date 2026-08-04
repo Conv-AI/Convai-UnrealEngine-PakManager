@@ -260,19 +260,19 @@ void UConvaiPakEditorSubsystem::ResolvePolicy(
 			}));
 }
 
-FWorkflowHandle UConvaiPakEditorSubsystem::Publish(const int32 ChunkId)
+bool UConvaiPakEditorSubsystem::Publish(const int32 ChunkId)
 {
 	if (!GetChunkIds().Contains(ChunkId))
 	{
 		SetStatus(ChunkId, ECPM_AssetManagerStatus::Create_Failed,
 			FString::Printf(TEXT("no Primary Asset Label in this project declares chunk %d"), ChunkId));
-		return FWorkflowHandle::Invalid();
+		return false;
 	}
 
 	if (ActivePublishes.Contains(ChunkId))
 	{
 		SetStatus(ChunkId, ECPM_AssetManagerStatus::Create_Failed, TEXT("this chunk is already publishing"));
-		return FWorkflowHandle::Invalid();
+		return false;
 	}
 
 	SetStatus(ChunkId, ECPM_AssetManagerStatus::Packaging_Begin, FString(), 0.0f, TEXT("Reading publish policy"));
@@ -298,9 +298,8 @@ FWorkflowHandle UConvaiPakEditorSubsystem::Publish(const int32 ChunkId)
 		Self->StartPublishWorkflow(ChunkId, Policy);
 	});
 
-	// The handle is not known until the policy answers, so a caller that needs one watches the
-	// status instead. Cancel is by Chunk, which is what a UI has to hand anyway.
-	return FWorkflowHandle::Invalid();
+	// Accepted. Whether it succeeds arrives later, as this Chunk's status.
+	return true;
 }
 
 FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(const int32 ChunkId, const FCPM_PublishPolicy& Policy)

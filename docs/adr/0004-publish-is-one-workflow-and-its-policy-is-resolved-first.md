@@ -23,3 +23,9 @@ absorbed by the fetch Job's own retries.
 
 Re-running a single step without re-running the rest is served by a Job's Precheck, which may
 satisfy the Job's declared output without doing its work — not by exposing the steps as Commands.
+
+Because the Policy is read over the network, there is no Workflow when the Publish Command returns
+and therefore no Workflow Handle to answer with. The Command reports only whether the request was
+accepted; everything after that — the step running, progress, success, failure — reaches the caller
+as the Chunk's status, which is the one thing a caller has to watch anyway. Cancelling names a Chunk
+rather than a handle for the same reason, and that is what a UI has to hand.

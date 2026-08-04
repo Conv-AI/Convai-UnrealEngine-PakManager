@@ -88,15 +88,16 @@ public:
 	/**
 	 * Takes a Chunk all the way to a usable Asset: package, archive, create, upload, record.
 	 *
-	 * Answers with an invalid handle when it cannot start - unknown Chunk, one already publishing, or
-	 * a Publish Policy that could not be read. The refusal reason reaches the caller as a failed
-	 * status on that Chunk, so a UI needs no second error path.
+	 * Returns whether the request was ACCEPTED, not whether publishing succeeded - and deliberately
+	 * not a Workflow Handle, because there is no workflow yet when this returns. The Publish Policy
+	 * decides which Jobs exist and is read over the network, so the queue is built once it answers.
+	 * See docs/adr/0004.
 	 *
-	 * The Policy is resolved BEFORE the queue is built, never as its first Job, because it decides
-	 * which Jobs exist. See docs/adr/0004.
+	 * Everything after acceptance - progress, the step running, success, failure - reaches the caller
+	 * as this Chunk's status, which is the one thing a caller has to watch. See docs/adr/0008.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
-	FWorkflowHandle Publish(int32 ChunkId);
+	bool Publish(int32 ChunkId);
 
 	/** Stops a Publish, letting the running step finish reporting first. */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
