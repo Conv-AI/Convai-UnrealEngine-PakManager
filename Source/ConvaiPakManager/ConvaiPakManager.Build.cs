@@ -2,33 +2,63 @@
 
 using UnrealBuildTool;
 
+/**
+ * One editor module.
+ *
+ * There were two, split runtime/editor, but nothing in a packaged product ever depended on the
+ * runtime half: both modules were Win64-only while projects package for Linux too, so a Linux build
+ * contained neither and its Paks load fine. Everything here exists to serve the editor tool, and the
+ * split only ever raised the question of which side a helper belonged on.
+ */
 public class ConvaiPakManager : ModuleRules
 {
 	public ConvaiPakManager(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-		
+
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
-				// DeveloperSettings is public: UCPM_PakManagerSettings derives from UDeveloperSettings
-				// in a public header, so every module including it needs the base class too.
-				"Core", "PakFile", "ImageWrapper", "Convai", "AssetRegistry", "DeveloperSettings" }
+				"Core",
+				"CoreUObject",
+				"Engine",
+				"PakFile",
+				"ImageWrapper",
+				"AssetRegistry",
+				"Convai",
+				"ConvaiJobSystem",
+				// UCPM_PakManagerSettings derives from UDeveloperSettings in a public header.
+				"DeveloperSettings",
+			}
 			);
 
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"CoreUObject", "Engine", "Slate", "SlateCore", "Json", "JsonUtilities", "Projects" }
+				"Slate",
+				"SlateCore",
+				"InputCore",
+				"UnrealEd",
+				"LevelEditor",
+				"EditorScriptingUtilities",
+				"EditorSubsystem",
+				"PropertyEditor",
+				"ContentBrowser",
+				"AssetTools",
+				"DesktopPlatform",
+				"UATHelper",
+				"LiveCoding",
+				"RenderCore",
+				"FileUtilities",
+				"ToolMenus",
+				"Json",
+				"JsonUtilities",
+				"Projects",
+				// The SDK's editor module: its widget kit, styling and shell. See docs/adr/0006 and 0007.
+				"ConvaiEditor",
+			}
 			);
-			
-		
-		
-		if (Target.Type == TargetType.Editor)
-		{
-			PrivateDependencyModuleNames.Add("DesktopPlatform");
-		}
-		
+
 		const bool bEnableLogging = true;
 		PublicDefinitions.Add("CONVAI_PAK_MANAGER_LOG=" + (bEnableLogging ? "1" : "0"));
 	}

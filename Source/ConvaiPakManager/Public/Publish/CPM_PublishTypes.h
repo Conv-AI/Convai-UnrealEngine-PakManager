@@ -8,7 +8,7 @@
 
 /** What the Publish Policy says about one platform. */
 USTRUCT(BlueprintType)
-struct CONVAIPAKMANAGEREDITOR_API FCPM_PlatformPolicy
+struct CONVAIPAKMANAGER_API FCPM_PlatformPolicy
 {
 	GENERATED_BODY()
 
@@ -27,7 +27,7 @@ struct CONVAIPAKMANAGEREDITOR_API FCPM_PlatformPolicy
  * a queue's shape may depend only on what the caller knew before building it. See docs/adr/0004.
  */
 USTRUCT(BlueprintType)
-struct CONVAIPAKMANAGEREDITOR_API FCPM_PublishPolicy
+struct CONVAIPAKMANAGER_API FCPM_PublishPolicy
 {
 	GENERATED_BODY()
 
@@ -62,7 +62,7 @@ struct CONVAIPAKMANAGEREDITOR_API FCPM_PublishPolicy
  * decision the queue was built from.
  */
 USTRUCT()
-struct CONVAIPAKMANAGEREDITOR_API FCPM_PublishRequest
+struct CONVAIPAKMANAGER_API FCPM_PublishRequest
 {
 	GENERATED_BODY()
 
@@ -75,7 +75,7 @@ struct CONVAIPAKMANAGEREDITOR_API FCPM_PublishRequest
 
 /** One built Pak: a Chunk on one platform, and the Version slot it publishes into. */
 USTRUCT()
-struct CONVAIPAKMANAGEREDITOR_API FCPM_PakArtifact
+struct CONVAIPAKMANAGER_API FCPM_PakArtifact
 {
 	GENERATED_BODY()
 
@@ -92,7 +92,7 @@ struct CONVAIPAKMANAGEREDITOR_API FCPM_PakArtifact
 
 /** The creator's project, archived for the `raw` Version. */
 USTRUCT()
-struct CONVAIPAKMANAGEREDITOR_API FCPM_RawArchive
+struct CONVAIPAKMANAGER_API FCPM_RawArchive
 {
 	GENERATED_BODY()
 
@@ -102,7 +102,7 @@ struct CONVAIPAKMANAGEREDITOR_API FCPM_RawArchive
 
 /** The Asset a Chunk was published as, and where its artefacts are to be PUT. */
 USTRUCT()
-struct CONVAIPAKMANAGEREDITOR_API FCPM_PublishedAsset
+struct CONVAIPAKMANAGER_API FCPM_PublishedAsset
 {
 	GENERATED_BODY()
 
@@ -125,7 +125,7 @@ struct CONVAIPAKMANAGEREDITOR_API FCPM_PublishedAsset
  * change shape because the machinery underneath was swapped. See docs/adr/0008.
  */
 USTRUCT(BlueprintType)
-struct CONVAIPAKMANAGEREDITOR_API FCPM_ChunkStatus
+struct CONVAIPAKMANAGER_API FCPM_ChunkStatus
 {
 	GENERATED_BODY()
 

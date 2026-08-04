@@ -37,7 +37,7 @@ enum class ECPM_EngineDependencyPolicy : uint8
  * Options for controlling the dependency copy operation.
  */
 USTRUCT(BlueprintType)
-struct CONVAIPAKMANAGEREDITOR_API FCPM_DependencyCopyOptions
+struct CONVAIPAKMANAGER_API FCPM_DependencyCopyOptions
 {
 	GENERATED_BODY()
 
@@ -121,7 +121,7 @@ struct CONVAIPAKMANAGEREDITOR_API FCPM_DependencyCopyOptions
  * Information about a single dependency item in the copy plan.
  */
 USTRUCT(BlueprintType)
-struct CONVAIPAKMANAGEREDITOR_API FCPM_DependencyCopyItem
+struct CONVAIPAKMANAGER_API FCPM_DependencyCopyItem
 {
 	GENERATED_BODY()
 
@@ -158,7 +158,7 @@ struct CONVAIPAKMANAGEREDITOR_API FCPM_DependencyCopyItem
  * Report returned after a dependency copy operation.
  */
 USTRUCT(BlueprintType)
-struct CONVAIPAKMANAGEREDITOR_API FCPM_DependencyCopyReport
+struct CONVAIPAKMANAGER_API FCPM_DependencyCopyReport
 {
 	GENERATED_BODY()
 
@@ -211,7 +211,7 @@ struct CONVAIPAKMANAGEREDITOR_API FCPM_DependencyCopyReport
  * API for copying packages with their dependencies into a target module.
  * Handles both Game and Engine module dependencies correctly.
  */
-class CONVAIPAKMANAGEREDITOR_API FCPM_DependencyCopyAPI
+class CONVAIPAKMANAGER_API FCPM_DependencyCopyAPI
 {
 public:
 	/**

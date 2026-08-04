@@ -7,7 +7,8 @@
 #include "Chunk/CPM_Chunk.h"
 #include "ConvaiPakManagerEditorUtils.h"
 #include "Core/WorkflowManagerSubsystem.h"
-#include "EditorUtilityLibrary.h"
+#include "ContentBrowserModule.h"
+#include "IContentBrowserSingleton.h"
 #include "HAL/FileManager.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -36,7 +37,13 @@ void UConvaiPakEditorSubsystem::Deinitialize()
 
 void UConvaiPakEditorSubsystem::GetSelectedAssetPackageName(FString& PackageName)
 {
-	TArray<FAssetData> SelectedAssets = UEditorUtilityLibrary::GetSelectedAssetData();
+	// Asked of the Content Browser rather than UEditorUtilityLibrary, which lives in Blutility - the
+	// module that existed here only to host the Editor Utility Widget this plugin no longer has.
+	FContentBrowserModule& ContentBrowser =
+		FModuleManager::LoadModuleChecked<FContentBrowserModule>(TEXT("ContentBrowser"));
+
+	TArray<FAssetData> SelectedAssets;
+	ContentBrowser.Get().GetSelectedAssets(SelectedAssets);
 	if (SelectedAssets.Num() > 0)
 	{
 		PackageName = SelectedAssets[0].PackageName.ToString();

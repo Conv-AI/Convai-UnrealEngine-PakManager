@@ -23,7 +23,7 @@ class UConvaiPakEditorSubsystem;
  * Built from the Convai SDK's widget kit rather than a private one, so it looks like the rest of the
  * SDK and so roughly two thousand lines of reimplemented form controls do not exist. See docs/adr/0006.
  */
-class CONVAIPAKMANAGEREDITOR_API SCPM_PakManagerPage : public SCompoundWidget
+class CONVAIPAKMANAGER_API SCPM_PakManagerPage : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SCPM_PakManagerPage) {}

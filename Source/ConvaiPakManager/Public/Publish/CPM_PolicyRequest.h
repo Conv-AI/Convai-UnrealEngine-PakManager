@@ -22,7 +22,7 @@ class UCPM_GetGithubRepoFileProxy;
  * it alive.
  */
 UCLASS()
-class CONVAIPAKMANAGEREDITOR_API UCPM_PolicyRequest : public UObject
+class CONVAIPAKMANAGER_API UCPM_PolicyRequest : public UObject
 {
 	GENERATED_BODY()
 

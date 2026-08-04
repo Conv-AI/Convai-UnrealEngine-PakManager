@@ -22,7 +22,7 @@ class UCPM_UploadPakAssetProxy;
  * that is trying to stop, re-issuing the request the creator just cancelled.
  */
 UCLASS(Abstract)
-class CONVAIPAKMANAGEREDITOR_API UCPM_PublishJobBase : public UObject, public IJobInterface
+class CONVAIPAKMANAGER_API UCPM_PublishJobBase : public UObject, public IJobInterface
 {
 	GENERATED_BODY()
 
@@ -64,7 +64,7 @@ protected:
  * single FCPM_PakArtifact would have the second overwrite the first.
  */
 UCLASS()
-class CONVAIPAKMANAGEREDITOR_API UCPM_PackagePaksJob : public UCPM_PublishJobBase
+class CONVAIPAKMANAGER_API UCPM_PackagePaksJob : public UCPM_PublishJobBase
 {
 	GENERATED_BODY()
 
@@ -88,7 +88,7 @@ private:
 
 /** Archives the creator's project for the `raw` Version. Constructed only when the Policy asks for it. */
 UCLASS()
-class CONVAIPAKMANAGEREDITOR_API UCPM_ArchiveRawProjectJob : public UCPM_PublishJobBase
+class CONVAIPAKMANAGER_API UCPM_ArchiveRawProjectJob : public UCPM_PublishJobBase
 {
 	GENERATED_BODY()
 
@@ -114,7 +114,7 @@ private:
  * fact that decides whether the creator is shown Create or Update.
  */
 UCLASS()
-class CONVAIPAKMANAGEREDITOR_API UCPM_CreateAssetJob : public UCPM_PublishJobBase
+class CONVAIPAKMANAGER_API UCPM_CreateAssetJob : public UCPM_PublishJobBase
 {
 	GENERATED_BODY()
 
@@ -156,7 +156,7 @@ private:
  * See docs/adr/0009.
  */
 UCLASS()
-class CONVAIPAKMANAGEREDITOR_API UCPM_UploadArtifactsJob : public UCPM_PublishJobBase
+class CONVAIPAKMANAGER_API UCPM_UploadArtifactsJob : public UCPM_PublishJobBase
 {
 	GENERATED_BODY()
 
@@ -209,7 +209,7 @@ private:
  * world, and writing it before the artefacts land would claim a Publish that had not happened.
  */
 UCLASS()
-class CONVAIPAKMANAGEREDITOR_API UCPM_PersistChunkStateJob : public UCPM_PublishJobBase
+class CONVAIPAKMANAGER_API UCPM_PersistChunkStateJob : public UCPM_PublishJobBase
 {
 	GENERATED_BODY()
 

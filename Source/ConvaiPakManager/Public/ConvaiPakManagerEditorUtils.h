@@ -14,7 +14,7 @@ struct FCPM_PackageParam;
 DECLARE_DYNAMIC_DELEGATE_TwoParams(FOnUatTaskResultCallack, const FString&, Result, double, Runtime);
 
 UCLASS()
-class CONVAIPAKMANAGEREDITOR_API UConvaiPakManagerEditorUtils : public UBlueprintFunctionLibrary
+class CONVAIPAKMANAGER_API UConvaiPakManagerEditorUtils : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 

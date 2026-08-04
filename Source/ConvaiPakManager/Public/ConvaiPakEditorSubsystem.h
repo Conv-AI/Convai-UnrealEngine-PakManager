@@ -26,7 +26,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_OnChunkStatusChangedDynamic, co
  * underneath cannot change what a creator is told. See docs/adr/0008.
  */
 UCLASS()
-class CONVAIPAKMANAGEREDITOR_API UConvaiPakEditorSubsystem : public UEditorSubsystem
+class CONVAIPAKMANAGER_API UConvaiPakEditorSubsystem : public UEditorSubsystem
 {
 	GENERATED_BODY()
 
