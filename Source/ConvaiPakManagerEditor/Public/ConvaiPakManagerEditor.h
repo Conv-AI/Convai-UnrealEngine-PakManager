@@ -29,6 +29,12 @@ private:
 	 */
 	void MigrateChunkStateLayout();
 
+	/** Supplies the Pak Manager page to the Convai editor shell for the route the SDK declares. */
+	void RegisterShellPage();
+
+	/** Adds the Tools menu entry that navigates the shell to that page. */
+	void RegisterMenuEntry();
+
 	/** Set only while waiting for the Asset Registry's initial scan. */
 	FDelegateHandle FilesLoadedHandle;
 };

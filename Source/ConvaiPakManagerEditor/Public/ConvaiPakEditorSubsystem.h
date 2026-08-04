@@ -58,6 +58,31 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool CanAddAnotherChunk() const;
 
+	// ---- Edits ----
+	//
+	// Local-first: the creator's project is the record of their Assets and Convai is never asked what
+	// it thinks they are called. Safe only because the Pak Manager is the sole writer. See docs/adr/0005.
+
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	FString GetAssetName(int32 ChunkId) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool SetAssetName(int32 ChunkId, const FString& Name);
+
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	FString GetAssetDescription(int32 ChunkId) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool SetAssetDescription(int32 ChunkId, const FString& Description);
+
+	/** Captures the active viewport as this Chunk's thumbnail. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool CaptureThumbnail(int32 ChunkId);
+
+	/** Where this Chunk's thumbnail lives, whether or not one has been captured. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	FString GetThumbnailPath(int32 ChunkId) const;
+
 	// ---- Operations ----
 
 	/**

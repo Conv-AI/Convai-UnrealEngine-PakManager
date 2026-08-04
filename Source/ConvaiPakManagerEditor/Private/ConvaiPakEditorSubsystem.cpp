@@ -5,8 +5,13 @@
 
 #include "CPM_PakManagerSettings.h"
 #include "Chunk/CPM_Chunk.h"
+#include "ConvaiPakManagerEditorUtils.h"
 #include "Core/WorkflowManagerSubsystem.h"
 #include "EditorUtilityLibrary.h"
+#include "HAL/FileManager.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
 #include "Jobs/CPM_PublishJobs.h"
 #include "Misc/FileHelper.h"
 #include "Proxy/CPM_Proxy.h"
@@ -80,6 +85,109 @@ FString UConvaiPakEditorSubsystem::GetAssetId(const int32 ChunkId) const
 bool UConvaiPakEditorSubsystem::CanAddAnotherChunk() const
 {
 	return !UCPM_PakManagerSettings::Get().IsAtChunkLimit(GetChunkIds().Num());
+}
+
+namespace
+{
+	/** Field names as the Convai asset metadata document spells them. */
+	const TCHAR* AssetNameField = TEXT("asset_name");
+	const TCHAR* AssetDescriptionField = TEXT("asset_description");
+
+	FString ReadMetadataField(const int32 ChunkId, const TCHAR* Field)
+	{
+		FString Contents;
+		if (!FFileHelper::LoadFileToString(Contents, *ConvaiPakManager::Chunk::GetPakMetadataPath(ChunkId)))
+		{
+			return FString();
+		}
+
+		TSharedPtr<FJsonObject> Root;
+		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Contents);
+		if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+		{
+			return FString();
+		}
+
+		FString Value;
+		Root->TryGetStringField(Field, Value);
+		return Value;
+	}
+
+	/**
+	 * Sets one field and writes the document back.
+	 *
+	 * Read-modify-write over the parsed document rather than serialising a struct: this metadata is
+	 * the server's schema, not ours, and carries fields the Pak Manager has no type for -
+	 * blueprint_class, avatar_config, entity_data. Rebuilding it from what we happen to model would
+	 * silently drop whatever we do not.
+	 */
+	bool WriteMetadataField(const int32 ChunkId, const TCHAR* Field, const FString& Value)
+	{
+		const FString Path = ConvaiPakManager::Chunk::GetPakMetadataPath(ChunkId);
+
+		TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
+		FString Contents;
+		if (FFileHelper::LoadFileToString(Contents, *Path))
+		{
+			const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Contents);
+			TSharedPtr<FJsonObject> Parsed;
+			if (FJsonSerializer::Deserialize(Reader, Parsed) && Parsed.IsValid())
+			{
+				Root = Parsed;
+			}
+			else
+			{
+				// Refused rather than started fresh: overwriting a metadata document we could not
+				// parse would discard whatever it held, and it holds things nothing else has a copy of.
+				CPM_LOG(Error, TEXT("Refusing to edit %s: it is not valid JSON."), *Path);
+				return false;
+			}
+		}
+
+		Root->SetStringField(Field, Value);
+
+		FString Serialised;
+		const TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>> Writer =
+			TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&Serialised);
+		if (!FJsonSerializer::Serialize(Root.ToSharedRef(), Writer))
+		{
+			return false;
+		}
+
+		return FFileHelper::SaveStringToFile(Serialised, *Path);
+	}
+}
+
+FString UConvaiPakEditorSubsystem::GetAssetName(const int32 ChunkId) const
+{
+	return ReadMetadataField(ChunkId, AssetNameField);
+}
+
+bool UConvaiPakEditorSubsystem::SetAssetName(const int32 ChunkId, const FString& Name)
+{
+	return WriteMetadataField(ChunkId, AssetNameField, Name);
+}
+
+FString UConvaiPakEditorSubsystem::GetAssetDescription(const int32 ChunkId) const
+{
+	return ReadMetadataField(ChunkId, AssetDescriptionField);
+}
+
+bool UConvaiPakEditorSubsystem::SetAssetDescription(const int32 ChunkId, const FString& Description)
+{
+	return WriteMetadataField(ChunkId, AssetDescriptionField, Description);
+}
+
+FString UConvaiPakEditorSubsystem::GetThumbnailPath(const int32 ChunkId) const
+{
+	return ConvaiPakManager::Chunk::GetThumbnailPath(ChunkId);
+}
+
+bool UConvaiPakEditorSubsystem::CaptureThumbnail(const int32 ChunkId)
+{
+	const FString Path = ConvaiPakManager::Chunk::GetThumbnailPath(ChunkId);
+	IFileManager::Get().MakeDirectory(*FPaths::GetPath(Path), true);
+	return UConvaiPakManagerEditorUtils::CPM_TakeViewportScreenshot(Path);
 }
 
 void UConvaiPakEditorSubsystem::SetStatus(

@@ -45,6 +45,9 @@ public class ConvaiPakManagerEditor : ModuleRules
                 "FileUtilities",
                 "AssetRegistry",
                 "Json",
+                "ToolMenus",
+                // The SDK's editor module: its widget kit, styling and shell. See docs/adr/0006 and 0007.
+                "ConvaiEditor",
                 "Projects"  // For IPluginManager
 			}
 			);
