@@ -5,6 +5,7 @@
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Chunk/CPM_Chunk.h"
 #include "Services/ConvaiDIContainer.h"
+#include "Services/IMainWindowManager.h"
 #include "Services/NavigationService.h"
 #include "ToolMenus.h"
 #include "UI/CPM_PakManagerPageFactory.h"
@@ -103,12 +104,36 @@ void FConvaiPakManagerModule::BuildMenuEntry()
 
 void FConvaiPakManagerModule::OpenPakManager()
 {
+	IConvaiDIContainer& Container = FConvaiDIContainerManager::Get();
+
+	const auto MainWindow = Container.Resolve<IMainWindowManager>();
+	if (MainWindow.IsFailure() || !MainWindow.GetValue().IsValid())
+	{
+		CPM_LOG(Warning, TEXT("Convai editor shell unavailable; cannot open the Pak Manager."));
+		return;
+	}
+
+	// FIRST, and the order is not stylistic.
+	//
+	// Opening the shell is what creates the container the navigation service draws pages into -
+	// navigating without it fails on an invalid UIContainer. It is ALSO what registers the SDK's own
+	// page factories, and it skips that entirely when the registry is already non-empty. Register
+	// ours before this line and the shell silently loses every page it has: Home, Account, Settings,
+	// all of them.
+	MainWindow.GetValue()->OpenMainWindow();
+
+	// Opening diverts to the sign-in flow when the creator is not signed in, and returns with no
+	// window. There is nothing to navigate then, and the sign-in window is the right thing on screen.
+	if (!MainWindow.GetValue()->IsMainWindowOpen())
+	{
+		return;
+	}
+
 	if (!EnsureShellPageRegistered())
 	{
 		return;
 	}
 
-	IConvaiDIContainer& Container = FConvaiDIContainerManager::Get();
 	const auto Navigation = Container.Resolve<INavigationService>();
 	if (Navigation.IsFailure() || !Navigation.GetValue().IsValid())
 	{
