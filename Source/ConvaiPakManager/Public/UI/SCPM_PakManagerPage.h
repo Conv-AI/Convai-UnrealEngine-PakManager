@@ -54,6 +54,8 @@ private:
 
 	void HandleChunkStatusChanged(const FCPM_ChunkStatus& Status);
 
+	FReply HandlePickAssetClicked();
+	FReply HandleAddSpawnPointClicked();
 	FReply HandleCaptureThumbnailClicked();
 	FReply HandlePublishClicked();
 	FReply HandleCancelClicked();
@@ -81,6 +83,8 @@ private:
 	TSharedPtr<SEditableTextBox> AssetNameBox;
 	TSharedPtr<SEditableTextBox> AssetDescriptionBox;
 	TSharedPtr<STextBlock> AssetIdText;
+	TSharedPtr<STextBlock> EntryPointText;
+	TSharedPtr<STextBlock> AssetTypeText;
 
 	/** Held so the thumbnail can be swapped without rebuilding the panel. */
 	FSlateBrush ThumbnailBrush;

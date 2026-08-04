@@ -7,7 +7,11 @@
 #include "Chunk/CPM_Chunk.h"
 #include "ConvaiPakManagerEditorUtils.h"
 #include "Core/WorkflowManagerSubsystem.h"
+#include "AssetRegistry/IAssetRegistry.h"
 #include "ContentBrowserModule.h"
+#include "Engine/Blueprint.h"
+#include "Engine/TargetPoint.h"
+#include "Engine/World.h"
 #include "IContentBrowserSingleton.h"
 #include "HAL/FileManager.h"
 #include "Serialization/JsonReader.h"
@@ -121,14 +125,14 @@ namespace
 	}
 
 	/**
-	 * Sets one field and writes the document back.
+	 * Sets fields and writes the document back.
 	 *
 	 * Read-modify-write over the parsed document rather than serialising a struct: this metadata is
 	 * the server's schema, not ours, and carries fields the Pak Manager has no type for -
-	 * blueprint_class, avatar_config, entity_data. Rebuilding it from what we happen to model would
-	 * silently drop whatever we do not.
+	 * avatar_config, entity_data, gender. Rebuilding it from what we happen to model would silently
+	 * drop whatever we do not.
 	 */
-	bool WriteMetadataField(const int32 ChunkId, const TCHAR* Field, const FString& Value)
+	bool WriteMetadataFields(const int32 ChunkId, const TMap<FString, FString>& Fields)
 	{
 		const FString Path = ConvaiPakManager::Chunk::GetPakMetadataPath(ChunkId);
 
@@ -151,7 +155,10 @@ namespace
 			}
 		}
 
-		Root->SetStringField(Field, Value);
+		for (const TPair<FString, FString>& Field : Fields)
+		{
+			Root->SetStringField(Field.Key, Field.Value);
+		}
 
 		FString Serialised;
 		const TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>> Writer =
@@ -172,7 +179,7 @@ FString UConvaiPakEditorSubsystem::GetAssetName(const int32 ChunkId) const
 
 bool UConvaiPakEditorSubsystem::SetAssetName(const int32 ChunkId, const FString& Name)
 {
-	return WriteMetadataField(ChunkId, AssetNameField, Name);
+	return WriteMetadataFields(ChunkId, { { AssetNameField, Name } });
 }
 
 FString UConvaiPakEditorSubsystem::GetAssetDescription(const int32 ChunkId) const
@@ -182,7 +189,132 @@ FString UConvaiPakEditorSubsystem::GetAssetDescription(const int32 ChunkId) cons
 
 bool UConvaiPakEditorSubsystem::SetAssetDescription(const int32 ChunkId, const FString& Description)
 {
-	return WriteMetadataField(ChunkId, AssetDescriptionField, Description);
+	return WriteMetadataFields(ChunkId, { { AssetDescriptionField, Description } });
+}
+
+FString UConvaiPakEditorSubsystem::GetEntryPoint(const int32 ChunkId) const
+{
+	// An Avatar records a blueprint, a Scene records a level; whichever is set is the Entry Point.
+	const FString BlueprintPath = ReadMetadataField(ChunkId, TEXT("blueprint_class_path"));
+	if (!BlueprintPath.IsEmpty())
+	{
+		return BlueprintPath;
+	}
+
+	// Returned as stored. A level is recorded by short name, and root_path is the MOUNT ROOT
+	// ("/Game/" in a published avatar) rather than the folder the package sits in - so gluing the two
+	// together invents a path that does not exist, silently dropping any subfolder.
+	return ReadMetadataField(ChunkId, TEXT("level_name"));
+}
+
+bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString& PackageName)
+{
+	if (PackageName.IsEmpty())
+	{
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Update_Failed, TEXT("no asset was picked"));
+		return false;
+	}
+
+	const IAssetRegistry* AssetRegistry = IAssetRegistry::Get();
+	if (!AssetRegistry)
+	{
+		return false;
+	}
+
+	TArray<FAssetData> Assets;
+	AssetRegistry->GetAssetsByPackageName(FName(*PackageName), Assets);
+	if (Assets.IsEmpty())
+	{
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Update_Failed,
+			FString::Printf(TEXT("nothing exists at %s"), *PackageName));
+		return false;
+	}
+
+	const FAssetData& Asset = Assets[0];
+	const bool bIsLevel = Asset.AssetClassPath == UWorld::StaticClass()->GetClassPathName();
+	const bool bIsBlueprint = Asset.AssetClassPath == UBlueprint::StaticClass()->GetClassPathName();
+
+	FCPM_ModdingMetadata Modding;
+	UCPM_UtilityLibrary::GetModdingMetadata(Modding);
+	const bool bWantsLevel = Modding.AssetType.Equals(TEXT("Scene"), ESearchCase::IgnoreCase);
+
+	// Checked here rather than discovered on the server: an Avatar whose entry point is a level, or a
+	// Scene whose entry point is a blueprint, publishes an Asset no product can open - and nothing
+	// between here and there would notice.
+	if (bWantsLevel && !bIsLevel)
+	{
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Update_Failed,
+			FString::Printf(TEXT("a scene's entry point must be a level, and %s is not"), *PackageName));
+		return false;
+	}
+	if (!bWantsLevel && !bIsBlueprint)
+	{
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Update_Failed,
+			FString::Printf(TEXT("an avatar's entry point must be a blueprint, and %s is not"), *PackageName));
+		return false;
+	}
+
+	// "/AGXRDJZ.../Maps/Landing" -> "/AGXRDJZ.../" : the mount point the package lives under.
+	FString RootPath = PackageName;
+	{
+		int32 SecondSlash = INDEX_NONE;
+		if (PackageName.FindChar(TEXT('/'), SecondSlash) && PackageName.Len() > 1)
+		{
+			const int32 Next = PackageName.Find(TEXT("/"), ESearchCase::CaseSensitive, ESearchDir::FromStart, 1);
+			RootPath = Next != INDEX_NONE ? PackageName.Left(Next + 1) : PackageName;
+		}
+	}
+
+	const FString AssetName = FPaths::GetCleanFilename(PackageName);
+
+	TMap<FString, FString> Fields;
+	Fields.Add(TEXT("root_path"), RootPath);
+	if (bIsLevel)
+	{
+		Fields.Add(TEXT("level_name"), AssetName);
+		Fields.Add(TEXT("blueprint_class"), FString());
+		Fields.Add(TEXT("blueprint_class_path"), FString());
+	}
+	else
+	{
+		Fields.Add(TEXT("level_name"), FString());
+		// The exact shape a product resolves the class by. Taken verbatim from a published avatar.
+		Fields.Add(TEXT("blueprint_class"),
+			FString::Printf(TEXT("/Script/Engine.BlueprintGeneratedClass'%s.%s_C'"), *PackageName, *AssetName));
+		Fields.Add(TEXT("blueprint_class_path"), PackageName);
+	}
+
+	if (ReadMetadataField(ChunkId, TEXT("content_path")).IsEmpty())
+	{
+		Fields.Add(TEXT("content_path"),
+			FString::Printf(TEXT("../../../%s/Content/"), *UCPM_UtilityLibrary::GetProjectName()));
+	}
+	Fields.Add(TEXT("project_name"), UCPM_UtilityLibrary::GetProjectName());
+	Fields.Add(TEXT("plugin_name"), Modding.PluginName);
+	Fields.Add(TEXT("asset_type"), Modding.AssetType.ToLower());
+
+	return WriteMetadataFields(ChunkId, Fields);
+}
+
+bool UConvaiPakEditorSubsystem::PickEntryPointFromSelection(const int32 ChunkId)
+{
+	FString PackageName;
+	GetSelectedAssetPackageName(PackageName);
+	return SetEntryPoint(ChunkId, PackageName);
+}
+
+AActor* UConvaiPakEditorSubsystem::AddSpawnPoint()
+{
+	AActor* SpawnPoint = UConvaiPakManagerEditorUtils::SpawnAndSnapActorToView(ATargetPoint::StaticClass());
+	if (!SpawnPoint)
+	{
+		return nullptr;
+	}
+
+	// The tag is the whole contract: it is how a Convai product finds where to put the avatar. The
+	// actor's class is incidental.
+	SpawnPoint->Tags.AddUnique(TEXT("EditorSpawn"));
+	return SpawnPoint;
 }
 
 FString UConvaiPakEditorSubsystem::GetThumbnailPath(const int32 ChunkId) const

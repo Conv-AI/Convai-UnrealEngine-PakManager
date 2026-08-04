@@ -137,6 +137,42 @@ TSharedRef<SWidget> SCPM_PakManagerPage::BuildAssetSection()
 		]
 		+ SVerticalBox::Slot().AutoHeight()
 		[
+			FormRow(LOCTEXT("AssetType", "Asset Type"),
+				SAssignNew(AssetTypeText, STextBlock).Text(FText::GetEmpty()))
+		]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			// What a Convai product opens out of the Pak. A Chunk gathers everything its label
+			// reaches, so without this nothing says which of those things is the thing to load.
+			FormRow(LOCTEXT("EntryPoint", "Asset Path"),
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+				[
+					SAssignNew(EntryPointText, STextBlock)
+					.Text(LOCTEXT("NoEntryPoint", "none picked"))
+				]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("PickAsset", "Pick Asset"))
+					.ToolTipText(LOCTEXT("PickAssetTooltip",
+						"Uses whatever is selected in the Content Browser: the level for a scene, the blueprint for an avatar."))
+					.IsEnabled_Lambda([this] { return !IsBusy(); })
+					.OnClicked(this, &SCPM_PakManagerPage::HandlePickAssetClicked)
+				])
+		]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			FormRow(LOCTEXT("SpawnPoint", "Spawn Point"),
+				SNew(SButton)
+				.Text(LOCTEXT("AddSpawnPoint", "Add Spawn Point"))
+				.ToolTipText(LOCTEXT("AddSpawnPointTooltip",
+					"Places a tagged actor where a Convai product spawns its avatar in this scene."))
+				.IsEnabled_Lambda([this] { return !IsBusy(); })
+				.OnClicked(this, &SCPM_PakManagerPage::HandleAddSpawnPointClicked))
+		]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
 			FormRow(LOCTEXT("Thumbnail", "Thumbnail"),
 				SNew(SButton)
 				.Text(LOCTEXT("CaptureThumbnail", "Capture from viewport"))
@@ -242,6 +278,20 @@ void SCPM_PakManagerPage::RefreshFromChunk()
 			? LOCTEXT("NotPublished", "not published yet")
 			: FText::FromString(AssetId));
 	}
+	if (EntryPointText.IsValid())
+	{
+		const FString EntryPoint = Subsystem->GetEntryPoint(SelectedChunkId);
+		EntryPointText->SetText(EntryPoint.IsEmpty()
+			? LOCTEXT("NoEntryPoint", "none picked")
+			: FText::FromString(EntryPoint));
+	}
+	if (AssetTypeText.IsValid())
+	{
+		// Shown, never asked: the Modding Tool fixes this when it generates the project.
+		FCPM_ModdingMetadata Modding;
+		UCPM_UtilityLibrary::GetModdingMetadata(Modding);
+		AssetTypeText->SetText(FText::FromString(Modding.AssetType));
+	}
 }
 
 void SCPM_PakManagerPage::HandleChunkStatusChanged(const FCPM_ChunkStatus& Status)
@@ -317,6 +367,27 @@ FSlateColor SCPM_PakManagerPage::GetStatusColor() const
 TOptional<float> SCPM_PakManagerPage::GetProgress() const
 {
 	return LastStatus.Progress;
+}
+
+FReply SCPM_PakManagerPage::HandlePickAssetClicked()
+{
+	if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
+	{
+		Subsystem->PickEntryPointFromSelection(SelectedChunkId);
+		// Refreshed unconditionally: a refusal writes its reason to the status, and the field must
+		// still show whatever survived - which on a rejected pick is the previous entry point.
+		RefreshFromChunk();
+	}
+	return FReply::Handled();
+}
+
+FReply SCPM_PakManagerPage::HandleAddSpawnPointClicked()
+{
+	if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
+	{
+		Subsystem->AddSpawnPoint();
+	}
+	return FReply::Handled();
 }
 
 FReply SCPM_PakManagerPage::HandleCaptureThumbnailClicked()

@@ -75,6 +75,37 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool SetAssetDescription(int32 ChunkId, const FString& Description);
 
+	/**
+	 * The Source Package a Convai product opens out of this Chunk's Pak - the level for a Scene, the
+	 * blueprint for an Avatar. Empty when none has been chosen.
+	 *
+	 * A Chunk gathers everything in its label's reach, so it does not on its own say which of those
+	 * things is the thing to load. This does.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	FString GetEntryPoint(int32 ChunkId) const;
+
+	/**
+	 * Records a Source Package as this Chunk's Entry Point.
+	 *
+	 * Refuses a package whose kind does not match the Asset Type: a Scene must name a level and an
+	 * Avatar a blueprint, and getting that wrong publishes an Asset that no product can open.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool SetEntryPoint(int32 ChunkId, const FString& PackageName);
+
+	/** Records whatever is selected in the Content Browser as this Chunk's Entry Point. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool PickEntryPointFromSelection(int32 ChunkId);
+
+	/**
+	 * Places the actor a Convai product spawns its avatar at, tagged so the product can find it.
+	 *
+	 * Scenes only - an Avatar Chunk is the thing being spawned, not somewhere to spawn it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	AActor* AddSpawnPoint();
+
 	/** Captures the active viewport as this Chunk's thumbnail. */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool CaptureThumbnail(int32 ChunkId);
