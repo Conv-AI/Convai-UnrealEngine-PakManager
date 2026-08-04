@@ -44,6 +44,10 @@
 		{
 			"Name": "ConvAI",
 			"Enabled": true
+		},
+		{
+			"Name": "ConvaiJobSystem",
+			"Enabled": true
 		}
 	]
 }

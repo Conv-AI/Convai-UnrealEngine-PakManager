@@ -73,13 +73,37 @@ jobs:
             echo "Version bump detected."
           fi
 
+      # Bundled rather than left to the creator to install: the Pak Manager declares
+      # ConvaiJobSystem in its .uplugin, so a release without it does not load. Pinned to a
+      # tag so a release is reproducible and a push to the Job System's main cannot change
+      # what a published Pak Manager release contains.
+      - name: Fetch bundled ConvaiJobSystem
+        if: steps.decide.outputs.changed == 'yes'
+        env:
+          JOB_SYSTEM_TAG: v2.3.9
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$JOB_SYSTEM_TAG" \
+            https://github.com/Conv-AI/JobSystem-UnrealEngine.git .bundled/Convai-JobSystem-UnrealEngine
+          rm -rf .bundled/Convai-JobSystem-UnrealEngine/.git
+          echo "Bundled ConvaiJobSystem $JOB_SYSTEM_TAG"
+
       - name: Zip repository
         if: steps.decide.outputs.changed == 'yes'
         id: zip
         run: |
           set -euo pipefail
           ZIP_NAME="${{ github.event.repository.name }}.zip"
-          zip -r "$ZIP_NAME" . -x ".git/*" ".github/workflows/*.yml~" "./$ZIP_NAME"
+          STAGE="$(mktemp -d)"
+
+          # Both plugins sit side by side in the archive, so unzipping into a project's Plugins
+          # folder lands them where Unreal expects rather than nesting one inside the other.
+          mkdir -p "$STAGE/${{ github.event.repository.name }}"
+          rsync -a --exclude '.git' --exclude '.bundled' --exclude "$ZIP_NAME" \
+            ./ "$STAGE/${{ github.event.repository.name }}/"
+          mv .bundled/Convai-JobSystem-UnrealEngine "$STAGE/Convai-JobSystem-UnrealEngine"
+
+          (cd "$STAGE" && zip -qr "$OLDPWD/$ZIP_NAME" .)
           echo "zip_path=$ZIP_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
@@ -92,6 +116,9 @@ jobs:
             Automated release created from push.
             - Plugin file: `${{ steps.get_version.outputs.plugin_file }}`
             - Version: `${{ steps.get_version.outputs.version }}`
+
+            The archive contains **two** plugins. Unzip both into your project's `Plugins/`
+            folder — the Pak Manager requires `ConvaiJobSystem` and will not load without it.
           draft: false
           prerelease: ${{ contains(steps.get_version.outputs.version, '-') }}
           files: ${{ steps.zip.outputs.zip_path }}
