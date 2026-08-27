@@ -1,3 +1,5 @@
+> **Status: superseded by ADR-0009.**
+
 # The Pak Manager visits the SDK shell; it does not move in
 
 The Pak Manager stays its own plugin with its own release, and reaches the Convai editor shell by

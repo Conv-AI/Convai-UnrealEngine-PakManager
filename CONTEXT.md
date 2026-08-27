@@ -32,6 +32,14 @@ One Unreal package a creator wants published — a level, a blueprint, a materia
 up one publishable thing; none of them is one on its own.
 _Avoid_: asset, uasset, content
 
+**Entry Point**:
+The one **Source Package** in a Chunk that a Convai product opens — the level for a Scene, the
+blueprint for an Avatar. A Chunk gathers everything in its label's reach and does not on its own say
+which of those things is the thing to load; the Entry Point does. Its kind must match the **Asset
+Type**, and the UI labels it "Entry point" — not "source package", which names any member of the
+Chunk, not the distinguished one.
+_Avoid_: source package (for this), main asset, selected asset
+
 **Chunk**:
 The Source Packages gathered into one publishable unit by one Primary Asset Label, identified by
 that label's **Chunk ID**. The unit of packaging AND the unit of publishing — one Chunk is one
@@ -100,6 +108,11 @@ _Avoid_: category, entity type
   is authoritative and the server never disagrees with it on its own
 
 ## Flagged ambiguities
+
+- **Whether the Pak Manager can mint a Chunk.** Today a Chunk exists only where a Primary Asset
+  Label exists, and the tool only discovers them. The multi-asset UI sketches a "+ New asset"
+  button, which would mean authoring a label from the tool. Deliberately deferred — the v1 UI lists
+  discovered Chunks only.
 
 - **~~How many Chunks a project holds~~ — resolved: it depends on the project, not on the tool.**
   A Chunk is whatever a Primary Asset Label gathers, so a project has as many as it has labels.

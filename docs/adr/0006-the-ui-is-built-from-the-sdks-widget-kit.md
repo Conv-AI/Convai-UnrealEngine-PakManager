@@ -1,3 +1,5 @@
+> **Status: superseded by ADR-0009.**
+
 # The UI is built from the SDK's widget kit
 
 The Slate panel is built from the widgets the Convai SDK's editor module already exports — form
