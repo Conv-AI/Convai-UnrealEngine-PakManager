@@ -3,12 +3,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/DeveloperSettings.h"
 #include "Modules/ModuleManager.h"
 
-
-class FToolBarBuilder;
-class FMenuBuilder;
+class FSpawnTabArgs;
+class SDockTab;
 
 class FConvaiPakManagerModule : public IModuleInterface
 {
@@ -29,22 +27,14 @@ private:
 	 */
 	void MigrateChunkStateLayout();
 
-	/**
-	 * Supplies the Pak Manager page to the Convai editor shell, once.
-	 *
-	 * On first use rather than at startup: the SDK's editor module loads in the same phase as this
-	 * one, so its dependency container may not exist yet and asking for it then asserts.
-	 */
-	bool EnsureShellPageRegistered();
-
 	/** Adds the Tools menu entry. Deferred by ToolMenus until menus exist. */
 	void RegisterMenuEntry();
 	void BuildMenuEntry();
 
-	/** Registers the page if it has not been, then navigates the shell to it. */
+	/** Foregrounds the Pak Manager tab, spawning it when it is not open. */
 	void OpenPakManager();
 
-	bool bShellPageRegistered = false;
+	TSharedRef<SDockTab> SpawnPakManagerTab(const FSpawnTabArgs& Args);
 
 	/** Set only while waiting for the Asset Registry's initial scan. */
 	FDelegateHandle FilesLoadedHandle;

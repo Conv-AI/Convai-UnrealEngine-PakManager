@@ -4,21 +4,36 @@
 
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Chunk/CPM_Chunk.h"
-#include "Services/ConvaiDIContainer.h"
-#include "Services/IMainWindowManager.h"
-#include "Services/NavigationService.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Framework/Docking/TabManager.h"
 #include "ToolMenus.h"
-#include "UI/CPM_PakManagerPageFactory.h"
-#include "UI/Factories/PageFactoryManager.h"
+#include "UI/CPM_PakManagerStyle.h"
+#include "UI/SCPM_PakManagerPanel.h"
 #include "Utility/CPM_Log.h"
+#include "Widgets/Docking/SDockTab.h"
+#include "WorkspaceMenuStructure.h"
+#include "WorkspaceMenuStructureModule.h"
 
 #define LOCTEXT_NAMESPACE "FConvaiPakManagerModule"
 
+namespace
+{
+	const FName PakManagerTabId(TEXT("ConvaiPakManager"));
+}
+
 void FConvaiPakManagerModule::StartupModule()
 {
-	// Only the menu entry, and even that is deferred by ToolMenus itself. The shell page is
-	// registered on first use rather than here: the SDK's editor module loads in the same phase as
-	// this one, so its dependency container may not exist yet, and asking for it at startup asserts.
+	FCPM_PakManagerStyle::Initialize();
+
+	// A nomad tab of this plugin's own, not a page in the SDK's shell: it docks beside the Content
+	// Browser, which the pick-the-selection workflow depends on. See docs/adr/0009.
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(PakManagerTabId,
+		FOnSpawnTab::CreateRaw(this, &FConvaiPakManagerModule::SpawnPakManagerTab))
+		.SetDisplayName(LOCTEXT("PakManagerTabTitle", "Convai Pak Manager"))
+		.SetTooltipText(LOCTEXT("PakManagerTabTooltip", "Publish this project's Chunks to Convai."))
+		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory())
+		.SetIcon(FSlateIcon(FCPM_PakManagerStyle::GetStyleSetName(), TEXT("CPM.TabIcon")));
+
 	RegisterMenuEntry();
 
 	// Deferred to OnFilesLoaded rather than run here: migration has to know which Chunk the project
@@ -40,6 +55,12 @@ void FConvaiPakManagerModule::StartupModule()
 
 void FConvaiPakManagerModule::ShutdownModule()
 {
+	if (FSlateApplication::IsInitialized())
+	{
+		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(PakManagerTabId);
+	}
+	FCPM_PakManagerStyle::Shutdown();
+
 	if (FilesLoadedHandle.IsValid())
 	{
 		if (IAssetRegistry* AssetRegistry = IAssetRegistry::Get())
@@ -50,36 +71,30 @@ void FConvaiPakManagerModule::ShutdownModule()
 	}
 }
 
-bool FConvaiPakManagerModule::EnsureShellPageRegistered()
+TSharedRef<SDockTab> FConvaiPakManagerModule::SpawnPakManagerTab(const FSpawnTabArgs& Args)
 {
-	if (bShellPageRegistered)
-	{
-		return true;
-	}
+	TSharedRef<SCPM_PakManagerPanel> Panel = SNew(SCPM_PakManagerPanel);
 
-	// Resolved on first use, not at startup. The SDK's dependency container is built by its own
-	// editor module, which loads in the same phase as this one - so at startup it may not exist, and
-	// asking for it then asserts rather than answering. By the time a creator opens the panel the
-	// shell is up by definition, because the shell is what they opened.
-	IConvaiDIContainer& Container = FConvaiDIContainerManager::Get();
-	const auto Resolved = Container.Resolve<IPageFactoryManager>();
-	if (Resolved.IsFailure() || !Resolved.GetValue().IsValid())
-	{
-		CPM_LOG(Warning, TEXT("Convai editor shell unavailable; the Pak Manager page was not registered."));
-		return false;
-	}
-
-	// The SDK declares the route; this supplies what fills it. See docs/adr/0007.
-	Resolved.GetValue()->RegisterFactory(MakeShared<FCPM_PakManagerPageFactory>());
-	bShellPageRegistered = true;
-	return true;
+	return SNew(SDockTab)
+		.TabRole(ETabRole::NomadTab)
+		// Foregrounding is a refresh trigger: Chunks and their records change while the tab is hidden.
+		.OnTabActivated_Lambda([WeakPanel = TWeakPtr<SCPM_PakManagerPanel>(Panel)](TSharedRef<SDockTab>, ETabActivationCause)
+		{
+			if (const TSharedPtr<SCPM_PakManagerPanel> Pinned = WeakPanel.Pin())
+			{
+				Pinned->RefreshProject();
+			}
+		})
+		[
+			Panel
+		];
 }
 
 void FConvaiPakManagerModule::RegisterMenuEntry()
 {
 	// The entry point lives HERE rather than in the SDK's header bar, which builds its navigation
 	// from a hard-coded list. Keeping it on this side means every line that knows this plugin exists
-	// is in this plugin, and the SDK carries a route it never has to reason about.
+	// is in this plugin.
 	UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(
 		this, &FConvaiPakManagerModule::BuildMenuEntry));
 }
@@ -97,51 +112,14 @@ void FConvaiPakManagerModule::BuildMenuEntry()
 	Section.AddMenuEntry(
 		TEXT("ConvaiPakManager"),
 		LOCTEXT("OpenPakManager", "Pak Manager"),
-		LOCTEXT("OpenPakManagerTooltip", "Publish this project's chunks to Convai."),
-		FSlateIcon(),
+		LOCTEXT("OpenPakManagerTooltip", "Publish this project's Chunks to Convai."),
+		FSlateIcon(FCPM_PakManagerStyle::GetStyleSetName(), TEXT("CPM.TabIcon")),
 		FUIAction(FExecuteAction::CreateRaw(this, &FConvaiPakManagerModule::OpenPakManager)));
 }
 
 void FConvaiPakManagerModule::OpenPakManager()
 {
-	IConvaiDIContainer& Container = FConvaiDIContainerManager::Get();
-
-	const auto MainWindow = Container.Resolve<IMainWindowManager>();
-	if (MainWindow.IsFailure() || !MainWindow.GetValue().IsValid())
-	{
-		CPM_LOG(Warning, TEXT("Convai editor shell unavailable; cannot open the Pak Manager."));
-		return;
-	}
-
-	// FIRST, and the order is not stylistic.
-	//
-	// Opening the shell is what creates the container the navigation service draws pages into -
-	// navigating without it fails on an invalid UIContainer. It is ALSO what registers the SDK's own
-	// page factories, and it skips that entirely when the registry is already non-empty. Register
-	// ours before this line and the shell silently loses every page it has: Home, Account, Settings,
-	// all of them.
-	MainWindow.GetValue()->OpenMainWindow();
-
-	// Opening diverts to the sign-in flow when the creator is not signed in, and returns with no
-	// window. There is nothing to navigate then, and the sign-in window is the right thing on screen.
-	if (!MainWindow.GetValue()->IsMainWindowOpen())
-	{
-		return;
-	}
-
-	if (!EnsureShellPageRegistered())
-	{
-		return;
-	}
-
-	const auto Navigation = Container.Resolve<INavigationService>();
-	if (Navigation.IsFailure() || !Navigation.GetValue().IsValid())
-	{
-		CPM_LOG(Warning, TEXT("Convai editor navigation unavailable; cannot open the Pak Manager."));
-		return;
-	}
-
-	Navigation.GetValue()->Navigate(ConvaiEditor::Route::E::PakManager);
+	FGlobalTabmanager::Get()->TryInvokeTab(PakManagerTabId);
 }
 
 void FConvaiPakManagerModule::MigrateChunkStateLayout()

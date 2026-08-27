@@ -54,8 +54,10 @@ public class ConvaiPakManager : ModuleRules
 				"Json",
 				"JsonUtilities",
 				"Projects",
-				// The SDK's editor module: its widget kit, styling and shell. See docs/adr/0006 and 0007.
-				"ConvaiEditor",
+				// The nomad tab sits in the Window menu's Tools category. See docs/adr/0009.
+				"WorkspaceMenuStructure",
+				// Clipboard, for the copyable Asset ID.
+				"ApplicationCore",
 			}
 			);
 
