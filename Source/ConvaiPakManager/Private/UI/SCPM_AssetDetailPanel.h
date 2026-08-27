@@ -70,8 +70,8 @@ private:
 	/** Why the last Entry Point pick was refused. Empty means no inline error row. */
 	FText EntryPointError;
 
+	/** The only brush on the thumbnail file, so a recapture can release the texture and re-read it. */
 	TSharedPtr<FSlateDynamicImageBrush> ThumbnailBrush;
-	TSharedPtr<FSlateDynamicImageBrush> PreviewBrush;
 	TSharedPtr<SImage> ThumbnailImage;
 
 	FCPM_SpawnPointStatus SpawnStatus;

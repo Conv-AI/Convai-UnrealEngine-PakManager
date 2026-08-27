@@ -76,6 +76,12 @@ namespace
 			return false;
 		}
 	}
+
+	/** Busy with a Publish or Package. A delete is busy too, but it is one HTTP call and contends with nothing. */
+	bool IsPublishing(const FCPM_ChunkStatus& Status)
+	{
+		return Status.IsBusy() && Status.Status != ECPM_AssetManagerStatus::Delete_Begin;
+	}
 }
 
 FCPM_AssetViewModel::EBadge FCPM_AssetViewModel::Badge() const
@@ -184,7 +190,7 @@ bool FCPM_ProjectViewModel::AnyPublishInFlight() const
 {
 	for (const TSharedPtr<FCPM_AssetViewModel>& Asset : Assets)
 	{
-		if (Asset.IsValid() && Asset->Status.IsBusy())
+		if (Asset.IsValid() && IsPublishing(Asset->Status))
 		{
 			return true;
 		}
@@ -196,7 +202,7 @@ FText FCPM_ProjectViewModel::PublishingAssetName() const
 {
 	for (const TSharedPtr<FCPM_AssetViewModel>& Asset : Assets)
 	{
-		if (Asset.IsValid() && Asset->Status.IsBusy())
+		if (Asset.IsValid() && IsPublishing(Asset->Status))
 		{
 			// Printf, not AsNumber: a Chunk id is an identifier, not a quantity to group digits in.
 			return Asset->Name.IsEmpty()

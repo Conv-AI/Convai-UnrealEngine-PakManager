@@ -260,10 +260,40 @@ FString UConvaiPakEditorSubsystem::GetEntryPoint(const int32 ChunkId) const
 		return BlueprintPath;
 	}
 
-	// Returned as stored. A level is recorded by short name, and root_path is the MOUNT ROOT
-	// ("/Game/" in a published avatar) rather than the folder the package sits in - so gluing the two
-	// together invents a path that does not exist, silently dropping any subfolder.
-	return ReadMetadataField(ChunkId, TEXT("level_name"));
+	// A level is recorded by short name - that is what a product loads it by - and root_path is the
+	// MOUNT ROOT ("/Game/") rather than its folder, so gluing the two together would invent a path
+	// that drops any subfolder. The package is found again through the registry instead.
+	const FString LevelName = ReadMetadataField(ChunkId, TEXT("level_name"));
+	if (LevelName.IsEmpty())
+	{
+		return LevelName;
+	}
+
+	FARFilter Filter;
+	Filter.ClassPaths.Add(UWorld::StaticClass()->GetClassPathName());
+	Filter.bRecursivePaths = true;
+	FString RootPath = ReadMetadataField(ChunkId, TEXT("root_path"));
+	RootPath.RemoveFromEnd(TEXT("/"));
+	if (!RootPath.IsEmpty())
+	{
+		Filter.PackagePaths.Add(FName(*RootPath));
+	}
+
+	TArray<FAssetData> Levels;
+	if (const IAssetRegistry* AssetRegistry = IAssetRegistry::Get())
+	{
+		AssetRegistry->GetAssets(Filter, Levels);
+	}
+	for (const FAssetData& Level : Levels)
+	{
+		if (Level.AssetName.ToString() == LevelName)
+		{
+			return Level.PackageName.ToString();
+		}
+	}
+
+	// No longer on disk. The short name still says an Entry Point was picked, and which one.
+	return LevelName;
 }
 
 bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString& PackageName)
@@ -485,13 +515,17 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 		return false;
 	}
 
-	if (ActivePublishes.Contains(ChunkId))
+	if (IsRunInFlight(ChunkId))
 	{
 		SetStatus(ChunkId, Refusal, TEXT("this chunk is already publishing"));
 		return false;
 	}
 
 	SetStatus(ChunkId, ECPM_AssetManagerStatus::Packaging_Begin, FString(), 0.0f, TEXT("Reading publish policy"));
+
+	// Registered before the Policy is asked for, not when the queue exists: the Chunk is busy from
+	// this line on, and a second Publish accepted in the meantime would start a second queue.
+	PendingPolicyRuns.Add(ChunkId);
 
 	// Deliberately NOT a Job of the publish queue. The policy decides which Jobs exist, and a queue's
 	// shape may depend only on what the caller knew before building it - so it is resolved first and
@@ -502,6 +536,13 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 		UConvaiPakEditorSubsystem* Self = WeakThis.Get();
 		if (!Self)
 		{
+			return;
+		}
+
+		Self->PendingPolicyRuns.Remove(ChunkId);
+		if (Self->CancelledDuringPolicyRead.Remove(ChunkId) > 0)
+		{
+			Self->SetStatus(ChunkId, ECPM_AssetManagerStatus::Publish_Cancelled);
 			return;
 		}
 
@@ -668,11 +709,22 @@ void UConvaiPakEditorSubsystem::HandleWorkflowFinished(const int32 ChunkId, cons
 	}
 }
 
+bool UConvaiPakEditorSubsystem::IsRunInFlight(const int32 ChunkId) const
+{
+	return ActivePublishes.Contains(ChunkId) || PendingPolicyRuns.Contains(ChunkId);
+}
+
 bool UConvaiPakEditorSubsystem::CancelPublish(const int32 ChunkId)
 {
 	const FWorkflowHandle* Handle = ActivePublishes.Find(ChunkId);
 	if (!Handle)
 	{
+		// Still reading the Policy: nothing runs yet, so the cancel is kept and honoured when it answers.
+		if (PendingPolicyRuns.Contains(ChunkId))
+		{
+			CancelledDuringPolicyRead.Add(ChunkId);
+			return true;
+		}
 		return false;
 	}
 
@@ -688,6 +740,12 @@ bool UConvaiPakEditorSubsystem::DeleteAsset(const int32 ChunkId, const FString& 
 	if (AssetId.IsEmpty())
 	{
 		SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed, TEXT("this chunk has no published asset"));
+		return false;
+	}
+
+	if (IsRunInFlight(ChunkId))
+	{
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed, TEXT("this chunk is publishing"));
 		return false;
 	}
 
@@ -733,19 +791,24 @@ void UConvaiPakEditorSubsystem::HandleDeleteSucceeded(const FString& ResponseStr
 		// make the next Publish update something that no longer exists. Name, description and Entry
 		// Point live in the pak metadata, not here, so deleting this file keeps the creator's draft.
 		const FString RecordPath = ConvaiPakManager::Chunk::GetCreateAssetDataPath(ChunkId);
-		if (!IFileManager::Get().Delete(*RecordPath))
-		{
-			CPM_LOG(Error, TEXT("Deleted the asset on Convai but could not clear %s; this chunk still records the deleted AssetId."),
-				*RecordPath);
-		}
+		const bool bRecordCleared = IFileManager::Get().Delete(*RecordPath, /*RequireExists=*/false, /*EvenReadOnly=*/true);
 
 		// The pak metadata carries server-issued identity beside the draft fields, so the identity
 		// is cleared field by field rather than by deleting the file that name and description live in.
-		WriteMetadataFields(ChunkId, {
+		const bool bIdentityCleared = WriteMetadataFields(ChunkId, {
 			{ TEXT("scene_id"), FString() },
 			{ TEXT("entity_id"), FString() },
 			{ TEXT("version"), FString() },
 		});
+
+		// Reported as a failure although the server did delete: success with the AssetId still on
+		// disk would offer Update against an Asset that no longer exists.
+		if (!bRecordCleared || !bIdentityCleared)
+		{
+			SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed,
+				FString::Printf(TEXT("the asset was deleted on Convai but its local record could not be cleared; remove %s by hand"), *RecordPath));
+			return;
+		}
 	}
 
 	// Broadcast after the record is cleared, so a UI refreshing on this status reads Draft.

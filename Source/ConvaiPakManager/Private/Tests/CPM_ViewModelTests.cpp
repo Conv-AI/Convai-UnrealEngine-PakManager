@@ -162,6 +162,10 @@ bool FCPMProjectViewModelReportsThePublishInFlight::RunTest(const FString&)
 	TestEqual(TEXT("an unnamed Chunk is named by its id"),
 		Project.PublishingAssetName().ToString(), FString(TEXT("Chunk 1002")));
 
+	Second->Status.Status = ECPM_AssetManagerStatus::Delete_Begin;
+	TestFalse(TEXT("a delete is busy but is not a publish"), Project.AnyPublishInFlight());
+	TestTrue(TEXT("and names nothing"), Project.PublishingAssetName().IsEmpty());
+
 	TestEqual(TEXT("FindByChunkId answers the busy Chunk"), Project.FindByChunkId(1002), Second);
 
 	return true;

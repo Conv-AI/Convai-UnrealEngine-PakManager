@@ -696,11 +696,12 @@ FReply SCPM_AssetDetailPanel::HandlePreviewThumbnail()
 		ImageSize = FVector2D(Wrapper->GetWidth(), Wrapper->GetHeight());
 	}
 
-	PreviewBrush.Reset();
-	PreviewBrush = MakeShareable(new FSlateDynamicImageBrush(FName(*Asset->ThumbnailPath), ImageSize));
-
 	const double Scale = FMath::Min3(1.0, 1280.0 / ImageSize.X, 720.0 / ImageSize.Y);
 
+	// The window paints the panel's brush through a weak guard rather than owning one of its own: two
+	// dynamic brushes on one file share the texture, so a second would keep a recapture from being
+	// re-read from disk - and a brush held by this panel could be freed under a window that outlives it.
+	TWeakPtr<SCPM_AssetDetailPanel> WeakSelf = SharedThis(this);
 	FSlateApplication::Get().AddWindow(
 		SNew(SWindow)
 		.Title(LOCTEXT("PreviewWindowTitle", "Thumbnail"))
@@ -710,7 +711,12 @@ FReply SCPM_AssetDetailPanel::HandlePreviewThumbnail()
 			SNew(SScaleBox)
 			.Stretch(EStretch::ScaleToFit)
 			[
-				SNew(SImage).Image(PreviewBrush.Get())
+				SNew(SImage)
+				.Image_Lambda([WeakSelf]() -> const FSlateBrush*
+				{
+					const TSharedPtr<SCPM_AssetDetailPanel> Self = WeakSelf.Pin();
+					return Self.IsValid() ? Self->ThumbnailBrush.Get() : nullptr;
+				})
 			]
 		]);
 

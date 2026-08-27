@@ -525,6 +525,14 @@ FText SCPM_PakManagerPanel::GetActionBarSummary() const
 			Project.PublishingAssetName());
 	}
 
+	// A failure outlives its toast: the reason stays here until the next command moves the status.
+	if (Active->Badge() == FCPM_AssetViewModel::EBadge::NeedsAttention)
+	{
+		return Active->Status.Message.IsEmpty()
+			? StaticEnum<ECPM_AssetManagerStatus>()->GetDisplayNameTextByValue(static_cast<int64>(Active->Status.Status))
+			: FText::FromString(Active->Status.Message);
+	}
+
 	const TArray<FText> Messages = Active->ValidationMessages();
 	return Messages.IsEmpty() ? FText::GetEmpty() : FText::Join(LOCTEXT("ValidationDelim", " "), Messages);
 }
@@ -533,9 +541,15 @@ FSlateColor SCPM_PakManagerPanel::GetActionBarSummaryColor() const
 {
 	using FPalette = FCPM_PakManagerStyle::FPalette;
 	const TSharedPtr<FCPM_AssetViewModel>& Active = Project.Active;
-	const bool bValidationShown = Active.IsValid() && !Active->Status.IsBusy()
-		&& !IsOtherChunkPublishing() && !Active->ValidationMessages().IsEmpty();
-	return FSlateColor(bValidationShown ? FPalette::Warning : FPalette::TextSecondary);
+	if (!Active.IsValid() || Active->Status.IsBusy() || IsOtherChunkPublishing())
+	{
+		return FSlateColor(FPalette::TextSecondary);
+	}
+	if (Active->Badge() == FCPM_AssetViewModel::EBadge::NeedsAttention)
+	{
+		return FSlateColor(FPalette::Error);
+	}
+	return FSlateColor(Active->ValidationMessages().IsEmpty() ? FPalette::TextSecondary : FPalette::Warning);
 }
 
 #undef LOCTEXT_NAMESPACE

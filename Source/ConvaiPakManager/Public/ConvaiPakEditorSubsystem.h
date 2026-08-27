@@ -230,6 +230,15 @@ private:
 	/** The Publish in flight for a Chunk, so it can be cancelled and so a second one is refused. */
 	TMap<int32, FWorkflowHandle> ActivePublishes;
 
+	/** Chunks whose Publish Policy is still being read: accepted and busy, but with no Workflow to cancel yet. */
+	TSet<int32> PendingPolicyRuns;
+
+	/** Cancels asked for during that read, honoured the moment the Policy answers. */
+	TSet<int32> CancelledDuringPolicyRead;
+
+	/** A Publish or Package is in flight for this Chunk, whether still reading the Policy or already running. */
+	bool IsRunInFlight(int32 ChunkId) const;
+
 	UPROPERTY()
 	TObjectPtr<UCPM_DeleteAssetProxy> DeleteProxy;
 
