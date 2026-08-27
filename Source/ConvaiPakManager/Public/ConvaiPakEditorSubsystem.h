@@ -10,6 +10,25 @@
 
 class UCPM_DeleteAssetProxy;
 
+/**
+ * Where a Scene's spawn point stands in the currently open level.
+ *
+ * Count is what matters: zero means Add, one means the point Set-from-viewport moves, more than
+ * one is a creator error the UI warns about rather than guessing which point a product will pick.
+ */
+USTRUCT(BlueprintType)
+struct FCPM_SpawnPointStatus
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
+	int32 Count = 0;
+
+	/** Of the sole spawn point. Identity when Count != 1. */
+	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
+	FTransform Transform = FTransform::Identity;
+};
+
 /** Broadcast whenever a Chunk's status changes. The UI's only subscription. See docs/adr/0008. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FCPM_OnChunkStatusChanged, const FCPM_ChunkStatus&);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_OnChunkStatusChangedDynamic, const FCPM_ChunkStatus&, Status);
@@ -57,6 +76,23 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool CanAddAnotherChunk() const;
+
+	/** This project's fixed Asset Type, decided by the Modding Tool. Max when the metadata is absent. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	ECPM_AssetType GetAssetType() const;
+
+	/**
+	 * What this Chunk's Paks look like on disk - Windows then Linux, fixed order.
+	 *
+	 * Paks are produced by a Publish, so before the first one these answer "missing"; that is
+	 * information, not an error.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	TArray<FCPM_PakPlatformStatus> GetPakStatuses(int32 ChunkId) const;
+
+	/** Tagged spawn-point actors in the open editor world. Scenes only make sense asking. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	FCPM_SpawnPointStatus GetSpawnPointStatus() const;
 
 	// ---- Edits ----
 	//
@@ -106,6 +142,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	AActor* AddSpawnPoint();
 
+	/**
+	 * Moves the sole spawn point to the viewport camera, or places one when none exists.
+	 *
+	 * Refuses when several exist: moving one of many would silently change which point wins, and
+	 * the fix - delete the extras - is the creator's to make in the level, not this Command's to
+	 * guess at.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool SetSpawnPointFromViewport();
+
 	/** Captures the active viewport as this Chunk's thumbnail. */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool CaptureThumbnail(int32 ChunkId);
@@ -134,7 +180,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool CancelPublish(int32 ChunkId);
 
-	/** Deletes one Version of this Chunk's Asset, or the whole Asset when Version is empty. */
+	/**
+	 * Builds this Chunk's Paks per the Publish Policy without uploading anything.
+	 *
+	 * Not surfaced in the UI - packaging happens inside a Publish there. Exists so a standalone
+	 * packaging flow can grow later without a new seam. Same acceptance semantics and status
+	 * reporting as Publish.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool Package(int32 ChunkId);
+
+	/**
+	 * Deletes one Version of this Chunk's Asset, or the whole Asset when Version is empty.
+	 *
+	 * A whole-asset delete also clears the Chunk's local record of the Asset - the AssetId and
+	 * publish history - but keeps the draft fields: name, description, thumbnail and Entry Point.
+	 * The Chunk returns to Draft with the create form prefilled.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool DeleteAsset(int32 ChunkId, const FString& Version);
 
@@ -150,14 +212,17 @@ private:
 	/** Reads the Publish Policy, from disk when a project overrides it and from the repository otherwise. */
 	void ResolvePolicy(int32 ChunkId, TFunction<void(bool bSucceeded, const FCPM_PublishPolicy&, const FString& Error)> OnResolved);
 
-	/** Builds the Job Queue this Policy asks for and starts it. */
-	FWorkflowHandle StartPublishWorkflow(int32 ChunkId, const FCPM_PublishPolicy& Policy);
+	/** Shared acceptance for Publish and Package: guards, then the Policy, then the Job Queue. */
+	bool BeginPolicyRun(int32 ChunkId, bool bPackageOnly);
+
+	/** Builds the Job Queue this Policy asks for and starts it. A package-only queue stops after the Paks. */
+	FWorkflowHandle StartPublishWorkflow(int32 ChunkId, const FCPM_PublishPolicy& Policy, bool bPackageOnly);
 
 	void SetStatus(int32 ChunkId, ECPM_AssetManagerStatus Status, const FString& Message = FString(),
 		float Progress = 0.0f, const FString& StepName = FString());
 
 	void HandleWorkflowProgress(int32 ChunkId, const FWorkflowStatusInfo& Info);
-	void HandleWorkflowFinished(int32 ChunkId, const FWorkflowStatusInfo& Info);
+	void HandleWorkflowFinished(int32 ChunkId, const FWorkflowStatusInfo& Info, bool bPackageOnly);
 
 	/** Latest status per Chunk. Absent means never touched this session. */
 	TMap<int32, FCPM_ChunkStatus> StatusByChunk;
@@ -170,6 +235,9 @@ private:
 
 	/** The Chunk whose delete is in flight, so its outcome is attributed to the right Chunk. */
 	int32 DeletingChunkId = INDEX_NONE;
+
+	/** Whether that delete names the whole Asset - only then does success clear the local record. */
+	bool bDeletingWholeAsset = false;
 
 	UFUNCTION()
 	void HandleDeleteSucceeded(const FString& ResponseString);

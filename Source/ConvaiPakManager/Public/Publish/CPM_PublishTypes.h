@@ -90,6 +90,33 @@ struct CONVAIPAKMANAGER_API FCPM_PakArtifact
 	FString VersionSlot;
 };
 
+/**
+ * What one platform's Pak looks like on disk right now.
+ *
+ * Existence and a timestamp only - no staleness verdict. Deciding whether a Pak is out of date
+ * would mean diffing it against the label's reach, and a wrong "stale" is worse than no verdict;
+ * the timestamp lets the creator judge.
+ */
+USTRUCT(BlueprintType)
+struct CONVAIPAKMANAGER_API FCPM_PakPlatformStatus
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
+	ECPM_Platform Platform = ECPM_Platform::None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
+	FString PakPath;
+
+	/** The file exists, is nonzero, and passes ValidatePakFile. */
+	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
+	bool bExists = false;
+
+	/** File modification time. Meaningless when bExists is false. */
+	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
+	FDateTime LastPackagedTime;
+};
+
 /** The creator's project, archived for the `raw` Version. */
 USTRUCT()
 struct CONVAIPAKMANAGER_API FCPM_RawArchive
@@ -146,6 +173,18 @@ struct CONVAIPAKMANAGER_API FCPM_ChunkStatus
 	/** Why it failed, when it did. Empty otherwise. */
 	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
 	FString Message;
+
+	/**
+	 * Display names of every step this Publish will run, in order. Filled when the Job Queue is
+	 * built - the Policy decides which steps exist, so the list is known only then. Empty when no
+	 * Publish is in flight.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
+	TArray<FString> PlannedSteps;
+
+	/** Index of the running step in PlannedSteps. INDEX_NONE outside a Publish. */
+	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
+	int32 CurrentStepIndex = INDEX_NONE;
 
 	bool IsBusy() const;
 };

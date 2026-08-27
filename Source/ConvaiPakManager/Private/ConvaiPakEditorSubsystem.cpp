@@ -9,7 +9,9 @@
 #include "Core/WorkflowManagerSubsystem.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "ContentBrowserModule.h"
+#include "Editor.h"
 #include "Engine/Blueprint.h"
+#include "EngineUtils.h"
 #include "Engine/TargetPoint.h"
 #include "Engine/World.h"
 #include "IContentBrowserSingleton.h"
@@ -96,6 +98,63 @@ FString UConvaiPakEditorSubsystem::GetAssetId(const int32 ChunkId) const
 bool UConvaiPakEditorSubsystem::CanAddAnotherChunk() const
 {
 	return !UCPM_PakManagerSettings::Get().IsAtChunkLimit(GetChunkIds().Num());
+}
+
+ECPM_AssetType UConvaiPakEditorSubsystem::GetAssetType() const
+{
+	return UCPM_UtilityLibrary::GetAssetType();
+}
+
+TArray<FCPM_PakPlatformStatus> UConvaiPakEditorSubsystem::GetPakStatuses(const int32 ChunkId) const
+{
+	TArray<FCPM_PakPlatformStatus> Statuses;
+	for (const ECPM_Platform Platform : { ECPM_Platform::Windows, ECPM_Platform::Linux })
+	{
+		FCPM_PakPlatformStatus& Status = Statuses.AddDefaulted_GetRef();
+		Status.Platform = Platform;
+		Status.PakPath = UCPM_UtilityLibrary::GetPakFilePathFromChunkID(Platform, FString::FromInt(ChunkId));
+
+		// Size first: ValidatePakFile mounts the Pak, which is not worth doing on a file that is
+		// absent or empty - and it logs an error for a missing file, which "not packaged yet" is not.
+		const int64 Size = IFileManager::Get().FileSize(*Status.PakPath);
+		Status.bExists = Size > 0 && UCPM_UtilityLibrary::ValidatePakFile(Status.PakPath);
+		if (Status.bExists)
+		{
+			Status.LastPackagedTime = IFileManager::Get().GetTimeStamp(*Status.PakPath);
+		}
+	}
+	return Statuses;
+}
+
+FCPM_SpawnPointStatus UConvaiPakEditorSubsystem::GetSpawnPointStatus() const
+{
+	FCPM_SpawnPointStatus Status;
+
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World)
+	{
+		return Status;
+	}
+
+	// The tag AddSpawnPoint writes. FName makes "EditorSpawn" and "editorspawn" the same tag.
+	static const FName EditorSpawnTag(TEXT("EditorSpawn"));
+
+	const AActor* Sole = nullptr;
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		const AActor* Actor = *It;
+		if (IsValid(Actor) && !Actor->IsPendingKillPending() && Actor->ActorHasTag(EditorSpawnTag))
+		{
+			++Status.Count;
+			Sole = Actor;
+		}
+	}
+
+	if (Status.Count == 1)
+	{
+		Status.Transform = Sole->GetActorTransform();
+	}
+	return Status;
 }
 
 namespace
@@ -317,6 +376,18 @@ AActor* UConvaiPakEditorSubsystem::AddSpawnPoint()
 	return SpawnPoint;
 }
 
+bool UConvaiPakEditorSubsystem::SetSpawnPointFromViewport()
+{
+	if (GetSpawnPointStatus().Count > 1)
+	{
+		return false;
+	}
+
+	// SpawnAndSnapActorToView already snaps the sole tagged actor to the view instead of spawning a
+	// second one, so add and move share one path.
+	return AddSpawnPoint() != nullptr;
+}
+
 FString UConvaiPakEditorSubsystem::GetThumbnailPath(const int32 ChunkId) const
 {
 	return ConvaiPakManager::Chunk::GetThumbnailPath(ChunkId);
@@ -394,16 +465,29 @@ void UConvaiPakEditorSubsystem::ResolvePolicy(
 
 bool UConvaiPakEditorSubsystem::Publish(const int32 ChunkId)
 {
+	return BeginPolicyRun(ChunkId, /*bPackageOnly=*/false);
+}
+
+bool UConvaiPakEditorSubsystem::Package(const int32 ChunkId)
+{
+	return BeginPolicyRun(ChunkId, /*bPackageOnly=*/true);
+}
+
+bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool bPackageOnly)
+{
+	const ECPM_AssetManagerStatus Refusal =
+		bPackageOnly ? ECPM_AssetManagerStatus::Packaging_Failed : ECPM_AssetManagerStatus::Create_Failed;
+
 	if (!GetChunkIds().Contains(ChunkId))
 	{
-		SetStatus(ChunkId, ECPM_AssetManagerStatus::Create_Failed,
+		SetStatus(ChunkId, Refusal,
 			FString::Printf(TEXT("no Primary Asset Label in this project declares chunk %d"), ChunkId));
 		return false;
 	}
 
 	if (ActivePublishes.Contains(ChunkId))
 	{
-		SetStatus(ChunkId, ECPM_AssetManagerStatus::Create_Failed, TEXT("this chunk is already publishing"));
+		SetStatus(ChunkId, Refusal, TEXT("this chunk is already publishing"));
 		return false;
 	}
 
@@ -413,7 +497,7 @@ bool UConvaiPakEditorSubsystem::Publish(const int32 ChunkId)
 	// shape may depend only on what the caller knew before building it - so it is resolved first and
 	// the queue is built from the answer. See docs/adr/0004 and the Job System's docs/adr/0009.
 	TWeakObjectPtr<UConvaiPakEditorSubsystem> WeakThis(this);
-	ResolvePolicy(ChunkId, [WeakThis, ChunkId](const bool bSucceeded, const FCPM_PublishPolicy& Policy, const FString& Error)
+	ResolvePolicy(ChunkId, [WeakThis, ChunkId, bPackageOnly](const bool bSucceeded, const FCPM_PublishPolicy& Policy, const FString& Error)
 	{
 		UConvaiPakEditorSubsystem* Self = WeakThis.Get();
 		if (!Self)
@@ -427,14 +511,14 @@ bool UConvaiPakEditorSubsystem::Publish(const int32 ChunkId)
 			return;
 		}
 
-		Self->StartPublishWorkflow(ChunkId, Policy);
+		Self->StartPublishWorkflow(ChunkId, Policy, bPackageOnly);
 	});
 
 	// Accepted. Whether it succeeds arrives later, as this Chunk's status.
 	return true;
 }
 
-FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(const int32 ChunkId, const FCPM_PublishPolicy& Policy)
+FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(const int32 ChunkId, const FCPM_PublishPolicy& Policy, const bool bPackageOnly)
 {
 	UWorkflowManagerSubsystem* Manager = UWorkflowManagerSubsystem::Get();
 	if (!Manager)
@@ -445,26 +529,36 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(const int32 Chun
 
 	const bool bHasPaks = !Policy.PlatformsToPackage().IsEmpty();
 
+	if (bPackageOnly && !bHasPaks)
+	{
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Packaging_Failed, TEXT("the publish policy asks for no platforms"));
+		return FWorkflowHandle::Invalid();
+	}
+
 	FWorkflowRequest Request;
 
 	if (bHasPaks)
 	{
 		Request.Jobs.Add(NewObject<UCPM_PackagePaksJob>(this));
 	}
-	if (Policy.bUploadRawProject)
+
+	if (!bPackageOnly)
 	{
-		Request.Jobs.Add(NewObject<UCPM_ArchiveRawProjectJob>(this));
+		if (Policy.bUploadRawProject)
+		{
+			Request.Jobs.Add(NewObject<UCPM_ArchiveRawProjectJob>(this));
+		}
+
+		Request.Jobs.Add(NewObject<UCPM_CreateAssetJob>(this));
+
+		UCPM_UploadArtifactsJob* Upload = NewObject<UCPM_UploadArtifactsJob>(this);
+		// Configured before it joins the queue: IDeclareIO is asked once, at queue build, and must
+		// already know whether to require Paks and a raw archive.
+		Upload->Configure(bHasPaks, Policy.bUploadRawProject);
+		Request.Jobs.Add(Upload);
+
+		Request.Jobs.Add(NewObject<UCPM_PersistChunkStateJob>(this));
 	}
-
-	Request.Jobs.Add(NewObject<UCPM_CreateAssetJob>(this));
-
-	UCPM_UploadArtifactsJob* Upload = NewObject<UCPM_UploadArtifactsJob>(this);
-	// Configured before it joins the queue: IDeclareIO is asked once, at queue build, and must
-	// already know whether to require Paks and a raw archive.
-	Upload->Configure(bHasPaks, Policy.bUploadRawProject);
-	Request.Jobs.Add(Upload);
-
-	Request.Jobs.Add(NewObject<UCPM_PersistChunkStateJob>(this));
 
 	FCPM_PublishRequest PublishRequest;
 	PublishRequest.ChunkId = ChunkId;
@@ -479,17 +573,37 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(const int32 Chun
 			Self->HandleWorkflowProgress(ChunkId, Info);
 		}
 	});
-	Request.OnFinishedNative.BindLambda([WeakThis, ChunkId](const FWorkflowStatusInfo& Info, const FWorkflowResult&)
+	Request.OnFinishedNative.BindLambda([WeakThis, ChunkId, bPackageOnly](const FWorkflowStatusInfo& Info, const FWorkflowResult&)
 	{
 		if (UConvaiPakEditorSubsystem* Self = WeakThis.Get())
 		{
-			Self->HandleWorkflowFinished(ChunkId, Info);
+			Self->HandleWorkflowFinished(ChunkId, Info, bPackageOnly);
 		}
 	});
+
+	// One planned step per queued Job, named as the Job names itself, filled BEFORE the workflow
+	// starts so the first progress broadcast already carries them. Upload stays one step: the job
+	// reports one progress stream, and the tracker must not claim granularity it cannot report.
+	{
+		FCPM_ChunkStatus& Stored = StatusByChunk.FindOrAdd(ChunkId);
+		Stored.ChunkId = ChunkId;
+		Stored.PlannedSteps.Reset();
+		for (const TScriptInterface<IJobInterface>& Job : Request.Jobs)
+		{
+			Stored.PlannedSteps.Add(IJobInterface::Execute_IGetJobConfig(Job.GetObject()).Name);
+		}
+		Stored.CurrentStepIndex = INDEX_NONE;
+	}
 
 	const FWorkflowHandle Handle = Manager->ICreateWorkflow(Request);
 	if (!Handle.IsValid())
 	{
+		if (FCPM_ChunkStatus* Stored = StatusByChunk.Find(ChunkId))
+		{
+			Stored->PlannedSteps.Reset();
+			Stored->CurrentStepIndex = INDEX_NONE;
+		}
+
 		// The queue was rejected before anything ran - a Job requiring something no earlier Job
 		// produces. Worth surfacing as-is rather than as a generic failure: it is a wiring bug, and
 		// the job system has already logged which type went unsatisfied.
@@ -512,17 +626,32 @@ void UConvaiPakEditorSubsystem::HandleWorkflowProgress(const int32 ChunkId, cons
 		Phase = Job->GetPhaseStatus();
 	}
 
+	{
+		// Queue position maps 1:1 onto PlannedSteps - no groups here, one planned step per Job.
+		FCPM_ChunkStatus& Stored = StatusByChunk.FindOrAdd(ChunkId);
+		Stored.CurrentStepIndex =
+			Stored.PlannedSteps.IsValidIndex(Info.CurrentJob.Index) ? Info.CurrentJob.Index : INDEX_NONE;
+	}
+
 	SetStatus(ChunkId, Phase, FString(), Info.Progress, Info.CurrentJob.ProgressText.ToString());
 }
 
-void UConvaiPakEditorSubsystem::HandleWorkflowFinished(const int32 ChunkId, const FWorkflowStatusInfo& Info)
+void UConvaiPakEditorSubsystem::HandleWorkflowFinished(const int32 ChunkId, const FWorkflowStatusInfo& Info, const bool bPackageOnly)
 {
 	ActivePublishes.Remove(ChunkId);
+
+	if (FCPM_ChunkStatus* Stored = StatusByChunk.Find(ChunkId))
+	{
+		Stored->PlannedSteps.Reset();
+		Stored->CurrentStepIndex = INDEX_NONE;
+	}
 
 	switch (Info.Status)
 	{
 	case EWorkflowStatus::Completed:
-		SetStatus(ChunkId, ECPM_AssetManagerStatus::UploadPak_Success, FString(), 1.0f);
+		SetStatus(ChunkId,
+			bPackageOnly ? ECPM_AssetManagerStatus::Packaging_Success : ECPM_AssetManagerStatus::UploadPak_Success,
+			FString(), 1.0f);
 		break;
 
 	case EWorkflowStatus::Cancelled:
@@ -530,8 +659,11 @@ void UConvaiPakEditorSubsystem::HandleWorkflowFinished(const int32 ChunkId, cons
 		break;
 
 	default:
-		SetStatus(ChunkId, ECPM_AssetManagerStatus::UploadPak_Failed,
-			Info.ErrorMessage.IsEmpty() ? TEXT("publishing failed") : Info.ErrorMessage, Info.Progress);
+		SetStatus(ChunkId,
+			bPackageOnly ? ECPM_AssetManagerStatus::Packaging_Failed : ECPM_AssetManagerStatus::UploadPak_Failed,
+			Info.ErrorMessage.IsEmpty()
+				? (bPackageOnly ? TEXT("packaging failed") : TEXT("publishing failed"))
+				: *Info.ErrorMessage, Info.Progress);
 		break;
 	}
 }
@@ -573,6 +705,7 @@ bool UConvaiPakEditorSubsystem::DeleteAsset(const int32 ChunkId, const FString& 
 	}
 
 	DeletingChunkId = ChunkId;
+	bDeletingWholeAsset = Version.IsEmpty();
 	SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Begin);
 
 	DeleteProxy->OnSuccess.AddDynamic(this, &UConvaiPakEditorSubsystem::HandleDeleteSucceeded);
@@ -584,19 +717,46 @@ bool UConvaiPakEditorSubsystem::DeleteAsset(const int32 ChunkId, const FString& 
 void UConvaiPakEditorSubsystem::HandleDeleteSucceeded(const FString& ResponseString)
 {
 	const int32 ChunkId = DeletingChunkId;
+	const bool bWholeAsset = bDeletingWholeAsset;
 	DeletingChunkId = INDEX_NONE;
+	bDeletingWholeAsset = false;
 	DeleteProxy = nullptr;
 
-	if (ChunkId != INDEX_NONE)
+	if (ChunkId == INDEX_NONE)
 	{
-		SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Success);
+		return;
 	}
+
+	if (bWholeAsset)
+	{
+		// The Asset is gone from Convai, so the record naming it must go too - a kept AssetId would
+		// make the next Publish update something that no longer exists. Name, description and Entry
+		// Point live in the pak metadata, not here, so deleting this file keeps the creator's draft.
+		const FString RecordPath = ConvaiPakManager::Chunk::GetCreateAssetDataPath(ChunkId);
+		if (!IFileManager::Get().Delete(*RecordPath))
+		{
+			CPM_LOG(Error, TEXT("Deleted the asset on Convai but could not clear %s; this chunk still records the deleted AssetId."),
+				*RecordPath);
+		}
+
+		// The pak metadata carries server-issued identity beside the draft fields, so the identity
+		// is cleared field by field rather than by deleting the file that name and description live in.
+		WriteMetadataFields(ChunkId, {
+			{ TEXT("scene_id"), FString() },
+			{ TEXT("entity_id"), FString() },
+			{ TEXT("version"), FString() },
+		});
+	}
+
+	// Broadcast after the record is cleared, so a UI refreshing on this status reads Draft.
+	SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Success);
 }
 
 void UConvaiPakEditorSubsystem::HandleDeleteFailed(const FString& ResponseString)
 {
 	const int32 ChunkId = DeletingChunkId;
 	DeletingChunkId = INDEX_NONE;
+	bDeletingWholeAsset = false;
 	DeleteProxy = nullptr;
 
 	if (ChunkId != INDEX_NONE)
