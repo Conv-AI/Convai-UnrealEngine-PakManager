@@ -72,6 +72,44 @@ CONVAIPAKMANAGER_API FString GetModdingMetadataPath(int32 ChunkId);
 /** The captured thumbnail for this Chunk. May not exist; a Chunk can be published without one. */
 CONVAIPAKMANAGER_API FString GetThumbnailPath(int32 ChunkId);
 
+/**
+ * Fills in every field the Convai asset API requires, from the ones the document already carries.
+ *
+ * The document is the server's schema, not ours. It used to be assembled by the Asset Uploader
+ * Blueprint, which went with the Slate rebuild and took the half of the schema no C++ ever wrote -
+ * entity_data above all - with it, so create-asset now fails on a document that looks complete.
+ *
+ * Derived fields (project_name, plugin_name, asset_type, content_path, root_path) are rewritten
+ * every time: they follow from the project and are wrong, not merely absent, in a document written
+ * by a version that computed them differently. Everything a creator or the server chose is kept.
+ *
+ * Pure and file-free so it can be tested without a project on disk; NormalizePakMetadata is the
+ * load-fill-save around it.
+ */
+CONVAIPAKMANAGER_API void FillRequiredMetadataFields(
+	const TSharedRef<class FJsonObject>& Root,
+	const FString& ProjectName,
+	const FString& PluginName,
+	const FString& AssetType);
+
+/**
+ * The package path of a level recorded by short name, or the name unchanged if nothing matches.
+ *
+ * Pak Managers before this one recorded a level by its leaf, which cannot name a level in a
+ * subfolder - and RootPath is the MOUNT ROOT ("/PLUGIN/"), so gluing the two together invents a
+ * path rather than finding one. The Asset Registry is asked instead.
+ */
+CONVAIPAKMANAGER_API FString ResolveLevelPackage(const FString& LevelName, const FString& RootPath);
+
+/**
+ * Reads this Chunk's metadata document, fills what the API requires, and writes it back.
+ *
+ * Called before every create or update rather than only when a creator edits something: a Chunk
+ * published from a project last touched by an older Pak Manager has a document missing fields
+ * nobody is going to re-enter.
+ */
+CONVAIPAKMANAGER_API bool NormalizePakMetadata(int32 ChunkId);
+
 /** Result of one migration attempt, so a caller can tell "nothing to do" from "could not". */
 enum class EMigrationResult : uint8
 {

@@ -9,6 +9,7 @@
 #include "Core/WorkflowContext.h"
 #include "Interface/WorkflowInterface.h"
 #include "Misc/EngineVersion.h"
+#include "Misc/FileHelper.h"
 #include "Proxy/CPM_Proxy.h"
 #include "Utility/CPM_Log.h"
 #include "Utility/CPM_UtilityLibrary.h"
@@ -360,8 +361,19 @@ void UCPM_CreateAssetJob::IExecute_Implementation()
 	FCPM_ModdingMetadata Modding;
 	UCPM_UtilityLibrary::GetModdingMetadata(Modding);
 
+	// Filled in first, and read back by Chunk rather than through the sole-Chunk helper: what goes
+	// on the wire has to be this Chunk's document, complete, whatever version of the Pak Manager
+	// last wrote it.
+	ConvaiPakManager::Chunk::NormalizePakMetadata(Request.ChunkId);
+
 	FCPM_CreatePakAssetParams Params;
-	UCPM_UtilityLibrary::GetAssetMetaDataString(Params.MetaData);
+	FFileHelper::LoadFileToString(Params.MetaData, *ConvaiPakManager::Chunk::GetPakMetadataPath(Request.ChunkId));
+	if (Params.MetaData.IsEmpty())
+	{
+		Report(EJobResult::Failed, TEXT("this Chunk has no asset metadata to publish"));
+		return;
+	}
+
 	Params.Entity_Type = Modding.AssetType.ToLower();
 
 	// The upload endpoint rejects a request with no tags. Everything published from here is a pak,

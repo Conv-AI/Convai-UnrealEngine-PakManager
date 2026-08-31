@@ -6,8 +6,13 @@
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Engine/PrimaryAssetLabel.h"
 #include "HAL/FileManager.h"
+#include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
 #include "Utility/CPM_Log.h"
+#include "Utility/CPM_UtilityLibrary.h"
 
 namespace ConvaiPakManager::Chunk
 {
@@ -256,5 +261,198 @@ EMigrationResult MigrateLegacyLayoutIn(
 EMigrationResult MigrateLegacyLayout(TArray<FString>& OutMovedFiles)
 {
 	return MigrateLegacyLayoutIn(GetEssentialsDirectory(), GetSoleChunkId(), OutMovedFiles);
+}
+
+namespace
+{
+	/** The leaf of a package path: "/PLUGIN/Maps/Landing" -> "Landing". Already-short names pass through. */
+	FString LeafOf(const FString& PackagePath)
+	{
+		int32 LastSlash = INDEX_NONE;
+		return PackagePath.FindLastChar(TEXT('/'), LastSlash)
+			? PackagePath.RightChop(LastSlash + 1)
+			: PackagePath;
+	}
+
+	/** Sets Field to Fallback only if the document does not already carry a non-empty value for it. */
+	void DefaultString(const TSharedRef<FJsonObject>& Root, const TCHAR* Field, const FString& Fallback)
+	{
+		FString Existing;
+		if (!Root->TryGetStringField(Field, Existing) || Existing.IsEmpty())
+		{
+			Root->SetStringField(Field, Fallback);
+		}
+	}
+
+	TSharedRef<FJsonObject> ObjectFieldOrEmpty(const TSharedRef<FJsonObject>& Root, const TCHAR* Field)
+	{
+		const TSharedPtr<FJsonObject>* Existing = nullptr;
+		return Root->TryGetObjectField(Field, Existing) && Existing && Existing->IsValid()
+			? (*Existing).ToSharedRef()
+			: MakeShared<FJsonObject>();
+	}
+}
+
+void FillRequiredMetadataFields(
+	const TSharedRef<FJsonObject>& Root,
+	const FString& ProjectName,
+	const FString& PluginName,
+	const FString& AssetType)
+{
+	const FString Type = AssetType.ToLower();
+
+	Root->SetStringField(TEXT("project_name"), ProjectName);
+	Root->SetStringField(TEXT("plugin_name"), PluginName);
+	Root->SetStringField(TEXT("asset_type"), Type);
+
+	// Relative to the packaged binary, and into the plugin the Modding Tool made - NOT the project's
+	// own Content, which is where every field of this document was pointing when create-asset began
+	// failing.
+	Root->SetStringField(TEXT("content_path"),
+		FString::Printf(TEXT("../../../%s/Plugins/%s/Content/"), *ProjectName, *PluginName));
+
+	// Only a fallback: the mount point a package actually lives under is known exactly when the
+	// creator picks the Entry Point, and an internal project can mount its content elsewhere.
+	if (!PluginName.IsEmpty())
+	{
+		DefaultString(Root, TEXT("root_path"), FString::Printf(TEXT("/%s/"), *PluginName));
+	}
+
+	DefaultString(Root, TEXT("asset_name"), ProjectName);
+	DefaultString(Root, TEXT("asset_description"), FString());
+	DefaultString(Root, TEXT("level_name"), FString());
+	DefaultString(Root, TEXT("blueprint_class_path"), FString());
+
+	// "None" rather than "": the shape a published Asset carries for the class it does not have, and
+	// what a product's class resolution reads as "there is no blueprint here".
+	DefaultString(Root, TEXT("blueprint_class"), TEXT("None"));
+
+	FString AssetName;
+	Root->TryGetStringField(TEXT("asset_name"), AssetName);
+
+	// entity_data is merged, never rebuilt: it is the half of the schema the Pak Manager models
+	// least, and the server puts things in it that nothing here would know to put back.
+	const TSharedRef<FJsonObject> Entity = ObjectFieldOrEmpty(Root, TEXT("entity_data"));
+	if (Type == TEXT("avatar"))
+	{
+		FString ClassPath;
+		Root->TryGetStringField(TEXT("blueprint_class_path"), ClassPath);
+		if (ClassPath.IsEmpty())
+		{
+			DefaultString(Entity, TEXT("avatar_name"), AssetName);
+		}
+		else
+		{
+			Entity->SetStringField(TEXT("avatar_name"), LeafOf(ClassPath));
+		}
+		DefaultString(Entity, TEXT("gender"), TEXT("male"));
+		if (!Entity->HasField(TEXT("avatar_config")))
+		{
+			Entity->SetObjectField(TEXT("avatar_config"), MakeShared<FJsonObject>());
+		}
+	}
+	else
+	{
+		FString LevelName;
+		Root->TryGetStringField(TEXT("level_name"), LevelName);
+		if (LevelName.IsEmpty())
+		{
+			DefaultString(Entity, TEXT("scene_name"), AssetName);
+		}
+		else
+		{
+			Entity->SetStringField(TEXT("scene_name"), LeafOf(LevelName));
+		}
+		DefaultString(Entity, TEXT("scene_description"), TEXT("Pak scene"));
+		if (!Entity->HasField(TEXT("scene_metadata")))
+		{
+			Entity->SetObjectField(TEXT("scene_metadata"), MakeShared<FJsonObject>());
+		}
+	}
+	Root->SetObjectField(TEXT("entity_data"), Entity);
+}
+
+FString ResolveLevelPackage(const FString& LevelName, const FString& RootPath)
+{
+	if (LevelName.IsEmpty() || LevelName.StartsWith(TEXT("/")))
+	{
+		return LevelName;
+	}
+
+	FARFilter Filter;
+	Filter.ClassPaths.Add(UWorld::StaticClass()->GetClassPathName());
+	Filter.bRecursivePaths = true;
+	FString SearchRoot = RootPath;
+	SearchRoot.RemoveFromEnd(TEXT("/"));
+	if (!SearchRoot.IsEmpty())
+	{
+		Filter.PackagePaths.Add(FName(*SearchRoot));
+	}
+
+	TArray<FAssetData> Levels;
+	if (const IAssetRegistry* AssetRegistry = IAssetRegistry::Get())
+	{
+		AssetRegistry->GetAssets(Filter, Levels);
+	}
+	for (const FAssetData& Level : Levels)
+	{
+		if (Level.AssetName.ToString() == LevelName)
+		{
+			return Level.PackageName.ToString();
+		}
+	}
+
+	// No longer on disk. The short name still says which level was picked.
+	return LevelName;
+}
+
+bool NormalizePakMetadata(const int32 ChunkId)
+{
+	const FString Path = GetPakMetadataPath(ChunkId);
+
+	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
+	FString Contents;
+	if (FFileHelper::LoadFileToString(Contents, *Path))
+	{
+		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Contents);
+		TSharedPtr<FJsonObject> Parsed;
+		if (!FJsonSerializer::Deserialize(Reader, Parsed) || !Parsed.IsValid())
+		{
+			// Same refusal as every other edit of this document: it holds the only copy of things
+			// nobody can re-enter, so an unparseable one is left exactly as it is.
+			CPM_LOG(Error, TEXT("Refusing to normalize %s: it is not valid JSON."), *Path);
+			return false;
+		}
+		Root = Parsed;
+	}
+
+	// Upgraded here rather than left to the creator to re-pick: a document written by an older Pak
+	// Manager holds the leaf alone, and the API wants the path.
+	FString LevelName, RootPath;
+	Root->TryGetStringField(TEXT("level_name"), LevelName);
+	Root->TryGetStringField(TEXT("root_path"), RootPath);
+	if (!LevelName.IsEmpty() && !LevelName.StartsWith(TEXT("/")))
+	{
+		Root->SetStringField(TEXT("level_name"), ResolveLevelPackage(LevelName, RootPath));
+	}
+
+	FCPM_ModdingMetadata Modding;
+	UCPM_UtilityLibrary::GetModdingMetadata(Modding);
+
+	FillRequiredMetadataFields(
+		Root.ToSharedRef(),
+		UCPM_UtilityLibrary::GetProjectName(),
+		Modding.PluginName,
+		Modding.AssetType);
+
+	FString Serialised;
+	const TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>> Writer =
+		TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&Serialised);
+	if (!FJsonSerializer::Serialize(Root.ToSharedRef(), Writer))
+	{
+		return false;
+	}
+
+	return FFileHelper::SaveStringToFile(Serialised, *Path);
 }
 }

@@ -257,40 +257,9 @@ FString UConvaiPakEditorSubsystem::GetEntryPoint(const int32 ChunkId) const
 		return BlueprintPath;
 	}
 
-	// A level is recorded by short name - that is what a product loads it by - and root_path is the
-	// MOUNT ROOT ("/Game/") rather than its folder, so gluing the two together would invent a path
-	// that drops any subfolder. The package is found again through the registry instead.
-	const FString LevelName = ReadMetadataField(ChunkId, TEXT("level_name"));
-	if (LevelName.IsEmpty())
-	{
-		return LevelName;
-	}
-
-	FARFilter Filter;
-	Filter.ClassPaths.Add(UWorld::StaticClass()->GetClassPathName());
-	Filter.bRecursivePaths = true;
-	FString RootPath = ReadMetadataField(ChunkId, TEXT("root_path"));
-	RootPath.RemoveFromEnd(TEXT("/"));
-	if (!RootPath.IsEmpty())
-	{
-		Filter.PackagePaths.Add(FName(*RootPath));
-	}
-
-	TArray<FAssetData> Levels;
-	if (const IAssetRegistry* AssetRegistry = IAssetRegistry::Get())
-	{
-		AssetRegistry->GetAssets(Filter, Levels);
-	}
-	for (const FAssetData& Level : Levels)
-	{
-		if (Level.AssetName.ToString() == LevelName)
-		{
-			return Level.PackageName.ToString();
-		}
-	}
-
-	// No longer on disk. The short name still says an Entry Point was picked, and which one.
-	return LevelName;
+	return ConvaiPakManager::Chunk::ResolveLevelPackage(
+		ReadMetadataField(ChunkId, TEXT("level_name")),
+		ReadMetadataField(ChunkId, TEXT("root_path")));
 }
 
 bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString& PackageName)
@@ -351,14 +320,16 @@ bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString
 		}
 	}
 
-	const FString AssetName = FPaths::GetCleanFilename(PackageName);
+	const FString EntryPointName = FPaths::GetCleanFilename(PackageName);
 
 	TMap<FString, FString> Fields;
 	Fields.Add(TEXT("root_path"), RootPath);
 	if (bIsLevel)
 	{
-		Fields.Add(TEXT("level_name"), AssetName);
-		Fields.Add(TEXT("blueprint_class"), FString());
+		// The whole package path, not the leaf: it is what the Asset API resolves the level by, and
+		// a leaf alone cannot name a level in a subfolder.
+		Fields.Add(TEXT("level_name"), PackageName);
+		Fields.Add(TEXT("blueprint_class"), TEXT("None"));
 		Fields.Add(TEXT("blueprint_class_path"), FString());
 	}
 	else
@@ -366,20 +337,18 @@ bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString
 		Fields.Add(TEXT("level_name"), FString());
 		// The exact shape a product resolves the class by. Taken verbatim from a published avatar.
 		Fields.Add(TEXT("blueprint_class"),
-			FString::Printf(TEXT("/Script/Engine.BlueprintGeneratedClass'%s.%s_C'"), *PackageName, *AssetName));
+			FString::Printf(TEXT("/Script/Engine.BlueprintGeneratedClass'%s.%s_C'"), *PackageName, *EntryPointName));
 		Fields.Add(TEXT("blueprint_class_path"), PackageName);
 	}
 
-	if (ReadMetadataField(ChunkId, TEXT("content_path")).IsEmpty())
+	if (!WriteMetadataFields(ChunkId, Fields))
 	{
-		Fields.Add(TEXT("content_path"),
-			FString::Printf(TEXT("../../../%s/Content/"), *UCPM_UtilityLibrary::GetProjectName()));
+		return false;
 	}
-	Fields.Add(TEXT("project_name"), UCPM_UtilityLibrary::GetProjectName());
-	Fields.Add(TEXT("plugin_name"), Modding.PluginName);
-	Fields.Add(TEXT("asset_type"), Modding.AssetType.ToLower());
 
-	return WriteMetadataFields(ChunkId, Fields);
+	// The rest of the document - project_name, plugin_name, asset_type, content_path, entity_data -
+	// follows from these and from the project, and entity_data names the Entry Point just set.
+	return ConvaiPakManager::Chunk::NormalizePakMetadata(ChunkId);
 }
 
 bool UConvaiPakEditorSubsystem::PickEntryPointFromSelection(const int32 ChunkId)
