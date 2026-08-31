@@ -26,6 +26,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static bool ValidatePakFile(const FString& PakFilePath);
+
+	/** True when a Pak is on disk at this path and mounts - what "already packaged" means everywhere. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
+	static bool IsPakUsable(const FString& PakFilePath);
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static void GetAssetID(FString& AssetID);

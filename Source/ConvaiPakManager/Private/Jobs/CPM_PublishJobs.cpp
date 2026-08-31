@@ -3,6 +3,7 @@
 #include "Jobs/CPM_PublishJobs.h"
 
 #include "CPM_Defination.h"
+#include "CPM_PakManagerSettings.h"
 #include "Chunk/CPM_Chunk.h"
 #include "ConvaiPakManagerEditorUtils.h"
 #include "Core/WorkflowContext.h"
@@ -166,6 +167,29 @@ void UCPM_PackagePaksJob::PackageNextPlatform()
 	}
 
 	const ECPM_Platform Platform = Remaining[0];
+
+	const int32 Done = Built.Num();
+	const int32 Total = Done + Remaining.Num();
+	const float Progress = Total > 0 ? static_cast<float>(Done) / static_cast<float>(Total) : 0.0f;
+
+	// Warned about rather than merely logged: from here on nothing distinguishes a Pak built before
+	// the creator's last edit from one built from it, so the only chance to say so is now.
+	const FCPM_PakArtifact Existing = ArtifactFor(Platform);
+	if (UCPM_PakManagerSettings::Get().bUseExistingPakFile && UCPM_UtilityLibrary::IsPakUsable(Existing.PakPath))
+	{
+		UCPM_UtilityLibrary::CPM_LogMessage(
+			FString::Printf(TEXT("Publishing the existing Pak at %s - packaging %s was skipped because Use Existing Pak File is on"),
+				*Existing.PakPath, *PlatformName(Platform)),
+			ECPM_LogLevel::Warning);
+
+		ReportProgress(FString::Printf(TEXT("Using the existing %s Pak"), *PlatformName(Platform)), Progress);
+
+		Remaining.RemoveAt(0);
+		Built.Add(Existing);
+		PackageNextPlatform();
+		return;
+	}
+
 	const FCPM_PlatformPolicy* Policy = Request.Policy.Find(Platform);
 	if (!Policy)
 	{
@@ -178,14 +202,20 @@ void UCPM_PackagePaksJob::PackageNextPlatform()
 	Param.Configuration = Policy->Configuration;
 	Param.OutputDirectory = UCPM_UtilityLibrary::GetPackageDirectory();
 
-	const int32 Done = Built.Num();
-	const int32 Total = Done + Remaining.Num();
-	ReportProgress(FString::Printf(TEXT("Packaging %s"), *PlatformName(Platform)),
-		Total > 0 ? static_cast<float>(Done) / static_cast<float>(Total) : 0.0f);
+	ReportProgress(FString::Printf(TEXT("Packaging %s"), *PlatformName(Platform)), Progress);
 
 	FOnUatTaskResultCallack OnFinished;
 	OnFinished.BindDynamic(this, &UCPM_PackagePaksJob::HandlePackageFinished);
 	UConvaiPakManagerEditorUtils::CPM_PackageProject(Param, OnFinished);
+}
+
+FCPM_PakArtifact UCPM_PackagePaksJob::ArtifactFor(const ECPM_Platform Platform) const
+{
+	FCPM_PakArtifact Artifact;
+	Artifact.Platform = Platform;
+	Artifact.VersionSlot = VersionSlotForPlatform(Platform);
+	Artifact.PakPath = UCPM_UtilityLibrary::GetPakFilePathFromChunkID(Platform, FString::FromInt(Request.ChunkId));
+	return Artifact;
 }
 
 void UCPM_PackagePaksJob::HandlePackageFinished(const FString& Result, double Runtime)
@@ -218,11 +248,7 @@ void UCPM_PackagePaksJob::HandlePackageFinished(const FString& Result, double Ru
 		return;
 	}
 
-	FCPM_PakArtifact Artifact;
-	Artifact.Platform = Platform;
-	Artifact.VersionSlot = VersionSlotForPlatform(Platform);
-	Artifact.PakPath = UCPM_UtilityLibrary::GetPakFilePathFromChunkID(
-		Platform, FString::FromInt(Request.ChunkId));
+	const FCPM_PakArtifact Artifact = ArtifactFor(Platform);
 
 	// Checked here rather than at upload: UAT reporting Completed while producing no Pak for this
 	// Chunk means the label did not take, and saying so now names the step that actually went wrong.

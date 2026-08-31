@@ -132,6 +132,13 @@ bool UCPM_UtilityLibrary::ValidatePakFile(const FString& PakFilePath)
 	return true;
 }
 
+bool UCPM_UtilityLibrary::IsPakUsable(const FString& PakFilePath)
+{
+	// Size first: ValidatePakFile mounts the Pak, which is not worth doing on a file that is absent
+	// or empty - and it logs an error for a missing file, which "not packaged yet" is not.
+	return IFileManager::Get().FileSize(*PakFilePath) > 0 && ValidatePakFile(PakFilePath);
+}
+
 void UCPM_UtilityLibrary::GetAssetID(FString& AssetID)
 {
 	FCPM_CreatedAssets OutData;

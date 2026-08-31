@@ -114,10 +114,7 @@ TArray<FCPM_PakPlatformStatus> UConvaiPakEditorSubsystem::GetPakStatuses(const i
 		Status.Platform = Platform;
 		Status.PakPath = UCPM_UtilityLibrary::GetPakFilePathFromChunkID(Platform, FString::FromInt(ChunkId));
 
-		// Size first: ValidatePakFile mounts the Pak, which is not worth doing on a file that is
-		// absent or empty - and it logs an error for a missing file, which "not packaged yet" is not.
-		const int64 Size = IFileManager::Get().FileSize(*Status.PakPath);
-		Status.bExists = Size > 0 && UCPM_UtilityLibrary::ValidatePakFile(Status.PakPath);
+		Status.bExists = UCPM_UtilityLibrary::IsPakUsable(Status.PakPath);
 		if (Status.bExists)
 		{
 			Status.LastPackagedTime = IFileManager::Get().GetTimeStamp(*Status.PakPath);

@@ -78,6 +78,9 @@ public:
 private:
 	void PackageNextPlatform();
 
+	/** Where this platform's Pak belongs, whether it was cooked this run or found already there. */
+	FCPM_PakArtifact ArtifactFor(ECPM_Platform Platform) const;
+
 	UFUNCTION()
 	void HandlePackageFinished(const FString& Result, double Runtime);
 

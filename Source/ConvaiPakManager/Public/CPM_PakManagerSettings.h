@@ -47,6 +47,21 @@ public:
 		return MaxChunksPerProject > 0 && ExistingChunkCount >= MaxChunksPerProject;
 	}
 
+	/**
+	 * Publish the Pak already sitting in PackagedApp instead of cooking a new one.
+	 *
+	 * For iterating on everything downstream of the cook - upload, metadata, the Convai side - where
+	 * minutes of packaging per attempt is the entire cost of a run.
+	 *
+	 * Off by default, and deliberately not something to leave on: a Pak built before the current
+	 * edits publishes the content it was built from, and nothing downstream of here - not the
+	 * upload, not Convai, not the creator - can tell that from a fresh one. A platform with no
+	 * usable Pak on disk is still packaged normally.
+	 */
+	UPROPERTY(config, EditAnywhere, Category = "Publishing",
+		meta = (DisplayName = "Use Existing Pak File"))
+	bool bUseExistingPakFile = false;
+
 	/** Repository holding the Publish Policy Convai publishes. */
 	UPROPERTY(config, EditAnywhere, Category = "Publish Policy")
 	FString PolicyRepository = TEXT("Conv-AI/Convai-UnrealEngine-ModdingTool");
