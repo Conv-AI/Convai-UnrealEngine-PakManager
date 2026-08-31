@@ -30,6 +30,10 @@
 #include "ScopedTransaction.h" // For FScopedTransaction
 #include "Editor/EditorEngine.h" // For GEditor
 #include "Elements/Framework/TypedElementHandle.h" // For FTypedElementHandle
+#include "Engine/PrimaryAssetLabel.h"
+#include "AssetRegistry/IAssetRegistry.h"
+#include "EditorAssetLibrary.h"
+#include "Utility/CPM_Log.h"
 
 void UConvaiPakManagerEditorUtils::CPM_MarkAssetDirty(UObject* Asset)
 {
@@ -102,6 +106,56 @@ void UConvaiPakManagerEditorUtils::CPM_SetPlayMode(const bool bPlay)
 }
 
 
+namespace
+{
+	/**
+	 * A PrimaryAssetLabel bakes the set of assets it labels into its own package when it is saved, and
+	 * the cook builds its manager graph from that serialized set rather than re-deriving it. Labels are
+	 * created before content is copied into their folder, so the set on disk is just the label itself:
+	 * every asset the label was meant to claim lands in chunk 0 and the requested pakchunk is never
+	 * emitted. Saving re-derives the set in PreSave, so re-saving the labels here is what makes the cook
+	 * agree with what the panel shows.
+	 *
+	 * Unconditional on purpose. Whether the serialized set is stale cannot be read back: loading a label
+	 * refreshes the copy the Asset Registry hands out, and the panel's own Chunk discovery loads every
+	 * label at start-up, so by the time packaging runs nothing still looks stale.
+	 */
+	void ResavePrimaryAssetLabels()
+	{
+		IAssetRegistry* AssetRegistry = IAssetRegistry::Get();
+		if (!AssetRegistry)
+		{
+			CPM_LOG(Warning, TEXT("No Asset Registry; packaging without refreshing the Chunk labels."));
+			return;
+		}
+
+		FARFilter Filter;
+		Filter.ClassPaths.Add(UPrimaryAssetLabel::StaticClass()->GetClassPathName());
+		Filter.bRecursiveClasses = true;
+
+		TArray<FAssetData> Labels;
+		AssetRegistry->GetAssets(Filter, Labels);
+
+		int32 Saved = 0;
+		for (const FAssetData& Label : Labels)
+		{
+			UObject* Asset = Label.GetAsset();
+			if (Asset && UEditorAssetLibrary::SaveLoadedAsset(Asset, /*bOnlyIfIsDirty=*/false))
+			{
+				++Saved;
+			}
+			else
+			{
+				CPM_LOG(Warning, TEXT("Could not re-save '%s'; its Chunk may collapse into pakchunk0."),
+					*Label.PackageName.ToString());
+			}
+		}
+
+		CPM_LOG(Log, TEXT("Re-saved %d of %d PrimaryAssetLabel(s) before packaging."), Saved, Labels.Num());
+	}
+}
+
+
 void UConvaiPakManagerEditorUtils::CPM_PackageProject(const FCPM_PackageParam& PackageParam, const FOnUatTaskResultCallack OnPackagingCompleted)
 {
 	if (!PackageParam.IsValid())
@@ -109,6 +163,8 @@ void UConvaiPakManagerEditorUtils::CPM_PackageProject(const FCPM_PackageParam& P
         UE_LOG(LogTemp, Error, TEXT("PackageParam is not valid"));
         return;
     }
+
+    ResavePrimaryAssetLabels();
 
     const FString ProjectFilePath = FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
     const FString ProjectName = FPaths::GetBaseFilename(ProjectFilePath);
