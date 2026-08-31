@@ -136,7 +136,11 @@ struct CONVAIPAKMANAGER_API FCPM_PublishedAsset
 	UPROPERTY()
 	FString AssetId;
 
-	/** Keyed by Version slot, as minted by assets/upload. */
+	/**
+	 * Keyed by Version slot. NOT how the server returns them - it keys upload_urls by what the
+	 * artefact is ("scene_asset") and mints one per call - so each URL is filed here under the
+	 * Version the call that minted it named.
+	 */
 	UPROPERTY()
 	TMap<FString, FString> UploadUrlsByVersion;
 

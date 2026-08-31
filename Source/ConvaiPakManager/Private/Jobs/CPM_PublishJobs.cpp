@@ -48,6 +48,13 @@ namespace
 		const FEngineVersion& Engine = FEngineVersion::Current();
 		return FString::Printf(TEXT("ue-%d.%d-%s"), Engine.GetMajor(), Engine.GetMinor(), *PlatformName(Platform));
 	}
+
+	/** What every Asset published from here is: a Pak, and the kind of thing it holds. */
+	TArray<FString> PakTagsFor(const FString& AssetType)
+	{
+		return { TEXT("Pak"),
+			AssetType.Equals(TEXT("Scene"), ESearchCase::IgnoreCase) ? TEXT("Scene") : TEXT("Avatar") };
+	}
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -376,12 +383,11 @@ void UCPM_CreateAssetJob::IExecute_Implementation()
 
 	Params.Entity_Type = Modding.AssetType.ToLower();
 
-	// The upload endpoint rejects a request with no tags. Everything published from here is a pak,
-	// tagged with the kind of thing it holds so the catalogue can filter on it.
-	Params.Tags = { TEXT("Pak"),
-		Modding.AssetType.Equals(TEXT("Scene"), ESearchCase::IgnoreCase) ? TEXT("Scene") : TEXT("Avatar") };
+	// The upload endpoint rejects a request with no tags.
+	Params.Tags = PakTagsFor(Modding.AssetType);
 	Params.Version = VersionSlotForPlatform(
 		Request.Policy.PlatformsToPackage().IsEmpty() ? ECPM_Platform::Windows : Request.Policy.PlatformsToPackage()[0]);
+	RequestedVersion = Params.Version;
 	Params.Thumbnail = UCPM_UtilityLibrary::CPM_LoadTexture2DFromDisk(
 		ConvaiPakManager::Chunk::GetThumbnailPath(Request.ChunkId));
 
@@ -433,8 +439,22 @@ void UCPM_CreateAssetJob::HandleCreated(const FCPM_CreatedAssets& Response)
 
 	FCPM_PublishedAsset Published;
 	Published.AssetId = Created.Asset.AssetId;
-	Published.UploadUrlsByVersion = Created.UploadUrls.UploadURLsMap;
 	Published.RawResponse = CreateProxy ? CreateProxy->GetResponseString() : FString();
+
+	// Re-keyed by the Version asked for: the server files the URL under what the artefact is
+	// ("scene_asset"), which is not what the upload step has to look one up by. One call names one
+	// Version, so there is one URL here whatever it is called.
+	if (const auto Minted = Created.UploadUrls.UploadURLsMap.CreateConstIterator())
+	{
+		Published.UploadUrlsByVersion.Add(RequestedVersion, Minted->Value);
+	}
+	else
+	{
+		UCPM_UtilityLibrary::CPM_LogMessage(
+			FString::Printf(TEXT("assets/upload minted no URL for version '%s'. The server said: %s"),
+				*RequestedVersion, *Published.RawResponse),
+			ECPM_LogLevel::Error);
+	}
 
 	if (Published.AssetId.IsEmpty())
 	{
@@ -452,19 +472,16 @@ void UCPM_CreateAssetJob::HandleCreateFailed(const FCPM_CreatedAssets& Response)
 	Report(EJobResult::Failed, TEXT("the server refused to create the asset"));
 }
 
-void UCPM_CreateAssetJob::HandleUpdated(const FString& ResponseString)
+void UCPM_CreateAssetJob::HandleUpdated(const FString& MintedUrl)
 {
-	// An update answers with either the minted upload URL or the whole response body, depending on
-	// whether a Version was asked for. Both are handled by keeping the string and letting the
-	// upload step read what it needs.
+	// The proxy has already pulled the URL out of the response, so what arrives here is the URL
+	// minted for the one Version this request named - filed under that Version, because the key the
+	// server used names the artefact rather than the Version.
+	// RawResponse is deliberately left empty: it is what the record of this Chunk's AssetID gets
+	// overwritten with, and an update answers with a URL rather than a body worth recording.
 	FCPM_PublishedAsset Published;
 	Published.AssetId = ExistingAssetId;
-	Published.RawResponse = ResponseString;
-
-	if (ResponseString.StartsWith(TEXT("http")))
-	{
-		Published.UploadUrlsByVersion.Add(TEXT("primary"), ResponseString);
-	}
+	Published.UploadUrlsByVersion.Add(RequestedVersion, MintedUrl);
 
 	TArray<FInstancedStruct> Outputs;
 	Outputs.Add(FInstancedStruct::Make(Published));
@@ -555,16 +572,13 @@ void UCPM_UploadArtifactsJob::IExecute_Implementation()
 		return;
 	}
 
-	// Resolved up front so a missing URL fails before any bytes are sent, rather than leaving an
-	// Asset with some Versions filled and others not.
-	for (const FPendingUpload& Upload : Pending)
+	// Not resolved up front any more: one call to the Asset API names one Version and is answered
+	// with the URL for that Version alone, so every Version past the one the create step named asks
+	// for its own when its turn comes. Only the AssetID is needed to ask.
+	if (Published.AssetId.IsEmpty())
 	{
-		if (!Published.UploadUrlsByVersion.Contains(Upload.VersionSlot))
-		{
-			Report(EJobResult::Failed,
-				FString::Printf(TEXT("the server minted no upload URL for version '%s'"), *Upload.VersionSlot));
-			return;
-		}
+		Report(EJobResult::Failed, TEXT("no asset id to mint upload URLs against"));
+		return;
 	}
 
 	TotalUploads = Pending.Num();
@@ -603,8 +617,7 @@ void UCPM_UploadArtifactsJob::UploadNext()
 	const FString* Url = PublishedForUpload.UploadUrlsByVersion.Find(Next.VersionSlot);
 	if (!Url)
 	{
-		Report(EJobResult::Failed,
-			FString::Printf(TEXT("the server minted no upload URL for version '%s'"), *Next.VersionSlot));
+		MintUrlForNext();
 		return;
 	}
 
@@ -620,6 +633,62 @@ void UCPM_UploadArtifactsJob::UploadNext()
 	UploadProxy->OnSuccess.AddDynamic(this, &UCPM_UploadArtifactsJob::HandleUploadSucceeded);
 	UploadProxy->OnFailure.AddDynamic(this, &UCPM_UploadArtifactsJob::HandleUploadFailed);
 	UploadProxy->Activate();
+}
+
+void UCPM_UploadArtifactsJob::MintUrlForNext()
+{
+	const FString& VersionSlot = Pending[0].VersionSlot;
+
+	// Only the Version and the AssetID: the Asset already carries the metadata, tags and thumbnail
+	// the create step sent, and re-sending them here would let a second request rewrite them.
+	FCPM_CreatePakAssetParams Params;
+	Params.Version = VersionSlot;
+
+	MintProxy = UCPM_UpdatePakAssetProxy::UpdatePakAssetProxy(PublishedForUpload.AssetId, Params);
+	if (!MintProxy)
+	{
+		Report(EJobResult::Failed,
+			FString::Printf(TEXT("could not ask for an upload URL for version '%s'"), *VersionSlot));
+		return;
+	}
+
+	ReportProgress(FString::Printf(TEXT("Preparing %s"), *VersionSlot),
+		TotalUploads > 0 ? static_cast<float>(TotalUploads - Pending.Num()) / static_cast<float>(TotalUploads) : 0.0f);
+
+	MintProxy->OnSuccess.AddDynamic(this, &UCPM_UploadArtifactsJob::HandleMinted);
+	MintProxy->OnFailure.AddDynamic(this, &UCPM_UploadArtifactsJob::HandleMintFailed);
+	MintProxy->Activate();
+}
+
+void UCPM_UploadArtifactsJob::HandleMinted(const FString& MintedUrl)
+{
+	if (bCancelled || bReported || Pending.IsEmpty())
+	{
+		return;
+	}
+
+	if (!MintedUrl.StartsWith(TEXT("http")))
+	{
+		Report(EJobResult::Failed,
+			FString::Printf(TEXT("the server minted no upload URL for version '%s'; it answered: %s"),
+				*Pending[0].VersionSlot, *MintedUrl));
+		return;
+	}
+
+	PublishedForUpload.UploadUrlsByVersion.Add(Pending[0].VersionSlot, MintedUrl);
+	UploadNext();
+}
+
+void UCPM_UploadArtifactsJob::HandleMintFailed(const FString& ResponseString)
+{
+	if (bCancelled || bReported)
+	{
+		return;
+	}
+
+	Report(EJobResult::Failed,
+		FString::Printf(TEXT("the server minted no upload URL for version '%s'; it answered: %s"),
+			Pending.IsEmpty() ? TEXT("unknown") : *Pending[0].VersionSlot, *ResponseString));
 }
 
 void UCPM_UploadArtifactsJob::HandleUploadProgress(const float Progress)

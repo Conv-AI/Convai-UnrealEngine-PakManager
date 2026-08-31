@@ -137,7 +137,7 @@ private:
 	void HandleCreateFailed(const FCPM_CreatedAssets& Response);
 
 	UFUNCTION()
-	void HandleUpdated(const FString& ResponseString);
+	void HandleUpdated(const FString& MintedUrl);
 
 	UFUNCTION()
 	void HandleUpdateFailed(const FString& ResponseString);
@@ -149,6 +149,9 @@ private:
 	TObjectPtr<UCPM_UpdatePakAssetProxy> UpdateProxy;
 
 	FString ExistingAssetId;
+
+	/** The Version this request named. The server answers with the URL for it and no key naming it. */
+	FString RequestedVersion;
 };
 
 /**
@@ -184,6 +187,15 @@ private:
 
 	void UploadNext();
 
+	/** Asks the server for the URL of the Version at the head of the queue. See UploadNext. */
+	void MintUrlForNext();
+
+	UFUNCTION()
+	void HandleMinted(const FString& MintedUrl);
+
+	UFUNCTION()
+	void HandleMintFailed(const FString& ResponseString);
+
 	UFUNCTION()
 	void HandleUploadProgress(float Progress);
 
@@ -195,6 +207,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UCPM_UploadPakAssetProxy> UploadProxy;
+
+	UPROPERTY()
+	TObjectPtr<UCPM_UpdatePakAssetProxy> MintProxy;
 
 	/** Read once in IExecute; the context is not re-read per file. */
 	FCPM_PublishedAsset PublishedForUpload;

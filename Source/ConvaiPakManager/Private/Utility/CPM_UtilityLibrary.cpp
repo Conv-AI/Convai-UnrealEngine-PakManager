@@ -201,6 +201,39 @@ bool UCPM_UtilityLibrary::SaveConvaiAssetMetadata(const FString& ResponseString)
 	return false;
 }
 
+bool UCPM_UtilityLibrary::GetMintedUploadUrl(const FString& ResponseString, FString& OutUrl)
+{
+	TSharedPtr<FJsonObject> Root;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResponseString);
+	if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+	{
+		return false;
+	}
+
+	// upload_urls sits at the root of an update response and inside assets[0] of a create one.
+	const TSharedPtr<FJsonObject>* UploadUrls = nullptr;
+	if (!Root->TryGetObjectField(TEXT("upload_urls"), UploadUrls))
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Assets = nullptr;
+		const TSharedPtr<FJsonObject>* FirstAsset = nullptr;
+		if (!Root->TryGetArrayField(TEXT("assets"), Assets) || Assets->IsEmpty()
+			|| !(*Assets)[0]->TryGetObject(FirstAsset)
+			|| !(*FirstAsset)->TryGetObjectField(TEXT("upload_urls"), UploadUrls))
+		{
+			return false;
+		}
+	}
+
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& Minted : (*UploadUrls)->Values)
+	{
+		if (Minted.Value.IsValid() && Minted.Value->TryGetString(OutUrl) && !OutUrl.IsEmpty())
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 void UCPM_UtilityLibrary::GetAssetMetaDataString(FString& MetaData)
 {
 	FFileHelper::LoadFileToString(MetaData, *GetPakMetadataFilePath());

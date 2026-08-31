@@ -76,6 +76,16 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static bool GetCreatedAssetsFromJSON(const FString& JsonString, FCPM_CreatedAssets& OutCreatedAssets);
+
+	/**
+	 * The upload URL an assets/upload or assets/update response minted, from either shape it comes in.
+	 *
+	 * One call names one Version and is answered with one URL, but the key it arrives under names
+	 * the artefact ("scene_asset"), not the Version - so the key is no use to a caller and only the
+	 * value is returned.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
+	static bool GetMintedUploadUrl(const FString& ResponseString, FString& OutUrl);
 		
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static bool ShouldCreateAsset();

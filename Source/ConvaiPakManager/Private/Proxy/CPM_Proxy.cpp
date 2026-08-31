@@ -168,23 +168,16 @@ void UCPM_UpdatePakAssetProxy::HandleSuccess()
 {
 	Super::HandleSuccess();
 
-	TSharedPtr<FJsonObject> JsonObject;
-	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResponseString);
-
-	if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid())
+	FString MintedUrl;
+	if (UCPM_UtilityLibrary::GetMintedUploadUrl(ResponseString, MintedUrl))
 	{
-		const TSharedPtr<FJsonObject>* UploadUrlsObject;
-		if (JsonObject->TryGetObjectField(TEXT("upload_urls"), UploadUrlsObject))
-		{
-			for (const auto& Pair : (*UploadUrlsObject)->Values)
-			{
-				const FString FirstUploadURL = Pair.Value->AsString();
-				OnSuccess.Broadcast(FirstUploadURL);
-				return;
-			}
-		}
+		OnSuccess.Broadcast(MintedUrl);
+		return;
 	}
 
+	UCPM_UtilityLibrary::CPM_LogMessage(
+		FString::Printf(TEXT("assets/update minted no upload URL. The server said: %s"), *ResponseString),
+		ECPM_LogLevel::Error);
 	OnFailure.Broadcast(ResponseString);
 }
 
