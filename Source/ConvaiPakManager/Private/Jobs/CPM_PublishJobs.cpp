@@ -337,6 +337,11 @@ void UCPM_CreateAssetJob::IExecute_Implementation()
 	FCPM_CreatePakAssetParams Params;
 	UCPM_UtilityLibrary::GetAssetMetaDataString(Params.MetaData);
 	Params.Entity_Type = Modding.AssetType.ToLower();
+
+	// The upload endpoint rejects a request with no tags. Everything published from here is a pak,
+	// tagged with the kind of thing it holds so the catalogue can filter on it.
+	Params.Tags = { TEXT("Pak"),
+		Modding.AssetType.Equals(TEXT("Scene"), ESearchCase::IgnoreCase) ? TEXT("Scene") : TEXT("Avatar") };
 	Params.Version = VersionSlotForPlatform(
 		Request.Policy.PlatformsToPackage().IsEmpty() ? ECPM_Platform::Windows : Request.Policy.PlatformsToPackage()[0]);
 	Params.Thumbnail = UCPM_UtilityLibrary::CPM_LoadTexture2DFromDisk(
