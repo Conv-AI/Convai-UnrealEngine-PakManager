@@ -182,7 +182,13 @@ void UConvaiPakManagerEditorUtils::CPM_PackageProject(const FCPM_PackageParam& P
             "-unrealexe=\"%s\" -platform=%s -installed "
             "-stage -archive -package -build -pak -compressed -prereqs "
             "-archivedirectory=\"%s\" -manifests "
-            "-clientconfig=%s -nodebuginfo"
+            "-clientconfig=%s -nodebuginfo "
+            // The cook is a second editor process, and it reads the same EditorPerProjectUserSettings as
+            // the running one. With the Model Context Protocol server set to auto-start, the cook tries to
+            // bind a port the editor already holds, logs an error, and any cook error is fatal. Turning it
+            // off for the cook alone lets MCP stay on in the editor while packaging still succeeds.
+            "-AdditionalCookerOptions=-ini:EditorPerProjectUserSettings:"
+              "[/Script/ModelContextProtocolEngine.ModelContextProtocolSettings]:bAutoStartServer=False"
         ),
         *ProjectFilePath,              // -ScriptsForProject
         *PackageParam.GetPlatform(),        // -platform=Win64
