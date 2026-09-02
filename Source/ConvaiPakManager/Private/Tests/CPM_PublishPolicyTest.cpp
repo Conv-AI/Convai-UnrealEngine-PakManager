@@ -144,17 +144,28 @@ bool FCPMPublishPolicyReusesOnlyAPublishedArchive::RunTest(const FString&)
 	UCPM_PakManagerSettings* Settings = GetMutableDefault<UCPM_PakManagerSettings>();
 	const bool bRestore = Settings->bReusePublishedRawArchive;
 
-	Settings->bReusePublishedRawArchive = false;
-	TestTrue(TEXT("off, the policy alone decides"), Settings->ShouldArchiveRawProject(true, true, true));
-	TestFalse(TEXT("and a policy asking for no archive gets none"), Settings->ShouldArchiveRawProject(false, true, true));
+	for (const bool bReuse : { false, true })
+	{
+		Settings->bReusePublishedRawArchive = bReuse;
+		for (const bool bPolicy : { false, true })
+		{
+			for (const bool bPublished : { false, true })
+			{
+				for (const bool bPaks : { false, true })
+				{
+					// Skipped only where all four hold. Written out rather than repeating the
+					// implementation: what is under test is that the creator's flag subtracts from
+					// the Policy and never the other way round.
+					const bool bExpected = bPolicy && !(bReuse && bPublished && bPaks);
 
-	Settings->bReusePublishedRawArchive = true;
-	TestFalse(TEXT("on, a published archive is reused"), Settings->ShouldArchiveRawProject(true, true, true));
-	TestTrue(TEXT("but an asset that has never had one is sent one"), Settings->ShouldArchiveRawProject(true, false, true));
-	TestTrue(TEXT("and a publish with no Paks sends it rather than nothing at all"),
-		Settings->ShouldArchiveRawProject(true, true, false));
-	TestFalse(TEXT("it never adds an archive the policy declined"), Settings->ShouldArchiveRawProject(false, true, true));
-	TestFalse(TEXT("whatever else is true"), Settings->ShouldArchiveRawProject(false, false, false));
+					TestEqual(
+						*FString::Printf(TEXT("reuse=%d policy=%d published=%d paks=%d"),
+							bReuse, bPolicy, bPublished, bPaks),
+						Settings->ShouldArchiveRawProject(bPolicy, bPublished, bPaks), bExpected);
+				}
+			}
+		}
+	}
 
 	Settings->bReusePublishedRawArchive = bRestore;
 	return true;

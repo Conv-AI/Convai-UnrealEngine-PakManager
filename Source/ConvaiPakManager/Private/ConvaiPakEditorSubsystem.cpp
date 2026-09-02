@@ -129,7 +129,19 @@ FDateTime UConvaiPakEditorSubsystem::GetRawArchiveUploadTime(const int32 ChunkId
 	// creator had to finish by hand, a migration that could not attribute the old layout - revokes
 	// the reuse with it. A record that outlived its Asset would let the next Publish create a new
 	// one and skip the archive it has never had.
-	if (GetAssetId(ChunkId).IsEmpty())
+	const FString RecordedAssetId = GetAssetId(ChunkId);
+	if (RecordedAssetId.IsEmpty())
+	{
+		return FDateTime::MinValue();
+	}
+
+	// And gated on the two ways this project can name that Asset agreeing. The create step asks the
+	// sole-Chunk helper rather than this Chunk, so a project that has gained a Primary Asset Label
+	// since it published reads no Asset there and creates a second one - which has no archive, and
+	// must not inherit the authority of the first one's.
+	FString PublishWillUpdateAssetId;
+	UCPM_UtilityLibrary::GetAssetID(PublishWillUpdateAssetId);
+	if (PublishWillUpdateAssetId != RecordedAssetId)
 	{
 		return FDateTime::MinValue();
 	}
@@ -502,6 +514,15 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 		return false;
 	}
 
+	// The mirror of the guard DeleteAsset already has, and load-bearing since a Publish reads what
+	// a delete revokes: started in the seconds a delete is in flight, it would decide to reuse an
+	// archive from a record the delete is about to remove.
+	if (DeletingChunkId == ChunkId)
+	{
+		SetStatus(ChunkId, Refusal, TEXT("this chunk is being deleted"));
+		return false;
+	}
+
 	SetStatus(ChunkId, ECPM_AssetManagerStatus::Packaging_Begin, FString(), 0.0f, TEXT("Reading publish policy"));
 
 	// Registered before the Policy is asked for, not when the queue exists: the Chunk is busy from
@@ -803,9 +824,19 @@ void UConvaiPakEditorSubsystem::HandleDeleteSucceeded(const FString& ResponseStr
 	// longer has.
 	if (bWholeAsset || Version.Equals(TEXT("raw"), ESearchCase::IgnoreCase))
 	{
-		IFileManager::Get().Delete(
-			*ConvaiPakManager::Chunk::GetRawArchiveRecordPath(ChunkId),
-			/*RequireExists=*/false, /*EvenReadOnly=*/true);
+		const FString ArchiveRecordPath = ConvaiPakManager::Chunk::GetRawArchiveRecordPath(ChunkId);
+
+		// Reported as a failure although the server did delete, as the Asset record below is: a
+		// record left behind says Convai holds an archive it has just lost, and the next Publish
+		// would believe it. That stays true for a whole-asset delete, where the Asset record is
+		// cleared now but a later Publish writes a new one the moment it creates an Asset.
+		if (!IFileManager::Get().Delete(*ArchiveRecordPath, /*RequireExists=*/false, /*EvenReadOnly=*/true))
+		{
+			SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed,
+				FString::Printf(TEXT("the delete succeeded on Convai but %s could not be cleared; remove it by hand"),
+					*ArchiveRecordPath));
+			return;
+		}
 	}
 
 	if (bWholeAsset)

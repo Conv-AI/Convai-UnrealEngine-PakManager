@@ -612,7 +612,9 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPackagingSection()
 					{
 						if (!Asset.IsValid() || !Asset->HasPublishedRawArchive())
 						{
-							return LOCTEXT("RawArchiveMissing", "Not uploaded - sent by the next publish");
+							// Not "sent by the next publish": whether one is sent at all is the
+							// Publish Policy's to say, and this promises nothing on its behalf.
+							return LOCTEXT("RawArchiveMissing", "Not uploaded yet");
 						}
 						return FText::Format(
 							LOCTEXT("RawArchiveUploaded", "Uploaded {0}"), RelativeTimeText(Asset->RawArchiveUploadTime));
@@ -631,12 +633,26 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPackagingSection()
 						return UCPM_PakManagerSettings::Get().bReusePublishedRawArchive
 							? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 					})
-					.IsEnabled_Lambda([this] { return Asset.IsValid() && Asset->HasPublishedRawArchive(); })
+					// One project-wide setting shown per Chunk, so a Chunk that cannot reuse must
+					// still be able to turn it off - otherwise the only Chunk that can switch it
+					// off is one that has an archive to reuse.
+					.IsEnabled_Lambda([this]
+					{
+						return (Asset.IsValid() && Asset->HasPublishedRawArchive())
+							|| UCPM_PakManagerSettings::Get().bReusePublishedRawArchive;
+					})
 					.OnCheckStateChanged_Lambda([](ECheckBoxState State)
 					{
 						UCPM_PakManagerSettings* Settings = GetMutableDefault<UCPM_PakManagerSettings>();
 						Settings->bReusePublishedRawArchive = State == ECheckBoxState::Checked;
-						Settings->TryUpdateDefaultConfigFile();
+						if (!Settings->TryUpdateDefaultConfigFile())
+						{
+							// The session honours it either way; said out loud because the change
+							// silently coming back after a restart is the confusing half.
+							Notify(LOCTEXT("ReuseArchiveNotSaved",
+								"Could not write DefaultGame.ini - this applies to the current session only."),
+								SNotificationItem::CS_Fail);
+						}
 					})
 					.ToolTipText_Lambda([this]
 					{
