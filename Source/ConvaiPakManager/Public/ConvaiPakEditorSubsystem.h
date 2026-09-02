@@ -330,6 +330,20 @@ private:
 	/** Chunks whose Publish Policy is still being read: accepted and busy, but with no Workflow to cancel yet. */
 	TSet<int32> PendingPolicyRuns;
 
+	/**
+	 * The Chunk whose Workflow is being created right now, and whether it finished before the call
+	 * that created it returned.
+	 *
+	 * ICreateWorkflow both creates AND runs the queue, so a queue whose every Job completes
+	 * synchronously - a single packaging Job that reuses the Pak already on disk - runs to
+	 * completion inside it. HandleWorkflowFinished then removes the Chunk from ActivePublishes
+	 * before it was ever added, and the add that follows registers a Workflow that is already over:
+	 * the Chunk reads as publishing forever and every later command is refused with "this chunk is
+	 * already publishing".
+	 */
+	int32 StartingChunkId = INDEX_NONE;
+	bool bStartingWorkflowFinished = false;
+
 	/** Cancels asked for during that read, honoured the moment the Policy answers. */
 	TSet<int32> CancelledDuringPolicyRead;
 

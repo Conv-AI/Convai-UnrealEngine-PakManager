@@ -156,6 +156,21 @@ struct CONVAIPAKMANAGER_API FCPM_PublishOptions
 	 */
 	UPROPERTY(BlueprintReadWrite, Category = "Convai|PakManager")
 	bool bReuseExistingPaks = false;
+
+	/**
+	 * Whether a run may publish a Pak already on disk instead of cooking one.
+	 *
+	 * A PACKAGE-ONLY run never may, whatever asked for it. Producing a fresh Pak is the only thing
+	 * such a run does, so reusing one makes it finish instantly having done nothing - which is
+	 * exactly what the debug setting did to "Package now" before this existed.
+	 *
+	 * Decided by the caller and written into FCPM_PublishRequest, so the packaging Job reads one
+	 * answer rather than consulting the settings singleton behind the subsystem's back.
+	 */
+	static bool ShouldReuseExistingPaks(bool bPackageOnly, bool bRequestedThisRun, bool bDebugSettingOn)
+	{
+		return !bPackageOnly && (bRequestedThisRun || bDebugSettingOn);
+	}
 };
 
 /**

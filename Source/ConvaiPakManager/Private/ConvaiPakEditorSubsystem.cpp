@@ -746,7 +746,10 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(
 	FCPM_PublishRequest PublishRequest;
 	PublishRequest.ChunkId = ChunkId;
 	PublishRequest.Policy = Policy;
-	PublishRequest.bReuseExistingPaks = Options.bReuseExistingPaks;
+	// Decided HERE, not by the Job: a package-only run must cook whatever the debug setting says,
+	// or "Package now" finishes instantly having built nothing.
+	PublishRequest.bReuseExistingPaks = FCPM_PublishOptions::ShouldReuseExistingPaks(
+		bPackageOnly, Options.bReuseExistingPaks, UCPM_PakManagerSettings::Get().bUseExistingPakFile);
 	Request.Inputs.Add(FInstancedStruct::Make(PublishRequest));
 
 	TWeakObjectPtr<UConvaiPakEditorSubsystem> WeakThis(this);
@@ -779,7 +782,17 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(
 		Stored.CurrentStepIndex = INDEX_NONE;
 	}
 
+	// Watched across the call, because ICreateWorkflow runs the queue as well as building it: a
+	// queue that finishes inside it reports finished before there is a handle to register.
+	StartingChunkId = ChunkId;
+	bStartingWorkflowFinished = false;
+
 	const FWorkflowHandle Handle = Manager->ICreateWorkflow(Request);
+
+	const bool bFinishedWhileStarting = bStartingWorkflowFinished;
+	StartingChunkId = INDEX_NONE;
+	bStartingWorkflowFinished = false;
+
 	if (!Handle.IsValid())
 	{
 		if (FCPM_ChunkStatus* Stored = StatusByChunk.Find(ChunkId))
@@ -796,7 +809,13 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(
 		return FWorkflowHandle::Invalid();
 	}
 
-	ActivePublishes.Add(ChunkId, Handle);
+	// Registering a Workflow that has already reported finished would leave this Chunk publishing
+	// for the rest of the session: nothing else ever removes it, and every command is refused.
+	if (!bFinishedWhileStarting)
+	{
+		ActivePublishes.Add(ChunkId, Handle);
+	}
+
 	return Handle;
 }
 
@@ -823,6 +842,13 @@ void UConvaiPakEditorSubsystem::HandleWorkflowProgress(const int32 ChunkId, cons
 void UConvaiPakEditorSubsystem::HandleWorkflowFinished(
 	const int32 ChunkId, const FWorkflowStatusInfo& Info, const bool bPackageOnly, const bool bArchivedRaw)
 {
+	// Reported from inside ICreateWorkflow, before the handle exists to be registered. The Remove
+	// below is a no-op in that case; this is what stops the caller registering it afterwards.
+	if (StartingChunkId == ChunkId)
+	{
+		bStartingWorkflowFinished = true;
+	}
+
 	ActivePublishes.Remove(ChunkId);
 
 	if (FCPM_ChunkStatus* Stored = StatusByChunk.Find(ChunkId))

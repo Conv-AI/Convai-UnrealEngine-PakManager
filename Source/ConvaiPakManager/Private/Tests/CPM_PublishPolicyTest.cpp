@@ -206,6 +206,40 @@ bool FCPMPublishPolicyValidatesATypedOverride::RunTest(const FString&)
 }
 
 /**
+ * A package-only run always cooks.
+ *
+ * Regression: "Package now" finished instantly having built nothing, because the packaging Job ORed
+ * the bUseExistingPakFile debug setting into its reuse decision and that setting is on in this
+ * project. Producing a fresh Pak is the ONLY thing a package-only run does, so no route - the debug
+ * setting or the per-run menu item - may turn it into a no-op.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMPublishPolicyPackageOnlyNeverReusesPaks,
+	"ConvaiPakManager.Publish.Policy.PackageOnlyNeverReusesPaks",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMPublishPolicyPackageOnlyNeverReusesPaks::RunTest(const FString&)
+{
+	using FOptions = FCPM_PublishOptions;
+
+	// The bug, from both routes.
+	TestFalse(TEXT("package-only ignores the debug setting"),
+		FOptions::ShouldReuseExistingPaks(/*bPackageOnly=*/true, /*bRequestedThisRun=*/false, /*bDebugSettingOn=*/true));
+	TestFalse(TEXT("package-only ignores an explicit request"),
+		FOptions::ShouldReuseExistingPaks(/*bPackageOnly=*/true, /*bRequestedThisRun=*/true, /*bDebugSettingOn=*/false));
+
+	// A publish still honours both, which is what the setting and the menu item are for.
+	TestTrue(TEXT("a publish honours the debug setting"),
+		FOptions::ShouldReuseExistingPaks(/*bPackageOnly=*/false, /*bRequestedThisRun=*/false, /*bDebugSettingOn=*/true));
+	TestTrue(TEXT("a publish honours an explicit request"),
+		FOptions::ShouldReuseExistingPaks(/*bPackageOnly=*/false, /*bRequestedThisRun=*/true, /*bDebugSettingOn=*/false));
+	TestFalse(TEXT("and cooks when neither asks"),
+		FOptions::ShouldReuseExistingPaks(/*bPackageOnly=*/false, /*bRequestedThisRun=*/false, /*bDebugSettingOn=*/false));
+
+	return true;
+}
+
+/**
  * What a Platform Selection does to a Policy - the one thing allowed to ADD, not only subtract.
  *
  * The row that matters is the forced one: a Windows-only policy asked to publish Linux must produce
