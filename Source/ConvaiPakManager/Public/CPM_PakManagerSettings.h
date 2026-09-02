@@ -177,4 +177,16 @@ public:
 	{
 		return PolicySource == ECPM_PolicySource::OverrideSettings && !PolicyOverride.bUploadRawProject;
 	}
+
+#if WITH_EDITOR
+	/**
+	 * Fills what a half-stated override leaves empty, at the moment it is stated.
+	 *
+	 * A default on the property only reaches a project that has never written the key - config on
+	 * disk outranks it - so a project that saved these settings before this shipped would keep an
+	 * empty configuration for a platform it has ticked, and be refused at publish time for a field
+	 * it was never shown a value for.
+	 */
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 };

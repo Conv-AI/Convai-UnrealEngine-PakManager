@@ -15,10 +15,17 @@ struct CONVAIPAKMANAGER_API FCPM_PlatformPolicy
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Convai|PakManager")
 	bool bShouldPackage = false;
 
-	/** The build configuration to package at, e.g. "Shipping". Required when bShouldPackage. */
+	/**
+	 * The build configuration to package at. Required when bShouldPackage.
+	 *
+	 * Defaulted for the hand-written policy a project types into its settings, so the field arrives
+	 * filled rather than empty-and-refused. A policy READ from JSON must still name it - ParseFromJson
+	 * clears this before reading, because inheriting a default there would package a Pak built
+	 * differently from the one Convai asked for.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Convai|PakManager",
 		meta = (EditCondition = "bShouldPackage"))
-	FString Configuration;
+	FString Configuration = TEXT("Shipping");
 };
 
 /**

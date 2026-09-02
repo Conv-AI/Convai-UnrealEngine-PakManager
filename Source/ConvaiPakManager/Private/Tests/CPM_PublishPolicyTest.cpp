@@ -178,10 +178,19 @@ bool FCPMPublishPolicyValidatesATypedOverride::RunTest(const FString&)
 	FCPM_PublishPolicy Nothing;
 	TestFalse(TEXT("a policy that would produce nothing is refused"), Nothing.Validate(Error));
 
+	// Emptied deliberately: the field defaults to Shipping for the settings UI, so the refusal this
+	// guards is only reachable by a policy that cleared it - which is what a JSON one without a
+	// "configuration" key arrives as.
 	FCPM_PublishPolicy NoConfiguration;
 	NoConfiguration.Windows.bShouldPackage = true;
+	NoConfiguration.Windows.Configuration.Reset();
 	TestFalse(TEXT("packaging Windows with no configuration is refused"), NoConfiguration.Validate(Error));
 	TestTrue(TEXT("and says which platform"), Error.Contains(TEXT("Windows")));
+
+	FCPM_PublishPolicy Typed;
+	Typed.Windows.bShouldPackage = true;
+	TestTrue(TEXT("a platform ticked in the settings arrives with a configuration"), Typed.Validate(Error));
+	TestEqual(TEXT("and it is the one Convai builds at"), Typed.Windows.Configuration, FString(TEXT("Shipping")));
 
 	FCPM_PublishPolicy RawOnly;
 	RawOnly.bUploadRawProject = true;

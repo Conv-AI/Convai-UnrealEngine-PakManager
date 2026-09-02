@@ -19,6 +19,11 @@ namespace
 			return;
 		}
 
+		// Cleared first: the field carries a default for a policy typed into project settings, and a
+		// JSON policy that names no configuration must be refused rather than inherit it.
+		OutPolicy = FCPM_PlatformPolicy();
+		OutPolicy.Configuration.Reset();
+
 		(*Object)->TryGetBoolField(TEXT("should-package"), OutPolicy.bShouldPackage);
 		(*Object)->TryGetStringField(TEXT("configuration"), OutPolicy.Configuration);
 	}
