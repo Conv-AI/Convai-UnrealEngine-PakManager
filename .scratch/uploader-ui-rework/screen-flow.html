@@ -1,0 +1,673 @@
+<title>Pak Manager Upload Panel</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+#cpm2, #cpm2 * { box-sizing: border-box; }
+#cpm2 {
+  --canvas:#111512; --panel:#1A211C; --hover:#263229; --border:#344139;
+  --txt:#F1F5F1; --txt2:#AEB8AF; --green:#2FAE62; --bright:#78D99B; --deep:#165C34;
+  --warn:#DCA94A; --err:#E26060;
+  --ground:#0A0D0B; --rail:#0F1310;
+  --ui:"Roboto",-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  background:var(--ground); color:var(--txt); font-family:var(--ui);
+  font-size:14px; line-height:1.5; padding:28px 24px 56px; min-height:100vh;
+}
+#cpm2 a { color:var(--bright); }
+#cpm2 .wrap { max-width:1360px; margin:0 auto; }
+
+/* ---------- page head ---------- */
+#cpm2 .eyebrow { font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--green); margin:0 0 10px; }
+#cpm2 h1 { font-size:27px; font-weight:700; margin:0 0 8px; letter-spacing:-.015em; text-wrap:balance; }
+#cpm2 .lede { color:var(--txt2); max-width:70ch; margin:0 0 6px; font-size:14px; }
+#cpm2 .meta { font-family:var(--mono); font-size:11.5px; color:#6f7a71; margin:0 0 22px; }
+#cpm2 .meta span { color:var(--txt2); }
+
+/* ---------- screen tabs ---------- */
+#cpm2 .screens { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 20px; padding:0 0 20px; border-bottom:1px solid var(--border); }
+#cpm2 .screens button {
+  font-family:var(--mono); font-size:11.5px; font-weight:500; cursor:pointer;
+  background:var(--rail); color:var(--txt2); border:1px solid var(--border);
+  border-radius:4px; padding:7px 11px; display:flex; gap:7px; align-items:baseline;
+}
+#cpm2 .screens button:hover { background:var(--hover); color:var(--txt); }
+#cpm2 .screens button b { color:#5d6a60; font-weight:700; }
+#cpm2 .screens button[aria-pressed="true"] { background:var(--green); border-color:var(--bright); color:#071108; }
+#cpm2 .screens button[aria-pressed="true"] b { color:#0a2d18; }
+#cpm2 :focus-visible { outline:2px solid var(--bright); outline-offset:2px; }
+
+/* ---------- stage ---------- */
+#cpm2 .stage { display:grid; grid-template-columns:minmax(0,1fr) 336px; gap:26px; align-items:start; }
+#cpm2 .panel-host { display:flex; justify-content:center; }
+
+/* ---------- the tool panel ---------- */
+#cpm2 .panel { width:100%; max-width:660px; background:var(--canvas); border:1px solid var(--border); border-radius:6px; overflow:hidden; box-shadow:0 18px 44px #0009; position:relative; }
+#cpm2 .p-head { display:flex; align-items:center; gap:12px; padding:11px 15px; background:var(--panel); border-bottom:1px solid var(--border); }
+#cpm2 .p-head .t { font-weight:700; font-size:14px; }
+#cpm2 .p-head .proj { margin-left:auto; font-size:11.5px; color:var(--txt2); }
+#cpm2 .p-body { padding:16px 16px 0; min-height:392px; display:flex; flex-direction:column; }
+#cpm2 .fill { flex:1; }
+#cpm2 .dim { opacity:.42; pointer-events:none; }
+
+/* card */
+#cpm2 .card { display:flex; gap:14px; }
+#cpm2 .thumb { width:170px; height:96px; background:#0C100D; border:1px solid var(--border); border-radius:4px; display:grid; place-items:center; color:var(--txt2); font-size:11.5px; overflow:hidden; }
+#cpm2 .thumb.filled { background:linear-gradient(150deg,#20402c,#16241b 55%,#2c4a36); color:transparent; position:relative; }
+#cpm2 .thumb.filled::after { content:""; position:absolute; inset:0; background:
+  radial-gradient(38px 38px at 30% 62%, #3d6b4c 0%, transparent 70%),
+  radial-gradient(30px 30px at 58% 55%, #47795a 0%, transparent 70%),
+  radial-gradient(34px 34px at 78% 66%, #3a6349 0%, transparent 70%); }
+#cpm2 .card .right { flex:1; min-width:0; display:flex; flex-direction:column; gap:7px; }
+#cpm2 .fld { width:100%; background:#0C100D; color:var(--txt); border:1px solid #42524A; border-radius:3px; padding:7px 9px; font:inherit; font-size:13px; }
+#cpm2 .fld::placeholder { color:#6f7a71; }
+#cpm2 textarea.fld { height:44px; resize:none; }
+#cpm2 .line { display:flex; gap:8px; align-items:center; font-size:12.5px; }
+#cpm2 .line > .k { width:88px; flex:none; color:var(--txt2); }
+#cpm2 .line > .v { flex:1; min-width:0; color:var(--txt); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#cpm2 .line > .v.muted { color:var(--txt2); }
+#cpm2 .line > .v.wrapv { white-space:normal; overflow:visible; line-height:1.35; }
+
+/* buttons */
+#cpm2 .btn { font:inherit; font-size:12px; cursor:pointer; border-radius:3px; padding:6px 10px; border:1px solid #53705F; background:#202A23; color:var(--txt); white-space:nowrap; }
+#cpm2 .btn:hover { background:var(--hover); }
+#cpm2 .btn.primary { background:var(--green); border-color:var(--bright); color:#071108; font-weight:700; }
+#cpm2 .btn.primary:hover { background:var(--bright); }
+#cpm2 .btn.danger { color:#FFB3B3; border-color:#7d4444; background:#2a1c1c; }
+#cpm2 .btn.thumbcap { width:170px; margin-top:6px; }
+#cpm2 .btn[disabled] { opacity:.42; cursor:not-allowed; }
+#cpm2 .dots { font-family:var(--mono); font-weight:700; letter-spacing:1px; padding:5px 8px; line-height:1; }
+
+/* ledger */
+#cpm2 .ledger { margin:14px 0 0; border:1px solid var(--border); border-radius:5px; background:var(--panel); }
+#cpm2 .ledger .lhead { display:flex; gap:9px; align-items:center; width:100%; text-align:left; background:none; border:0; color:var(--txt2); font:inherit; font-size:12.5px; padding:10px 12px; cursor:pointer; }
+#cpm2 .ledger .lhead:hover { color:var(--txt); }
+#cpm2 .ledger .lhead .tw { font-family:var(--mono); color:#5d6a60; font-size:10px; width:9px; }
+#cpm2 .lbody { border-top:1px solid var(--border); padding:10px 12px 12px; display:flex; flex-direction:column; gap:2px; }
+#cpm2 .row { display:flex; gap:8px; align-items:center; font-size:12.5px; padding:3px 0; }
+#cpm2 .row .k { width:88px; flex:none; color:var(--txt); }
+#cpm2 .row .ic { width:15px; flex:none; text-align:center; font-size:11px; }
+#cpm2 .row .st { flex:1; min-width:0; color:var(--txt2); }
+#cpm2 .note { margin:0 0 5px 96px; font-size:11.5px; color:var(--txt2); line-height:1.45; }
+#cpm2 .note.warn { color:var(--warn); }
+#cpm2 .ok { color:var(--green); } #cpm2 .amber { color:var(--warn); } #cpm2 .bad { color:var(--err); }
+#cpm2 .st.amber { color:var(--warn); }
+#cpm2 .chk { display:flex; gap:8px; align-items:flex-start; margin:7px 0 0 96px; font-size:12.5px; cursor:pointer; }
+#cpm2 .chk input { margin:2px 0 0; accent-color:var(--green); cursor:pointer; }
+#cpm2 .chk .sub { display:block; color:var(--txt2); font-size:11.5px; }
+#cpm2 .foot { margin:9px 0 0 96px; font-size:11.5px; color:var(--txt2); line-height:1.45; border-left:2px solid var(--border); padding-left:9px; }
+
+/* expander (technical details) */
+#cpm2 .exp { margin:10px 0 0; border:1px solid var(--border); border-radius:5px; background:var(--panel); }
+#cpm2 .exp > .h { display:flex; gap:9px; align-items:center; padding:9px 12px; font-size:12.5px; color:var(--txt2); }
+#cpm2 .exp > .h .tw { font-family:var(--mono); color:#5d6a60; font-size:10px; }
+
+/* progress */
+#cpm2 .prog { margin:0 0 14px; padding:12px; border:1px solid var(--border); border-radius:5px; background:var(--panel); }
+#cpm2 .prog .step { font-size:12.5px; margin:0 0 8px; }
+#cpm2 .bar { height:7px; background:#0C100D; border-radius:4px; overflow:hidden; }
+#cpm2 .bar i { display:block; height:100%; background:var(--green); }
+#cpm2 .stages { display:flex; flex-wrap:wrap; gap:6px; margin:9px 0 0; font-size:11px; color:#6f7a71; font-family:var(--mono); }
+#cpm2 .stages .cur { color:var(--bright); font-weight:700; }
+
+/* action bar */
+#cpm2 .abar { margin:16px -16px 0; padding:11px 16px; display:flex; gap:8px; align-items:center; background:var(--panel); border-top:1px solid var(--border); position:relative; }
+#cpm2 .abar .sum { flex:1; min-width:0; font-size:11.5px; color:var(--txt2); line-height:1.4; }
+#cpm2 .abar .sum.err { color:var(--err); }
+
+/* menus */
+#cpm2 .menu { position:absolute; z-index:20; min-width:264px; background:#1B231D; border:1px solid #4C7259; border-radius:5px; padding:5px; box-shadow:0 16px 40px #000c; font-size:12.5px; }
+#cpm2 .menu .sec { font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:#6f7a71; padding:7px 9px 4px; }
+#cpm2 .menu .it { padding:6px 9px; border-radius:3px; color:var(--txt); cursor:default; display:flex; gap:8px; align-items:baseline; }
+#cpm2 .menu .it:hover { background:var(--hover); }
+#cpm2 .menu .it.off { color:#5d6a60; }
+#cpm2 .menu .it.off:hover { background:none; }
+#cpm2 .menu .it.del { color:#FFA0A0; }
+#cpm2 .menu .it .why { font-size:10.5px; color:#6f7a71; font-family:var(--mono); margin-left:auto; white-space:nowrap; }
+#cpm2 .menu .it .tick { width:11px; color:var(--green); }
+#cpm2 .menu hr { border:0; border-top:1px solid var(--border); margin:5px 0; }
+#cpm2 .menu.at-bar { bottom:42px; right:12px; }
+#cpm2 .menu.at-row { top:calc(100% - 2px); right:0; }
+
+/* modal */
+#cpm2 .veil { position:absolute; inset:0; background:#000a; display:grid; place-items:center; padding:20px; z-index:30; }
+#cpm2 .modal { width:min(430px,100%); background:var(--panel); border:1px solid #4C7259; border-radius:6px; padding:16px; }
+#cpm2 .modal h3 { margin:0 0 9px; font-size:15px; }
+#cpm2 .modal p { margin:0 0 9px; font-size:12.5px; color:#C4D0C6; line-height:1.5; }
+#cpm2 .modal .acts { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
+
+/* settings mock */
+#cpm2 .set .grp { font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--green); margin:14px 0 6px; }
+#cpm2 .set .grp:first-child { margin-top:0; }
+#cpm2 .set .sr { display:flex; gap:10px; align-items:center; padding:6px 0; border-bottom:1px solid #1e2620; font-size:12.5px; }
+#cpm2 .set .sr .k { width:206px; flex:none; color:var(--txt2); }
+#cpm2 .set .sr .v { flex:1; font-family:var(--mono); font-size:11.5px; color:var(--txt); background:#0C100D; border:1px solid var(--border); border-radius:3px; padding:4px 7px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#cpm2 .set .adv { margin:14px 0 0; padding:11px; border:1px dashed #46564C; border-radius:5px; }
+#cpm2 .set .adv .lbl { font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--txt2); margin:0 0 8px; }
+#cpm2 .set .gone { color:#6f7a71; text-decoration:line-through; }
+
+/* toggles strip */
+#cpm2 .toggles { display:flex; flex-wrap:wrap; gap:7px; margin:12px 0 0; justify-content:center; }
+#cpm2 .toggles button { font-family:var(--mono); font-size:11px; cursor:pointer; background:var(--rail); border:1px solid var(--border); color:var(--txt2); border-radius:20px; padding:5px 11px; }
+#cpm2 .toggles button:hover { color:var(--txt); background:var(--hover); }
+#cpm2 .toggles button[aria-pressed="true"] { border-color:var(--green); color:var(--bright); }
+
+/* notes rail */
+#cpm2 .notes { background:var(--rail); border:1px solid var(--border); border-radius:6px; padding:16px; position:sticky; top:16px; }
+#cpm2 .notes .lbl { font-family:var(--mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--green); margin:0 0 7px; }
+#cpm2 .notes h2 { font-size:16px; margin:0 0 9px; font-weight:700; letter-spacing:-.01em; }
+#cpm2 .notes p { font-size:12.5px; color:var(--txt2); line-height:1.55; margin:0 0 12px; }
+#cpm2 .notes ul { margin:0 0 12px; padding-left:16px; }
+#cpm2 .notes li { font-size:12.5px; color:var(--txt2); line-height:1.5; margin:0 0 6px; }
+#cpm2 .notes li b { color:var(--txt); font-weight:500; }
+#cpm2 .notes .req { font-family:var(--mono); font-size:10px; color:var(--bright); border:1px solid var(--deep); background:#12261a; border-radius:3px; padding:1px 5px; }
+#cpm2 .notes .flag { border-left:2px solid var(--warn); padding:2px 0 2px 10px; margin:0 0 12px; }
+#cpm2 .notes .flag p { margin:0; color:#e2d3b2; font-size:12px; }
+#cpm2 .notes .flag .lbl { color:var(--warn); }
+
+/* footer */
+#cpm2 .qs { margin:30px 0 0; padding:20px 0 0; border-top:1px solid var(--border); }
+#cpm2 .qs h2 { font-size:15px; margin:0 0 12px; }
+#cpm2 .qgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px; }
+#cpm2 .q { background:var(--rail); border:1px solid var(--border); border-left:2px solid var(--warn); border-radius:0 5px 5px 0; padding:11px 13px; }
+#cpm2 .q .n { font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--warn); margin:0 0 5px; }
+#cpm2 .q p { margin:0; font-size:12.5px; color:var(--txt2); line-height:1.5; }
+#cpm2 .q p b { color:var(--txt); font-weight:500; }
+
+@media (max-width:1040px) {
+  #cpm2 .stage { grid-template-columns:minmax(0,1fr); }
+  #cpm2 .notes { position:static; }
+}
+@media (max-width:560px) {
+  #cpm2 { padding:18px 13px 40px; }
+  #cpm2 .card { flex-direction:column; }
+  #cpm2 .thumb, #cpm2 .btn.thumbcap { width:100%; }
+  #cpm2 .note, #cpm2 .chk, #cpm2 .foot { margin-left:0; }
+  #cpm2 .row .k { width:74px; }
+}
+</style>
+
+<div id="cpm2"><div class="wrap">
+  <p class="eyebrow">Convai Pak Manager &middot; upload UI</p>
+  <h1>One card, one line</h1>
+  <p class="lede">The reworked uploader panel from the 2026-09-01 UE Daily Sync. The steady-state screen is one card and
+  one sentence that says what Convai holds; every control the first version put on screen still exists, one click deeper.</p>
+  <p class="meta">Issue <span>ar-convai/ConvaiTask#243</span> &middot; supersedes <span>pak-manager-screen-flow.html</span> &middot;
+  the source checkbox, the ledger and show-all-platforms are <span>live</span> &mdash; click them</p>
+
+  <nav class="screens" id="tabs" aria-label="Screens"></nav>
+
+  <div class="stage">
+    <div>
+      <div class="panel-host"><div class="panel" id="panel"></div></div>
+      <div class="toggles" id="toggles"></div>
+    </div>
+    <aside class="notes" id="notes"></aside>
+  </div>
+
+  <section class="qs">
+    <h2>Open questions &mdash; these need Anmol or Mohamed, not another design pass</h2>
+    <div class="qgrid">
+      <div class="q"><p class="n">Linux force-upload</p><p>The panel <b>cannot express it</b>. The job queue is built strictly from
+      <b>Policy.PlatformsToPackage()</b>, and CONTEXT.md's "a creator may do LESS than policy, never more" is asserted by a test.
+      This design gives visibility and routes the real capability to a policy that names Linux for that project.
+      A genuine force-upload needs the glossary changed first.</p></div>
+      <div class="q"><p class="n">Does the out-of-sync warning ship?</p><p>It is <b>not computable today</b>. The only comparison
+      available compares a cook time to an upload time and is wrong in four ways &mdash; and "publish without repackaging" makes the
+      worst one common. Recommendation: <b>ship the ledger without it</b> until per-version upload markers land.</p></div>
+      <div class="q"><p class="n">May "Entry point" leave the UI?</p><p>CONTEXT.md currently <b>mandates</b> the label. The row becomes
+      "Level to load" / "Blueprint to load"; the term stays in code and the glossary. The amendment must land in the same commit or the
+      next agent reverts it citing the glossary.</p></div>
+      <div class="q"><p class="n">Delete or hide bUseExistingPakFile?</p><p>This design <b>deletes</b> it &mdash; a persistent project-wide
+      flag that silently publishes stale content is indefensible once a one-shot menu verb exists. Speak now if a workflow leaves it on
+      across sessions.</p></div>
+      <div class="q"><p class="n">The word "Upload"</p><p>Requirement G asked for it, but CONTEXT.md lists <b>upload</b> as an
+      <i>_Avoid_</i> for Publish &mdash; upload is one step of a publish, not the whole. The header names a section, not the act, so
+      it reads as compatible. Confirm, or amend the note.</p></div>
+      <div class="q"><p class="n">Re-teaching the demo audience</p><p>Four section headers a live audience saw on 2026-09-01 are gone.
+      The answer to "where did pak status go" is <b>behind the green line</b>. Is a line in the release note enough?</p></div>
+    </div>
+  </section>
+</div></div>
+
+<script>
+(() => {
+  const root = document.getElementById('cpm2');
+
+  // ---- state -------------------------------------------------------------
+  const S = { screen:'S1', ledger:false, source:true, showAll:false, menu:null,
+              stale:false, policy:'read', modal:null, busy:null };
+
+  const SCREENS = [
+    { id:'S1', n:'1', t:'First run',         set:{ ledger:false, source:true, showAll:false, stale:false, policy:'read', menu:null, modal:null, busy:null } },
+    { id:'S2', n:'2', t:'Steady state',      set:{ ledger:false, source:true, showAll:false, stale:false, policy:'read', menu:null, modal:null, busy:null } },
+    { id:'S3', n:'3', t:'Ledger + row menu', set:{ ledger:true,  source:true, showAll:false, stale:false, policy:'read', menu:'row-win', modal:null, busy:null } },
+    { id:'S4', n:'4', t:'Source out of sync',set:{ ledger:true,  source:true, showAll:false, stale:true,  policy:'read', menu:null, modal:null, busy:null } },
+    { id:'S5', n:'5', t:'Every platform',    set:{ ledger:true,  source:true, showAll:true,  stale:false, policy:'read', menu:null, modal:null, busy:null } },
+    { id:'S6', n:'6', t:'Panel More menu',   set:{ ledger:false, source:true, showAll:false, stale:false, policy:'read', menu:'panel', modal:null, busy:null } },
+    { id:'S7', n:'7', t:'Publishing',        set:{ ledger:false, source:true, showAll:false, stale:false, policy:'read', menu:null, modal:null, busy:'publish' } },
+    { id:'S8', n:'8', t:'Destructive confirms', set:{ ledger:true, source:true, showAll:false, stale:false, policy:'read', menu:null, modal:'version', busy:null } },
+    { id:'S9', n:'9', t:'Project Settings',  set:{ ledger:false, source:true, showAll:false, stale:false, policy:'read', menu:null, modal:null, busy:null } }
+  ];
+
+  const draft = () => S.screen === 'S1';
+
+  // ---- notes rail --------------------------------------------------------
+  const NOTES = {
+    S1:{ h:'Nothing you have not earned yet',
+      p:'Four controls and one checklist sentence. No paks, no platforms, no versions, no Asset ID &mdash; none of it exists yet, so none of it is on screen.',
+      li:['The <b>asset type chip</b> is gone. Type is the last word of the project line in the header.',
+          'The ledger still renders, collapsed, reading <b>&ldquo;Upload &mdash; nothing uploaded yet.&rdquo;</b>',
+          '<b>Technical details</b> is collapsed out of existence until there is an Asset ID to show.',
+          'The action bar carries the do-this-next list, in red, and the primary button is disabled.'],
+      req:['A'] },
+    S2:{ h:'The screen the design is optimised for',
+      p:'The fifth republish. One green line answers &ldquo;is my stuff up there and is it current&rdquo;. The action bar answers &ldquo;what does this button send&rdquo; <i>before</i> you press it.',
+      li:['No Linux. No per-platform rows. No <b>Reveal</b> buttons. No red.',
+          '<b>&ldquo;Missing &mdash; produced by publish&rdquo;</b> is deleted from the product. That string is what alarmed Mohamed.',
+          'The forecast sentence is grey, not red &mdash; it is a prediction, not a fault.',
+          'The header sentence has <b>eight variants</b>. It is the most-read string in the product and wants a copy review before build.'],
+      req:['A','B','G'] },
+    S3:{ h:'Every version, one anatomy',
+      p:'Expanding the line gives one row per Version. Source is a row exactly like a platform row &mdash; same 90px label, same icon column, same status voice, same menu.',
+      li:['The row menu <b>swallowed the Reveal button</b>: it is now <b>Show the built pak in Explorer</b>.',
+          '<b>Read-only items are never disabled while busy.</b> A 20-minute publish is exactly when someone wants to open the folder.',
+          'Delete-the-version is <b>not</b> gated on a local upload record &mdash; a fresh clone must not lock an operator out.',
+          'Rows must capture the <b>platform</b>, not the array index, or a Linux-only project renders Windows data under a Linux label.'],
+      req:['C','D'] },
+    S4:{ h:'Amber is for what you did not choose',
+      p:'Toggle the checkbox below the source row. The same fact is stated either way &mdash; only the alarm is conditional.',
+      li:['Checkbox <b>on</b>: amber. The creator did not choose this drift, so it is a warning.',
+          'Checkbox <b>off</b>: plain grey. They chose it. Warning here would recreate the exact <b>&ldquo;Linux &mdash; Missing&rdquo;</b> mistake.',
+          'An out-of-date source <b>never blocks a publish</b>.',
+          'The claim is about <b>ordering</b>, not content. Someone who edits and publishes nothing stays green. Saying more needs a content fingerprint.'],
+      flag:'Not computable today. The available comparison pits a cook time against an upload time and is wrong in four documented cases &mdash; and this design&rsquo;s own pak reuse makes the worst one the common one. Needs per-version upload markers, or cut requirement F.',
+      req:['E','F'] },
+    S5:{ h:'Visibility, not permission',
+      p:'The escape hatch for the Convai team and enterprise. It reveals platforms; it does not add them to a publish.',
+      li:['A revealed row shows its <b>true upload state first</b>. The policy fact is a note, never a replacement.',
+          'A Linux version left behind by a policy change is a <b>real artefact on Convai</b> &mdash; this is the only route to deleting it.',
+          'Persist as a <b>per-user</b> editor setting. Not project config, or one person&rsquo;s peek ships to the team.',
+          '<b>Fail open.</b> A platform must never vanish because a GitHub GET timed out.'],
+      flag:'Force-uploading a platform the policy omits is NOT BUILT and is not a UI decision. The queue is built from Policy.PlatformsToPackage(); the packaging job hard-fails a platform with no policy entry. The honest route is a policy that names Linux for that project.',
+      req:['D'] },
+    S6:{ h:'A real menu, not a button in a box',
+      p:'v1&rsquo;s More was an SBorder wrapping a single SButton. All three menus become real FMenuBuilder entries with CanExecute predicates.',
+      li:['Every disabled entry <b>keeps its tooltip</b>, so the reason is readable rather than guessable.',
+          'Two shared predicates &mdash; <b>bBusy</b> and <b>bOtherBusy</b> &mdash; so nine items cannot each forget one.',
+          '<b>Publish without repackaging</b> replaces the persistent <b>bUseExistingPakFile</b> setting with a one-shot verb.',
+          '<b>Set spawn point from camera</b> duplicates the inline card button. The one deliberate duplicate: the menu is where every other verb lives.'],
+      req:['C','D','I'] },
+    S7:{ h:'One thing happening, one thing to read',
+      p:'The card greys out. The ledger is <b>collapsed and hidden</b> &mdash; its sentence is about what Convai holds, and mid-publish that is changing.',
+      li:['Package-only reuses the identical screen with a different verb: <b>&ldquo;Packaging Showroom&hellip; nothing is uploaded.&rdquo;</b>',
+          'While <i>another</i> chunk publishes, this card and ledger stay fully readable &mdash; only mutation is gated.',
+          '<b>Packaging_Success has no terminal case</b> in the panel today, so Package now would complete silently and the pak note would never refresh.'],
+      req:['D'] },
+    S8:{ h:'Three deletes that cannot be misread as each other',
+      p:'A platform version on Convai, the project source on Convai, and pak files on this computer are three different losses. Each gets its own copy.',
+      li:['<b>Delete version</b>: the asset stays, with its other versions.',
+          '<b>Delete project source</b>: builds stay, but Convai can no longer migrate the asset to a future Unreal version on its own.',
+          '<b>Delete built pak</b>: local only &mdash; Convai keeps what it holds.',
+          'A black thumbnail capture is now <b>rejected</b>, and the previous thumbnail survives.'],
+      req:['D'] },
+    S9:{ h:'Zero panel work',
+      p:'Every field named in requirement I is a UDeveloperSettings property rendered by Unreal&rsquo;s own Project Settings page. The change is metadata in one header.',
+      li:['<b>Policy repository / ref / path</b> move behind Advanced. A creator never points these anywhere.',
+          'The <b>Policy Override</b> group deliberately stays at top level &mdash; it is the one legitimate route to a Linux publish.',
+          '<b>Use Existing Pak File</b> is deleted, not hidden.',
+          'Hiding the answer to a refused ask would be worse than exposing a field.'],
+      req:['I'] }
+  };
+
+  // ---- panel fragments ---------------------------------------------------
+  function head() {
+    return '<div class="p-head"><div class="t">Convai Pak Manager</div>' +
+      '<div class="proj" title="The asset type is fixed by how this project was generated and cannot be changed here.">' +
+      'Project: MyMod &middot; UE 5.8 &middot; Scene</div></div>';
+  }
+
+  function card() {
+    const d = draft();
+    const thumb = d
+      ? '<div class="thumb">No thumbnail yet</div><button class="btn thumbcap">Capture thumbnail</button>'
+      : '<div class="thumb filled">preview</div><button class="btn thumbcap">Recapture thumbnail</button>';
+    const name = d
+      ? '<input class="fld" placeholder="Name shown in Convai" aria-label="Asset name">'
+      : '<input class="fld" value="Showroom" aria-label="Asset name">';
+    const desc = d
+      ? '<textarea class="fld" placeholder="What this asset is" aria-label="Description"></textarea>'
+      : '<textarea class="fld" aria-label="Description">A lobby with three product plinths.</textarea>';
+    const entry = d
+      ? '<div class="v muted">Not picked yet</div>'
+      : '<div class="v">/Game/MyMod/Maps/L_Showroom</div>';
+    const spawn = d
+      ? '<span class="ic amber">&#9650;</span><div class="v wrapv" style="color:var(--warn)">None in this level &mdash; players arrive at the level origin.</div><button class="btn">Add spawn point</button>'
+      : '<span class="ic" style="visibility:hidden">&#10003;</span><div class="v muted">X 120&nbsp; Y -40&nbsp; Z 90&nbsp; &mdash;&nbsp; Yaw 180</div><button class="btn">Set from viewport</button>';
+
+    return '<div class="card"><div><div>' + thumb + '</div></div><div class="right">' +
+      name + desc +
+      '<div class="line"><span class="k">Level to load</span>' + entry +
+        '<button class="btn">Use selected asset</button>' +
+        '<button class="btn dots" data-menu="content" title="More for this level">&hellip;</button></div>' +
+      '<div class="line"><span class="k">Spawn point</span>' + spawn + '</div>' +
+      '</div></div>';
+  }
+
+  // the one sentence, in the spec's evaluation order
+  function headline() {
+    if (S.policy === 'unread') return { ic:'', cls:'', t:'Upload &mdash; checking what Convai asks for&hellip;' };
+    if (S.policy === 'failed') return { ic:'&#9650;', cls:'amber', t:'Upload &mdash; could not read the publish policy.' };
+    if (draft())               return { ic:'', cls:'', t:'Upload &mdash; nothing uploaded yet.' };
+    if (S.stale && S.source)   return { ic:'&#9650;', cls:'amber', t:'Upload &mdash; Windows uploaded 2 h ago, project source 3 d ago.' };
+    if (!S.source)             return { ic:'', cls:'', t:'Upload &mdash; Windows uploaded ' + (S.stale ? '2 h' : '20 h') + ' ago. Project source upload is turned off.' };
+    return { ic:'&#10003;', cls:'ok', t:'Upload &mdash; Windows and project source uploaded 20 h ago.' };
+  }
+
+  function row(k, ic, icCls, st, stCls, menuKey, note, noteCls) {
+    let h = '<div class="row"><span class="k">' + k + '</span>' +
+      '<span class="ic ' + icCls + '">' + (ic || '') + '</span>' +
+      '<span class="st ' + (stCls || '') + '">' + st + '</span>' +
+      '<button class="btn dots" data-menu="' + menuKey + '">&hellip;</button></div>';
+    if (note) h += '<p class="note ' + (noteCls || '') + '">' + note + '</p>';
+    return h;
+  }
+
+  function ledger() {
+    const hl = headline();
+    let h = '<div class="ledger"><button class="lhead" data-act="ledger" aria-expanded="' + S.ledger + '">' +
+      '<span class="tw">' + (S.ledger ? '&#9660;' : '&#9654;') + '</span>' +
+      '<span class="ic ' + hl.cls + '">' + hl.ic + '</span><span>' + hl.t + '</span></button>';
+    if (!S.ledger) return h + '</div>';
+
+    h += '<div class="lbody">';
+    const showAll = S.showAll || S.policy !== 'read';
+
+    if (draft()) {
+      h += row('Windows', '', '', 'Not uploaded yet', '', 'row-win', 'No pak on this machine. The next publish builds one.');
+    } else if (S.stale) {
+      h += row('Windows', '&#10003;', 'ok', 'Uploaded 2 h ago', '', 'row-win', 'Built pak on disk, made 2 h ago.');
+    } else {
+      h += row('Windows', '&#10003;', 'ok', 'Uploaded 20 h ago', '', 'row-win', 'Built pak on disk, made 20 h ago.');
+    }
+
+    if (showAll) {
+      h += row('Linux', '', '', 'Not uploaded yet', '', 'row-linux',
+               'Convai does not ask this project for Linux.');
+    }
+
+    if (draft()) {
+      // No amber before an Asset exists: "not uploaded yet" is the expected state of a draft,
+      // not an anomaly. Mirrors the platform-row split between "never uploaded, asset exists"
+      // (amber) and "never uploaded, no asset yet" (no icon).
+      h += S.source
+        ? row('Project source', '', '', 'Not uploaded yet &mdash; the next publish sends it', '', 'row-src')
+        : row('Project source', '', '', 'Not uploaded yet &mdash; upload is turned off', '', 'row-src',
+              'Convai will hold no copy of this project, so it cannot move this asset to a future Unreal version for you.');
+    } else if (S.stale) {
+      h += S.source
+        ? row('Project source', '&#9650;', 'amber', 'Uploaded 3 d ago', 'amber', 'row-src',
+              'Older than the Windows build Convai holds. Convai cannot move this asset to a future Unreal version on its own until you publish with your project source included.', 'warn')
+        : row('Project source', '', '', 'Uploaded 3 d ago', '', 'row-src',
+              'Older than the Windows build Convai holds, because project source upload is turned off. Turn it back on and publish to catch it up.');
+    } else {
+      h += S.source
+        ? row('Project source', '&#10003;', 'ok', 'Uploaded 20 h ago', '', 'row-src')
+        : row('Project source', '', '', 'Uploaded 20 h ago', '', 'row-src',
+              'Convai holds a copy from before you turned this off. Turn it back on and publish to keep it current.');
+    }
+
+    // data-src, NOT data-act: a checkbox fires change then click, so a click handler here
+    // would flip the value straight back after the change handler set it.
+    h += '<label class="chk"><input type="checkbox" data-src' + (S.source ? ' checked' : '') + '>' +
+      '<span>Upload project source with this publish<span class="sub">Applies to every asset in this project.</span></span></label>';
+
+    if (S.policy === 'unread')
+      h += '<p class="foot">The publish policy has not been read yet, so every platform is shown.</p>';
+    else if (S.policy === 'failed')
+      h += '<p class="foot">Could not read the publish policy, so every platform is shown. Publishing reads it again and stops with the reason if it fails.</p>';
+    else if (S.showAll)
+      h += '<p class="foot">Convai decides which versions an asset carries. Showing a platform here does not add it to a publish &mdash; it lets you reach a pak or a version you already have.</p>';
+
+    return h + '</div></div>';
+  }
+
+  function technical() {
+    if (draft()) return '';
+    return '<div class="exp"><div class="h"><span class="tw">&#9654;</span><span>Technical details</span></div></div>';
+  }
+
+  function progress() {
+    if (!S.busy) return '';
+    const pack = S.busy === 'package';
+    const stages = pack ? ['Packaging'] : ['Packaging','Archiving project','Creating asset','Uploading','Recording asset'];
+    const cur = pack ? 0 : 3;
+    return '<div class="prog"><p class="step">' +
+      (pack ? 'Packaging Windows &mdash; 34%' : 'Uploading Windows pak &mdash; 62%') + '</p>' +
+      '<div class="bar"><i style="width:' + (pack ? '34' : '62') + '%"></i></div>' +
+      '<div class="stages">' + stages.map(function (s, i) {
+        return '<span class="' + (i === cur ? 'cur' : '') + '">' + s + '</span>';
+      }).join('<span>&rarr;</span>') + '</div>' +
+      '<div style="margin-top:10px"><button class="btn">Cancel</button></div></div>';
+  }
+
+  function forecast() {
+    if (draft()) return { cls:'err', t:'Asset name is required. Pick the level this scene opens. Capture a thumbnail before creating.' };
+    if (S.busy === 'package') return { cls:'', t:'Packaging Showroom&hellip; nothing is uploaded.' };
+    if (S.busy) return { cls:'', t:'Publishing Showroom&hellip;' };
+    return S.source
+      ? { cls:'', t:'Publishes the Windows build and your project source.' }
+      : { cls:'', t:'Publishes the Windows build. Your project source is not included.' };
+  }
+
+  function abar() {
+    const f = forecast();
+    const primary = draft()
+      ? '<button class="btn primary" disabled>Create asset</button>'
+      : (S.busy
+          ? '<button class="btn primary" disabled>' + (S.busy === 'package' ? 'Packaging&hellip;' : 'Publishing&hellip;') + '</button>'
+          : '<button class="btn primary">Publish update</button>');
+    return '<div class="abar"><p class="sum ' + f.cls + '">' + f.t + '</p>' +
+      '<button class="btn" disabled>Save changes</button>' + primary +
+      '<button class="btn" data-menu="panel">More &#9662;</button>' +
+      (S.menu === 'panel' ? panelMenu() : '') + '</div>';
+  }
+
+  // ---- menus -------------------------------------------------------------
+  function it(label, opts) {
+    const o = opts || {};
+    return '<div class="it' + (o.off ? ' off' : '') + (o.del ? ' del' : '') + '">' +
+      (o.tick !== undefined ? '<span class="tick">' + (o.tick ? '&#10003;' : '') + '</span>' : '') +
+      '<span>' + label + '</span>' +
+      (o.why ? '<span class="why">' + o.why + '</span>' : '') + '</div>';
+  }
+
+  function panelMenu() {
+    return '<div class="menu at-bar"><div class="sec">Publish</div>' +
+      it('Package now') +
+      it('Publish without repackaging', draft() ? { off:true, why:'not published yet' } : {}) +
+      it('Delete every built pak', draft() ? { off:true, why:'no paks' } : {}) +
+      '<div class="sec">Level</div>' +
+      it('Set spawn point from camera') +
+      '<div class="sec">Show</div>' +
+      it('Show every platform', { tick:S.showAll }) +
+      it('Re-read the publish policy') +
+      '<div class="sec">Asset</div>' +
+      it('Copy asset ID', draft() ? { off:true, why:'not published yet' } : {}) +
+      it('Publish settings&hellip;') + '<hr>' +
+      it('Delete asset&hellip;', draft() ? { off:true, del:true, why:'not published yet' } : { del:true }) +
+      '</div>';
+  }
+
+  function rowMenu(kind) {
+    if (kind === 'row-src') {
+      return '<div class="menu at-row"><div class="sec">On Convai</div>' +
+        it('Delete the project source Convai holds&hellip;', draft() ? { off:true, del:true, why:'not published yet' } : { del:true }) +
+        '</div>';
+    }
+    if (kind === 'content') {
+      return '<div class="menu at-row" style="min-width:212px">' +
+        it('Show in Content Browser', draft() ? { off:true, why:'nothing picked' } : {}) + '</div>';
+    }
+    const plat = kind === 'row-linux' ? 'Linux' : 'Windows';
+    const noPak = kind === 'row-linux' || draft();
+    return '<div class="menu at-row"><div class="sec">On this computer</div>' +
+      it('Show the built pak in Explorer', noPak ? { off:true, why:'no ' + plat.toLowerCase() + ' pak' } : {}) +
+      it('Delete the built pak', noPak ? { off:true, why:'no ' + plat.toLowerCase() + ' pak' } : {}) +
+      '<div class="sec">On Convai</div>' +
+      it('Delete the ' + plat + ' version&hellip;', draft() ? { off:true, del:true, why:'not published yet' } : { del:true }) +
+      '</div>';
+  }
+
+  // ---- modals ------------------------------------------------------------
+  const MODALS = {
+    version:{ t:'Delete the Windows version',
+      b:['Delete the Windows version of &ldquo;Showroom&rdquo; from Convai?',
+         'The asset stays, with its other versions. Anything loading it on Windows stops working until you publish again.',
+         'This cannot be undone. If Convai does not hold a Windows version, nothing changes.'],
+      ok:'Delete version' },
+    source:{ t:'Delete the project source',
+      b:['Delete the copy of your project that Convai holds for &ldquo;Showroom&rdquo;?',
+         'The asset and its builds stay. Convai will no longer be able to move this asset to a future Unreal version on its own &mdash; you would publish it again yourself.',
+         'This cannot be undone.'],
+      ok:'Delete project source' },
+    pak:{ t:'Delete built pak',
+      b:['Delete the Windows pak on this computer? Convai keeps the version it already holds, and your next publish builds a new one.'],
+      ok:'Delete' },
+    skip:{ t:'Don&rsquo;t upload your project?',
+      b:['Convai keeps a copy of your project so it can repackage this asset for future Unreal Engine versions without you republishing it.',
+         'Turn this off and Convai holds no copy, so that migration is on you.'],
+      ok:'Don&rsquo;t upload', cancel:'Keep uploading' },
+    black:{ t:'Thumbnail capture',
+      b:['That capture came out black. Point the viewport at your scene, wait for it to finish loading, and try again.'],
+      ok:'OK', cancel:null }
+  };
+
+  function modal() {
+    const m = MODALS[S.modal];
+    if (!m) return '';
+    return '<div class="veil"><div class="modal" role="dialog" aria-modal="true"><h3>' + m.t + '</h3>' +
+      m.b.map(function (x) { return '<p>' + x + '</p>'; }).join('') +
+      '<div class="acts">' +
+      (m.cancel === null ? '' : '<button class="btn" data-act="closemodal">' + (m.cancel || 'Cancel') + '</button>') +
+      '<button class="btn ' + (m.ok === 'OK' ? '' : 'danger') + '" data-act="closemodal">' + m.ok + '</button>' +
+      '</div></div></div>';
+  }
+
+  // ---- settings screen ---------------------------------------------------
+  function settings() {
+    return '<div class="p-body set">' +
+      '<p style="font-size:12px;color:var(--txt2);margin:0 0 14px">Project Settings &rsaquo; Plugins &rsaquo; Convai Pak Manager</p>' +
+      '<p class="grp">Publishing</p>' +
+      '<div class="sr"><span class="k">Max Chunks Per Project</span><span class="v">1</span></div>' +
+      '<p class="grp">Publish Policy Override</p>' +
+      '<div class="sr"><span class="k">Policy Source</span><span class="v">Repository</span></div>' +
+      '<div class="sr"><span class="k">Policy Override File</span><span class="v">&mdash;</span></div>' +
+      '<div class="sr"><span class="k">Policy Override Json</span><span class="v">&mdash;</span></div>' +
+      '<p style="font-size:11.5px;color:var(--txt2);margin:8px 0 0;line-height:1.5">Stays at top level on purpose: this is the only honest route to a Linux publish for an internal or enterprise project.</p>' +
+      '<div class="adv"><p class="lbl">&#9660; Advanced</p>' +
+        '<div class="sr"><span class="k">Upload Raw Project Archive</span><span class="v">true</span></div>' +
+        '<div class="sr"><span class="k">Policy Repository</span><span class="v">Conv-AI/Convai-UnrealEngine-ModdingTool</span></div>' +
+        '<div class="sr"><span class="k">Policy Ref</span><span class="v">main</span></div>' +
+        '<div class="sr"><span class="k">Policy Path</span><span class="v">resources/asset_uploader_config.json</span></div>' +
+      '</div>' +
+      '<p style="margin:14px 0 0;font-size:12.5px"><span class="gone">Use Existing Pak File</span> ' +
+      '<span style="color:var(--txt2);font-size:11.5px">&mdash; deleted, not hidden. Replaced by More &rsaquo; Publish without repackaging.</span></p>' +
+      '</div>';
+  }
+
+  // ---- render ------------------------------------------------------------
+  function render() {
+    const panel = document.getElementById('panel');
+    if (S.screen === 'S9') {
+      panel.innerHTML = head() + settings();
+    } else {
+      const rowMenuKind = (S.menu && S.menu !== 'panel') ? S.menu : null;
+      const body = '<div class="p-body">' + progress() +
+        '<div class="fill ' + (S.busy ? 'dim' : '') + '">' + card() +
+        (S.busy ? '' : ledger()) + technical() + '</div>' + abar() + '</div>';
+      panel.innerHTML = head() + body + modal();
+      if (rowMenuKind) {
+        const btn = panel.querySelector('[data-menu="' + rowMenuKind + '"]');
+        if (btn) {
+          const host = btn.closest('.row') || btn.closest('.line');
+          if (host) {
+            host.style.position = 'relative';
+            host.insertAdjacentHTML('beforeend', rowMenu(rowMenuKind));
+          }
+        }
+      }
+    }
+
+    document.querySelectorAll('#tabs button').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.screen === S.screen));
+    });
+
+    const T = [];
+    if (S.screen !== 'S9') {
+      T.push(['ledger',  S.ledger  ? 'Ledger expanded'         : 'Ledger collapsed',      S.ledger]);
+      T.push(['source',  S.source  ? 'Source upload ON'        : 'Source upload OFF',     S.source]);
+      T.push(['showAll', S.showAll ? 'Showing every platform'  : 'Policy platforms only', S.showAll]);
+      T.push(['stale',   S.stale   ? 'Source out of sync'      : 'Source current',        S.stale]);
+    }
+    if (S.screen === 'S5') T.push(['policy', 'Policy: ' + S.policy, S.policy !== 'read']);
+    if (S.screen === 'S7') T.push(['busy', S.busy === 'package' ? 'Package only' : 'Full publish', S.busy === 'package']);
+    if (S.screen === 'S8') {
+      ['version','source','pak','skip','black'].forEach(function (m) {
+        T.push(['modal:' + m, 'Confirm: ' + m, S.modal === m]);
+      });
+    }
+    document.getElementById('toggles').innerHTML = T.map(function (t) {
+      return '<button data-tog="' + t[0] + '" aria-pressed="' + !!t[2] + '">' + t[1] + '</button>';
+    }).join('');
+
+    const n = NOTES[S.screen];
+    document.getElementById('notes').innerHTML =
+      '<p class="lbl">' + S.screen + ' &middot; what this defends</p>' +
+      '<h2>' + n.h + '</h2><p>' + n.p + '</p>' +
+      (n.flag ? '<div class="flag"><p class="lbl" style="margin:0 0 4px">Flag</p><p>' + n.flag + '</p></div>' : '') +
+      '<ul>' + n.li.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ul>' +
+      '<p class="lbl">Meeting requirements</p><p>' +
+      n.req.map(function (r) { return '<span class="req">' + r + '</span>'; }).join(' ') + '</p>';
+  }
+
+  // ---- wiring ------------------------------------------------------------
+  document.getElementById('tabs').innerHTML = SCREENS.map(function (s) {
+    return '<button data-screen="' + s.id + '" aria-pressed="false"><b>' + s.n + '</b>' + s.t + '</button>';
+  }).join('');
+
+  root.addEventListener('click', function (ev) {
+    const tab = ev.target.closest('#tabs button');
+    if (tab) { go(tab.dataset.screen); history.replaceState(null, '', '#' + S.screen); return; }
+    const tog = ev.target.closest('[data-tog]');
+    if (tog) {
+      const k = tog.dataset.tog;
+      if (k.indexOf('modal:') === 0) S.modal = (S.modal === k.slice(6)) ? null : k.slice(6);
+      else if (k === 'policy') S.policy = { read:'unread', unread:'failed', failed:'read' }[S.policy];
+      else if (k === 'busy')   S.busy   = (S.busy === 'package') ? 'publish' : 'package';
+      else { S[k] = !S[k]; if (k === 'stale' && S.stale) S.ledger = true; }
+      render(); return;
+    }
+    const menu = ev.target.closest('[data-menu]');
+    if (menu) { S.menu = (S.menu === menu.dataset.menu) ? null : menu.dataset.menu; render(); return; }
+    const act = ev.target.closest('[data-act]');
+    if (act) {
+      const a = act.dataset.act;
+      if (a === 'ledger') S.ledger = !S.ledger;
+      if (a === 'closemodal') S.modal = null;
+      render(); return;
+    }
+    if (!ev.target.closest('.menu') && S.menu) { S.menu = null; render(); }
+  });
+
+  root.addEventListener('change', function (ev) {
+    if (ev.target.matches('[data-src]')) { S.source = ev.target.checked; render(); }
+  });
+
+  // Deep-link a screen: pak-manager-upload-ui-v2.html#S4 opens on the out-of-sync state.
+  function go(id) {
+    const s = SCREENS.filter(function (x) { return x.id === id; })[0] || SCREENS[0];
+    S.screen = s.id; Object.assign(S, s.set); render();
+  }
+  window.addEventListener('hashchange', function () { go(location.hash.slice(1)); });
+  go(location.hash.slice(1));
+})();
+</script>
