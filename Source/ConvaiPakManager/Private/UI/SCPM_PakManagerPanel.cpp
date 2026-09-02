@@ -618,6 +618,15 @@ void SCPM_PakManagerPanel::HandleChunkStatusChanged(const FCPM_ChunkStatus& Stat
 		Message = FText::Format(LOCTEXT("PublishSucceeded", "Published \"{0}\"."), DisplayNameOf(AssetVM));
 		break;
 
+	case ECPM_AssetManagerStatus::Packaging_Success:
+		// Terminal only for a package-only run; a Publish passes straight through this on its way
+		// to UploadPak_Success. Without this case the run finishes silently and the Upload rows go
+		// on saying no pak is on this computer, having never re-read them.
+		bTerminal = true;
+		State = SNotificationItem::CS_Success;
+		Message = LOCTEXT("PackagingSucceeded", "Packaging finished. Nothing was uploaded.");
+		break;
+
 	case ECPM_AssetManagerStatus::Delete_Success:
 		bTerminal = true;
 		State = SNotificationItem::CS_Success;
