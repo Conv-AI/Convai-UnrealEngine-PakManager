@@ -582,18 +582,26 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(const int32 Chun
 
 	// Decided here rather than by a Job's Precheck, although ADR-0004 points at one for re-running a
 	// step: a Precheck would satisfy the archive from the zip still sitting in the cache and pay the
-	// upload anyway, and the upload is the half of the cost this exists to avoid.
-	const bool bArchiveRaw = !bPackageOnly && UCPM_PakManagerSettings::Get().ShouldArchiveRawProject(
-		Policy.bUploadRawProject, GetRawArchiveUploadTime(ChunkId) != FDateTime::MinValue(), bHasPaks);
+	// upload anyway, and the upload is the half of the cost the creator is skipping.
+	const bool bArchiveRaw =
+		!bPackageOnly && UCPM_PakManagerSettings::Get().ShouldArchiveRawProject(Policy.bUploadRawProject);
+
+	if (!bPackageOnly && !bHasPaks && !bArchiveRaw)
+	{
+		// Refused here rather than left to the upload Job's "nothing was built to upload", which
+		// names neither the Policy nor the setting the creator would have to change.
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Create_Failed,
+			TEXT("this publish would send nothing: the policy asks only for the project archive, and its upload is turned off"));
+		return FWorkflowHandle::Invalid();
+	}
 
 	if (!bPackageOnly && Policy.bUploadRawProject && !bArchiveRaw)
 	{
-		// Warned about rather than merely logged, as with a reused Pak: from here on the archive
-		// Convai holds is the one from an earlier Publish, and nothing downstream can tell it from
-		// one made of the project as it stands now.
+		// Warned about rather than merely logged, as with a reused Pak: from here on Convai holds
+		// either an older archive or none, and nothing downstream of this line can tell.
 		UCPM_UtilityLibrary::CPM_LogMessage(
-			TEXT("Publishing without the project archive - this asset keeps the one its last publish uploaded, ")
-			TEXT("because Reuse Published Raw Project Archive is on"),
+			TEXT("Publishing without the project archive, because Upload Raw Project Archive is off. ")
+			TEXT("Convai cannot repackage this asset for a future engine version without it."),
 			ECPM_LogLevel::Warning);
 	}
 

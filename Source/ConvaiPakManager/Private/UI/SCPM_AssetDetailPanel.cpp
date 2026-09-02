@@ -94,6 +94,74 @@ namespace
 		return FText::Format(LOCTEXT("DaysAgo", "{0} d ago"), FText::AsNumber(FMath::FloorToInt(Age.GetTotalDays())));
 	}
 
+	/**
+	 * What turning off the project upload gives up, asked before it does.
+	 *
+	 * A dialog rather than a tooltip because the cost is entirely in the future - Convai repackaging
+	 * this Asset for an engine version that does not exist yet - so nothing the creator does next
+	 * would reveal it. They may still say yes; this only makes it a decision rather than a click.
+	 *
+	 * Returns true when the creator confirms skipping it.
+	 */
+	bool ConfirmSkippingRawArchive()
+	{
+		bool bConfirmed = false;
+
+		TSharedRef<SWindow> Window = SNew(SWindow)
+			.Title(LOCTEXT("SkipArchiveTitle", "Don't upload your project?"))
+			.SizingRule(ESizingRule::Autosized)
+			.SupportsMaximize(false)
+			.SupportsMinimize(false);
+
+		Window->SetContent(
+			SNew(SBox)
+			.Padding(16.0f)
+			.MaxDesiredWidth(460.0f)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SNew(STextBlock)
+					.AutoWrapText(true)
+					.Text(LOCTEXT("SkipArchiveBody",
+						"Convai keeps a copy of your project so that when Unreal Engine moves to a new version, "
+						"we can repackage your asset for it - you do nothing.\n\nWithout that copy, this asset "
+						"stops working on a new engine version until you publish it again yourself.\n\nYour paks "
+						"still upload as usual. You can turn this back on at any time."))
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 16.0f, 0.0f, 0.0f).HAlign(HAlign_Right)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth()
+					[
+						SNew(SButton)
+						.ButtonStyle(&FCPM_PakManagerStyle::Get().GetWidgetStyle<FButtonStyle>("CPM.Button.Primary"))
+						.Text(LOCTEXT("SkipArchiveKeep", "Keep uploading"))
+						.OnClicked_Lambda([Window]
+						{
+							Window->RequestDestroyWindow();
+							return FReply::Handled();
+						})
+					]
+					+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(SButton)
+						.ButtonStyle(&SecondaryButtonStyle())
+						.Text(LOCTEXT("SkipArchiveSkip", "Don't upload"))
+						.OnClicked_Lambda([Window, &bConfirmed]
+						{
+							bConfirmed = true;
+							Window->RequestDestroyWindow();
+							return FReply::Handled();
+						})
+					]
+				]
+			]);
+
+		FSlateApplication::Get().AddModalWindow(Window, nullptr);
+		return bConfirmed;
+	}
+
 	FText PlatformText(ECPM_Platform Platform)
 	{
 		switch (Platform)
@@ -630,43 +698,38 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPackagingSection()
 					SNew(SCheckBox)
 					.IsChecked_Lambda([]
 					{
-						return UCPM_PakManagerSettings::Get().bReusePublishedRawArchive
+						return UCPM_PakManagerSettings::Get().bUploadRawProjectArchive
 							? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-					})
-					// One project-wide setting shown per Chunk, so a Chunk that cannot reuse must
-					// still be able to turn it off - otherwise the only Chunk that can switch it
-					// off is one that has an archive to reuse.
-					.IsEnabled_Lambda([this]
-					{
-						return (Asset.IsValid() && Asset->HasPublishedRawArchive())
-							|| UCPM_PakManagerSettings::Get().bReusePublishedRawArchive;
 					})
 					.OnCheckStateChanged_Lambda([](ECheckBoxState State)
 					{
+						const bool bUpload = State == ECheckBoxState::Checked;
+
+						// Only turning it OFF is explained, and only before it takes effect: this is
+						// the choice that costs the creator something later, and the cost is
+						// invisible until an engine version they have not heard of yet ships.
+						if (!bUpload && !ConfirmSkippingRawArchive())
+						{
+							return;
+						}
+
 						UCPM_PakManagerSettings* Settings = GetMutableDefault<UCPM_PakManagerSettings>();
-						Settings->bReusePublishedRawArchive = State == ECheckBoxState::Checked;
+						Settings->bUploadRawProjectArchive = bUpload;
 						if (!Settings->TryUpdateDefaultConfigFile())
 						{
 							// The session honours it either way; said out loud because the change
 							// silently coming back after a restart is the confusing half.
-							Notify(LOCTEXT("ReuseArchiveNotSaved",
+							Notify(LOCTEXT("UploadArchiveNotSaved",
 								"Could not write DefaultGame.ini - this applies to the current session only."),
 								SNotificationItem::CS_Fail);
 						}
 					})
-					.ToolTipText_Lambda([this]
-					{
-						return Asset.IsValid() && Asset->HasPublishedRawArchive()
-							? LOCTEXT("ReuseArchiveTip",
-								"Publish without archiving and uploading this project again - the asset keeps the "
-								"archive it already has, which Convai rebuilds it from for future engine versions. "
-								"Applies to every asset in this project.")
-							: LOCTEXT("ReuseArchiveTipDisabled",
-								"Available once a publish has uploaded this project. An asset that has never "
-								"received the archive cannot be rebuilt for a future engine version without it.");
-					})
+					.ToolTipText(LOCTEXT("UploadArchiveTip",
+						"Sends your project alongside the paks, so Convai can repackage this asset for future "
+						"Unreal Engine versions without you republishing it. It is the longest step of a publish; "
+						"turn it off while iterating. Applies to every asset in this project."))
 					[
-						SNew(STextBlock).Text(LOCTEXT("ReuseArchive", "Reuse it"))
+						SNew(STextBlock).Text(LOCTEXT("UploadArchive", "Upload"))
 					]
 				]
 			]

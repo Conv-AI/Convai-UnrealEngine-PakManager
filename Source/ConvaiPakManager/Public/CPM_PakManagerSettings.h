@@ -63,20 +63,20 @@ public:
 	bool bUseExistingPakFile = false;
 
 	/**
-	 * Publish without archiving and uploading the project again, leaving the Asset the Raw Project
-	 * Archive its last Publish put there.
+	 * Send the Raw Project Archive - the creator's project, zipped - alongside the Paks.
 	 *
-	 * The other half of an iteration loop: the archive is the whole project, so re-sending it is the
-	 * longest step of a Publish that changed nothing about the project's source.
+	 * On by default because Convai repackages an Asset for a new engine version from it, with
+	 * nothing asked of the creator. Off, that Asset can only reach a new engine version by the
+	 * creator publishing it again themselves.
 	 *
-	 * Honoured only where an archive actually reached Convai for this Chunk's Asset, which is why
-	 * this is phrased as reusing a published archive rather than as disabling an upload - Convai
-	 * rebuilds an Asset for a future engine version from that archive, so an Asset that never
-	 * received one can never be rebuilt, and nothing downstream would notice for months.
+	 * A creator may turn it off at any point, including before the first Publish: the archive is
+	 * the whole project, so its upload is the longest step of a Publish, and an iteration loop that
+	 * cannot skip it is an iteration loop nobody uses. The UI says what is given up before the
+	 * choice takes effect; it is not this setting's job to refuse.
 	 */
 	UPROPERTY(config, EditAnywhere, Category = "Publishing",
-		meta = (DisplayName = "Reuse Published Raw Project Archive"))
-	bool bReusePublishedRawArchive = false;
+		meta = (DisplayName = "Upload Raw Project Archive"))
+	bool bUploadRawProjectArchive = true;
 
 	/**
 	 * Whether a Publish must produce and send the Raw Project Archive.
@@ -84,16 +84,10 @@ public:
 	 * Subtracts from the Publish Policy and can never add to it: a Policy that asks for no archive
 	 * still gets none whatever the creator set, because which Versions an Asset carries is Convai's
 	 * decision and not a creator's. See CONTEXT.md.
-	 *
-	 * bPublishingPaks is not a detail of the creator's choice but of what is left: a Policy asking
-	 * for the archive alone would, with the archive reused, leave the Publish with nothing to send.
 	 */
-	bool ShouldArchiveRawProject(
-		const bool bPolicyAsksForIt,
-		const bool bHasPublishedArchive,
-		const bool bPublishingPaks) const
+	bool ShouldArchiveRawProject(const bool bPolicyAsksForIt) const
 	{
-		return bPolicyAsksForIt && !(bReusePublishedRawArchive && bHasPublishedArchive && bPublishingPaks);
+		return bPolicyAsksForIt && bUploadRawProjectArchive;
 	}
 
 	/** Repository holding the Publish Policy Convai publishes. */

@@ -128,46 +128,35 @@ bool FCPMPublishPolicyLeavesTheOldPolicyIntactOnFailure::RunTest(const FString&)
 }
 
 /**
- * What the creator's Reuse Published Raw Project Archive setting is allowed to do to a Policy.
+ * What the creator's Upload Raw Project Archive setting is allowed to do to a Policy.
  *
- * The whole truth table, not the interesting rows: the guarantees this encodes are that the setting
- * can only ever subtract from the Policy, and that an Asset with no archive behind it always gets
- * one - and both break silently, months later, in a Convai rebuild nobody here would see.
+ * The whole truth table, four rows of it. The row that matters is the last one: a creator who has
+ * turned the upload ON cannot thereby add an archive to an Asset whose Policy asked for none -
+ * which Versions an Asset carries is Convai's decision, and a setting that could add to it would
+ * publish a Version nothing on the server expects.
  */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FCPMPublishPolicyReusesOnlyAPublishedArchive,
-	"ConvaiPakManager.Publish.Policy.ReusesOnlyAPublishedArchive",
+	FCPMPublishPolicyArchiveUploadOnlySubtracts,
+	"ConvaiPakManager.Publish.Policy.ArchiveUploadOnlySubtracts",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
 
-bool FCPMPublishPolicyReusesOnlyAPublishedArchive::RunTest(const FString&)
+bool FCPMPublishPolicyArchiveUploadOnlySubtracts::RunTest(const FString&)
 {
 	UCPM_PakManagerSettings* Settings = GetMutableDefault<UCPM_PakManagerSettings>();
-	const bool bRestore = Settings->bReusePublishedRawArchive;
+	const bool bRestore = Settings->bUploadRawProjectArchive;
 
-	for (const bool bReuse : { false, true })
+	for (const bool bUpload : { false, true })
 	{
-		Settings->bReusePublishedRawArchive = bReuse;
+		Settings->bUploadRawProjectArchive = bUpload;
 		for (const bool bPolicy : { false, true })
 		{
-			for (const bool bPublished : { false, true })
-			{
-				for (const bool bPaks : { false, true })
-				{
-					// Skipped only where all four hold. Written out rather than repeating the
-					// implementation: what is under test is that the creator's flag subtracts from
-					// the Policy and never the other way round.
-					const bool bExpected = bPolicy && !(bReuse && bPublished && bPaks);
-
-					TestEqual(
-						*FString::Printf(TEXT("reuse=%d policy=%d published=%d paks=%d"),
-							bReuse, bPolicy, bPublished, bPaks),
-						Settings->ShouldArchiveRawProject(bPolicy, bPublished, bPaks), bExpected);
-				}
-			}
+			TestEqual(
+				*FString::Printf(TEXT("upload=%d policy=%d"), bUpload, bPolicy),
+				Settings->ShouldArchiveRawProject(bPolicy), bPolicy && bUpload);
 		}
 	}
 
-	Settings->bReusePublishedRawArchive = bRestore;
+	Settings->bUploadRawProjectArchive = bRestore;
 	return true;
 }
 
