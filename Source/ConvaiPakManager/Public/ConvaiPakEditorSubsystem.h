@@ -284,7 +284,7 @@ private:
 	 * The label is what makes the Chunk exist, so keeping it leaves an empty Chunk the creator can
 	 * fill again rather than one that vanishes from the tool along with its content.
 	 */
-	int32 DeletePluginContent(int32 ChunkId);
+	void DeletePluginContent(int32 ChunkId);
 
 	UFUNCTION()
 	void HandleDeleteSucceeded(const FString& ResponseString);

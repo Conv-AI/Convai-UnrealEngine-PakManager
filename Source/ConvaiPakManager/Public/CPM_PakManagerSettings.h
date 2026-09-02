@@ -142,7 +142,7 @@ public:
 
 	/** Read the policy from this JSON file, in the shape Convai publishes. */
 	UPROPERTY(config, EditAnywhere, Category = "Publish Policy Override", meta = (FilePathFilter = "json",
-		EditCondition = "PolicySource == ECPM_PolicySource::OverrideFile", EditConditionHides))
+		EditCondition = "PolicySource == ECPM_PolicySource::OverrideFile"))
 	FString PolicyOverrideFile;
 
 	/**
@@ -152,7 +152,7 @@ public:
 	 * fields below would be a chance to get it subtly wrong.
 	 */
 	UPROPERTY(config, EditAnywhere, Category = "Publish Policy Override", meta = (MultiLine = true,
-		EditCondition = "PolicySource == ECPM_PolicySource::OverrideText", EditConditionHides))
+		EditCondition = "PolicySource == ECPM_PolicySource::OverrideText"))
 	FString PolicyOverrideJson;
 
 	/**
@@ -162,7 +162,7 @@ public:
 	 * and a policy produces something - so an override cannot express what Convai's own cannot.
 	 */
 	UPROPERTY(config, EditAnywhere, Category = "Publish Policy Override",
-		meta = (EditCondition = "PolicySource == ECPM_PolicySource::OverrideSettings", EditConditionHides))
+		meta = (EditCondition = "PolicySource == ECPM_PolicySource::OverrideSettings"))
 	FCPM_PublishPolicy PolicyOverride = FCPM_PublishPolicy::Defaults();
 
 	/**

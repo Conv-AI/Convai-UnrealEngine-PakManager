@@ -11,6 +11,7 @@
 #include "ContentBrowserModule.h"
 #include "Editor.h"
 #include "Engine/Blueprint.h"
+#include "Engine/LevelStreaming.h"
 #include "Containers/Ticker.h"
 #include "EngineUtils.h"
 #include "FileHelpers.h"
@@ -450,12 +451,16 @@ void UConvaiPakEditorSubsystem::ResolvePolicy(
 {
 	const UCPM_PakManagerSettings& Settings = UCPM_PakManagerSettings::Get();
 
-	// A file named while the source still says Repository is a project configured before the source
-	// existed, and it means what it meant then.
-	const bool bLegacyFileOverride =
-		Settings.PolicySource == ECPM_PolicySource::Repository && !Settings.PolicyOverrideFile.IsEmpty();
+	// Strictly the source. A path left in the file field used to win on its own, which made
+	// "Convai repository" a choice the settings quietly ignored - and the field it lost to was
+	// hidden, so nothing on screen said why.
+	if (Settings.PolicySource == ECPM_PolicySource::Repository && !Settings.PolicyOverrideFile.IsEmpty())
+	{
+		CPM_LOG(Warning, TEXT("Ignoring the publish policy override at %s: Policy Source is the Convai repository."),
+			*Settings.PolicyOverrideFile);
+	}
 
-	if (Settings.PolicySource == ECPM_PolicySource::OverrideFile || bLegacyFileOverride)
+	if (Settings.PolicySource == ECPM_PolicySource::OverrideFile)
 	{
 		FString Contents;
 		if (!FFileHelper::LoadFileToString(Contents, *Settings.PolicyOverrideFile))
@@ -545,9 +550,18 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 	// The mirror of the guard DeleteAsset already has: a Publish started while a delete is in flight
 	// reads records that delete is about to remove, and one started while a content deletion is
 	// queued would package Source Packages that are about to go.
-	if (DeletingChunkId == ChunkId || PendingContentDeleteChunkId == ChunkId)
+	if (DeletingChunkId == ChunkId)
 	{
 		SetStatus(ChunkId, Refusal, TEXT("this chunk is being deleted"));
+		return false;
+	}
+
+	// Any Chunk, not just that one: the content about to be deleted is a whole plugin, and Chunks
+	// are not confined to one each - a cook started here could be reading packages that vanish
+	// underneath it.
+	if (PendingContentDeleteChunkId != INDEX_NONE)
+	{
+		SetStatus(ChunkId, Refusal, TEXT("this project is deleting a plugin's content"));
 		return false;
 	}
 
@@ -824,6 +838,15 @@ bool UConvaiPakEditorSubsystem::DeleteAsset(const int32 ChunkId, const FString& 
 		return false;
 	}
 
+	// A content delete reaches beyond this Chunk, so it waits for the whole project to be idle -
+	// another Chunk's cook reads the very packages it would remove.
+	if (bAlsoDeletePluginContent && !ActivePublishes.IsEmpty())
+	{
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed,
+			TEXT("another asset in this project is publishing; its content cannot be deleted while that runs"));
+		return false;
+	}
+
 	DeleteProxy = UCPM_DeleteAssetProxy::DeleteAssetProxy(AssetId, Version);
 	if (!DeleteProxy)
 	{
@@ -908,25 +931,15 @@ void UConvaiPakEditorSubsystem::HandleDeleteSucceeded(const FString& ResponseStr
 		{
 			if (UConvaiPakEditorSubsystem* Self = WeakThis.Get())
 			{
-				const int32 Deleted = Self->DeletePluginContent(ChunkId);
-				UCPM_UtilityLibrary::CPM_LogMessage(
-					FString::Printf(TEXT("Deleted %d source package(s) from chunk %d's plugin; its asset label was kept."),
-						Deleted, ChunkId),
-					ECPM_LogLevel::Warning);
-
 				Self->PendingContentDeleteChunkId = INDEX_NONE;
-
-				// Re-broadcast so the form re-reads a Chunk whose Entry Point has just gone. The UI
-				// toasts only what was busy, and this Chunk stopped being busy above, so this
-				// refreshes without saying "deleted" a second time.
-				Self->SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Success);
+				Self->DeletePluginContent(ChunkId);
 			}
 			return false;
 		}), 0.0f);
 	}
 }
 
-int32 UConvaiPakEditorSubsystem::DeletePluginContent(const int32 ChunkId)
+void UConvaiPakEditorSubsystem::DeletePluginContent(const int32 ChunkId)
 {
 	FCPM_ModdingMetadata Modding;
 	UCPM_UtilityLibrary::GetModdingMetadataForChunk(ChunkId, Modding);
@@ -934,14 +947,17 @@ int32 UConvaiPakEditorSubsystem::DeletePluginContent(const int32 ChunkId)
 	{
 		// Refused rather than guessed. The mount root is the only thing bounding what gets deleted,
 		// and a guessed one could name the whole project.
-		CPM_LOG(Error, TEXT("Chunk %d records no plugin name, so its content was left alone."), ChunkId);
-		return 0;
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed,
+			TEXT("the asset was deleted on Convai, but this chunk records no plugin, so its content was left alone"));
+		return;
 	}
 
 	IAssetRegistry* AssetRegistry = IAssetRegistry::Get();
 	if (!AssetRegistry)
 	{
-		return 0;
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed,
+			TEXT("the asset was deleted on Convai, but its content could not be read"));
+		return;
 	}
 
 	const FName MountRoot(*FString::Printf(TEXT("/%s"), *Modding.PluginName));
@@ -963,22 +979,59 @@ int32 UConvaiPakEditorSubsystem::DeletePluginContent(const int32 ChunkId)
 
 	if (Assets.IsEmpty())
 	{
-		return 0;
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Success);
+		return;
 	}
 
-	// A level being deleted cannot be the one open in the editor, and the Entry Point of a Scene
-	// usually is exactly that. Leaving it open makes the delete fail on the asset that matters most.
-	const UWorld* EditorWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-	const FName OpenPackage = EditorWorld ? FName(*EditorWorld->GetOutermost()->GetName()) : NAME_None;
-	if (Assets.ContainsByPredicate([&OpenPackage](const FAssetData& Asset) { return Asset.PackageName == OpenPackage; }))
+	// Every world the editor is holding open, not just the persistent one: the engine refuses to
+	// delete a level that is loaded as a streaming sublevel or a Level Instance too, and it refuses
+	// the WHOLE batch rather than that one asset.
+	TSet<FName> OpenWorlds;
+	if (const UWorld* EditorWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr)
+	{
+		OpenWorlds.Add(EditorWorld->GetOutermost()->GetFName());
+		for (const ULevelStreaming* Streaming : EditorWorld->GetStreamingLevels())
+		{
+			if (const ULevel* Loaded = Streaming ? Streaming->GetLoadedLevel() : nullptr)
+			{
+				OpenWorlds.Add(Loaded->GetOutermost()->GetFName());
+			}
+		}
+	}
+
+	// A Scene's Entry Point is usually the open map, so this is the ordinary case rather than the
+	// corner one. The blank map takes the sublevels with it.
+	if (Assets.ContainsByPredicate([&OpenWorlds](const FAssetData& Asset) { return OpenWorlds.Contains(Asset.PackageName); }))
 	{
 		UEditorLoadingAndSavingUtils::NewBlankMap(/*bSaveExistingMap=*/false);
 	}
 
-	// The editor's own delete, not a file remove: it closes asset editors, unloads the objects and
-	// puts referencers in front of the creator. Deleting the files underneath a loaded package would
-	// leave the editor holding objects whose packages no longer exist.
-	return ObjectTools::DeleteAssets(Assets, /*bShowConfirmation=*/false);
+	// The editor's own delete, not a file remove: it closes asset editors and unloads the objects.
+	// Deleting the files underneath a loaded package would leave the editor holding objects whose
+	// packages no longer exist.
+	const int32 Requested = Assets.Num();
+	const int32 Deleted = ObjectTools::DeleteAssets(Assets, /*bShowConfirmation=*/false);
+
+	// Reported, because without the confirmation dialog the engine deletes NOTHING when anything in
+	// the set is still referenced from outside it - it answers 0, and the creator would otherwise be
+	// told their content was deleted while all of it is still there.
+	if (Deleted < Requested)
+	{
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed,
+			FString::Printf(
+				TEXT("the asset was deleted on Convai, but %d of %d source packages were kept - something outside %s ")
+				TEXT("still references them. Delete them from the Content Browser to see what."),
+				Requested - Deleted, Requested, *MountRoot.ToString()));
+		return;
+	}
+
+	CPM_LOG(Warning, TEXT("Deleted %d source package(s) from chunk %d's plugin; its asset label was kept."),
+		Deleted, ChunkId);
+
+	// Re-broadcast so the form re-reads a Chunk whose Entry Point has just gone. The UI toasts only
+	// what was busy, and this Chunk stopped being busy when the delete succeeded, so this refreshes
+	// without saying "deleted" a second time.
+	SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Success);
 }
 
 void UConvaiPakEditorSubsystem::HandleDeleteFailed(const FString& ResponseString)
