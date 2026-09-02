@@ -7,9 +7,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Framework/Notifications/NotificationManager.h"
-#include "ISettingsModule.h"
 #include "Misc/MessageDialog.h"
-#include "Modules/ModuleManager.h"
 #include "UI/CPM_PakManagerStyle.h"
 #include "UI/SCPM_AssetDetailPanel.h"
 #include "UI/SCPM_AssetListPanel.h"
@@ -371,10 +369,10 @@ TSharedRef<SWidget> SCPM_PakManagerPanel::BuildMoreMenu()
 				})));
 
 		Menu.AddMenuEntry(
-			LOCTEXT("DeleteBuiltPaks", "Delete every built pak"),
+			LOCTEXT("DeleteBuiltPaks", "Clean up the packaged asset"),
 			LOCTEXT("DeleteBuiltPaksTip",
-				"Deletes the pak files this project has built on this computer. Convai keeps the versions it "
-				"already holds."),
+				"Deletes what this project has built on this computer, for every platform. Convai keeps the "
+				"versions it already holds, and your next publish builds them again."),
 			FSlateIcon(),
 			FUIAction(
 				FExecuteAction::CreateSP(this, &SCPM_PakManagerPanel::HandleDeleteBuiltPaks),
@@ -427,20 +425,6 @@ TSharedRef<SWidget> SCPM_PakManagerPanel::BuildMoreMenu()
 
 	Menu.BeginSection(NAME_None, LOCTEXT("MenuAsset", "Asset"));
 	{
-		Menu.AddMenuEntry(
-			LOCTEXT("PublishSettings", "Publish settings..."),
-			LOCTEXT("PublishSettingsTip", "Opens this plugin's settings in Project Settings."),
-			FSlateIcon(),
-			FUIAction(FExecuteAction::CreateLambda([]
-			{
-				if (ISettingsModule* Settings = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
-				{
-					Settings->ShowViewer("Project", "Plugins", "Convai Pak Manager");
-				}
-			})));
-
-		Menu.AddSeparator();
-
 		Menu.AddMenuEntry(
 			LOCTEXT("DeleteAsset", "Delete asset..."),
 			LOCTEXT("DeleteAssetTip", "Removes the published Convai asset. Local project files stay untouched."),
@@ -500,15 +484,15 @@ void SCPM_PakManagerPanel::HandleDeleteBuiltPaks()
 	}
 
 	const FText Question = LOCTEXT("DeleteBuiltPaksAsk",
-		"Delete every pak this project has built on this computer?\n\nConvai keeps the versions it already holds, "
-		"and your next publish builds new ones.");
+		"Clean up everything this project has built on this computer?\n\nConvai keeps the versions it already "
+		"holds, and your next publish builds them again.");
 	if (FMessageDialog::Open(EAppMsgType::YesNo, Question) != EAppReturnType::Yes)
 	{
 		return;
 	}
 
 	const int32 Deleted = Subsystem->DeleteBuiltPaks(Active->ChunkId);
-	Notify(FText::Format(LOCTEXT("DeletedPaks", "Deleted {0} pak file(s)."), FText::AsNumber(Deleted)),
+	Notify(FText::Format(LOCTEXT("DeletedPaks", "Cleaned up the packaged asset - {0} file(s) removed."), FText::AsNumber(Deleted)),
 		SNotificationItem::CS_Success);
 }
 

@@ -60,6 +60,9 @@ private:
 	/** The "..." menu on one platform's row. */
 	TSharedRef<SWidget> BuildPlatformRowMenu(ECPM_Platform Platform);
 
+	/** The "..." menu on the project source row - the same anatomy as a platform's. */
+	TSharedRef<SWidget> BuildSourceRowMenu();
+
 	/**
 	 * Platforms the ledger shows: what the Policy asks for, or every platform when the creator asked
 	 * to see them all - and always every platform while the Policy is unread or unreadable, so a

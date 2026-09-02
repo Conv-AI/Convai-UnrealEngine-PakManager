@@ -731,12 +731,15 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildUploadSection()
 					.Image_Lambda([this]
 					{
 						return FAppStyle::Get().GetBrush(
-							Asset.IsValid() && Asset->HasPublishedRawArchive() ? "Icons.Check" : "Icons.Warning");
+							Asset.IsValid() && Asset->HasPublishedRawArchive() ? "Icons.Check" : "Icons.Info");
 					})
 					.ColorAndOpacity_Lambda([this]
 					{
+						// Never Warning. Nothing uploaded yet is the ordinary state of a draft, and
+						// an upload the creator turned off is a choice - alarming about either is
+						// what this rework removes.
 						return FSlateColor(Asset.IsValid() && Asset->HasPublishedRawArchive()
-							? FPalette::GreenPrimary : FPalette::Warning);
+							? FPalette::GreenPrimary : FPalette::TextSecondary);
 					})
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
@@ -753,7 +756,20 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildUploadSection()
 						{
 							return LOCTEXT("RawArchiveNotInPolicy", "Convai does not ask this project for a copy of your project");
 						}
-						if (!Asset.IsValid() || !Asset->HasPublishedRawArchive())
+
+						const bool bUploaded = Asset.IsValid() && Asset->HasPublishedRawArchive();
+
+						// With the include control behind the menu, this line is the only thing that
+						// says whether the source is in the next publish - so it always says it.
+						if (!UCPM_PakManagerSettings::Get().bUploadRawProjectArchive)
+						{
+							return bUploaded
+								? FText::Format(LOCTEXT("RawArchiveExcludedUploaded",
+									"Not in the next publish. Uploaded {0}"), RelativeTimeText(Asset->RawArchiveUploadTime))
+								: LOCTEXT("RawArchiveExcluded", "Not in the next publish.");
+						}
+
+						if (!bUploaded)
 						{
 							// Not "sent by the next publish": whether one is sent at all is the
 							// Publish Policy's to say, and this promises nothing on its behalf.
@@ -764,47 +780,25 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildUploadSection()
 					})
 					.ColorAndOpacity_Lambda([this]
 					{
+						// Never Warning. Nothing uploaded yet is the ordinary state of a draft, and
+						// an upload the creator turned off is a choice - alarming about either is
+						// what this rework removes.
 						return FSlateColor(Asset.IsValid() && Asset->HasPublishedRawArchive()
-							? FPalette::GreenPrimary : FPalette::Warning);
+							? FPalette::GreenPrimary : FPalette::TextSecondary);
 					})
 				]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6.0f, 0.0f, 0.0f, 0.0f)
 				[
-					SNew(SCheckBox)
-					.IsChecked_Lambda([]
-					{
-						return UCPM_PakManagerSettings::Get().bUploadRawProjectArchive
-							? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-					})
-					.OnCheckStateChanged_Lambda([](ECheckBoxState State)
-					{
-						const bool bUpload = State == ECheckBoxState::Checked;
-
-						// Only turning it OFF is explained, and only before it takes effect: this is
-						// the choice that costs the creator something later, and the cost is
-						// invisible until an engine version they have not heard of yet ships.
-						if (!bUpload && !ConfirmSkippingRawArchive())
-						{
-							return;
-						}
-
-						UCPM_PakManagerSettings* Settings = GetMutableDefault<UCPM_PakManagerSettings>();
-						Settings->bUploadRawProjectArchive = bUpload;
-						if (!Settings->TryUpdateDefaultConfigFile())
-						{
-							// The session honours it either way; said out loud because the change
-							// silently coming back after a restart is the confusing half.
-							Notify(LOCTEXT("UploadArchiveNotSaved",
-								"Could not write DefaultGame.ini - this applies to the current session only."),
-								SNotificationItem::CS_Fail);
-						}
-					})
-					.ToolTipText(LOCTEXT("UploadArchiveTip",
-						"Sends your project alongside the paks, so Convai can repackage this asset for future "
-						"Unreal Engine versions without you republishing it. It is the longest step of a publish; "
-						"turn it off while iterating. Applies to every asset in this project."))
+					// The same "..." every platform row carries, so the source reads as one more of
+					// them rather than the one row with its own controls.
+					SNew(SComboButton)
+					.ComboButtonStyle(&FAppStyle::Get().GetWidgetStyle<FComboButtonStyle>("SimpleComboButton"))
+					.HasDownArrow(false)
+					.ToolTipText(LOCTEXT("SourceMoreTip", "More for the project source"))
+					.OnGetMenuContent(this, &SCPM_AssetDetailPanel::BuildSourceRowMenu)
+					.ButtonContent()
 					[
-						SNew(STextBlock).Text(LOCTEXT("UploadArchive", "Include"))
+						SNew(STextBlock).Text(LOCTEXT("RowMoreGlyphSource", "..."))
 					]
 				]
 			]
@@ -1215,59 +1209,24 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPlatformRow(const ECPM_Platform 
 			.Text_Lambda([this, Pak, Platform]
 			{
 				const FCPM_PakPlatformStatus* Status = Pak();
-				if (Status && Status->bExists)
+				const bool bBuilt = Status && Status->bExists;
+				const bool bSelected = Asset.IsValid() && Asset->SelectedPlatforms.Contains(Platform);
+
+				// With the include control behind the menu, this line is the ONLY thing that says
+				// whether the platform is in the next publish - so it always says it.
+				if (!bSelected)
 				{
-					return FText::Format(
-						LOCTEXT("PakBuilt", "Built pak on disk, made {0}"), RelativeTimeText(Status->LastPackagedTime));
+					return bBuilt
+						? FText::Format(LOCTEXT("PakBuiltExcluded", "Not in the next publish. Built pak on disk, made {0}"),
+							RelativeTimeText(Status->LastPackagedTime))
+						: LOCTEXT("PakExcluded", "Not in the next publish.");
 				}
 
-				// Says what happens next rather than naming an absence, and only promises a build
-				// when this run would actually make one.
-				const bool bSelected = Asset.IsValid() && Asset->SelectedPlatforms.Contains(Platform);
-				return bSelected
-					? LOCTEXT("PakWillBuild", "No pak on this computer. The next publish builds one.")
-					: LOCTEXT("PakNotIncluded", "No pak on this computer.");
+				return bBuilt
+					? FText::Format(LOCTEXT("PakBuilt", "Built pak on disk, made {0}"),
+						RelativeTimeText(Status->LastPackagedTime))
+					: LOCTEXT("PakWillBuild", "No pak on this computer. The next publish builds one.");
 			})
-		]
-		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
-		[
-			SNew(SCheckBox)
-			.IsChecked_Lambda([this, Platform]
-			{
-				return Asset.IsValid() && Asset->SelectedPlatforms.Contains(Platform)
-					? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-			})
-			.IsEnabled_Lambda([this] { return !IsBusy(); })
-			.OnCheckStateChanged_Lambda([this, Platform](ECheckBoxState State)
-			{
-				if (!Asset.IsValid())
-				{
-					return;
-				}
-				if (State == ECheckBoxState::Checked)
-				{
-					Asset->SelectedPlatforms.Add(Platform);
-				}
-				else
-				{
-					Asset->SelectedPlatforms.Remove(Platform);
-				}
-			})
-			.ToolTipText_Lambda([this, Platform]
-			{
-				// The tooltip carries the whole Platform Selection rule, because this checkbox is
-				// the only place a creator meets it.
-				return PolicyPlatforms().Contains(Platform)
-					? LOCTEXT("PlatformIncludedTip",
-						"Build and upload this platform on the next publish. Convai asks this project for it; "
-						"unticking sends the others alone.")
-					: LOCTEXT("PlatformForcedTip",
-						"Build and upload this platform on the next publish, even though Convai does not ask this "
-						"project for it. For a project Convai has agreed to host this platform for.");
-			})
-			[
-				SNew(STextBlock).Text(LOCTEXT("IncludePlatform", "Include"))
-			]
 		]
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6.0f, 0.0f, 0.0f, 0.0f)
 		[
@@ -1283,6 +1242,91 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPlatformRow(const ECPM_Platform 
 		];
 }
 
+TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildSourceRowMenu()
+{
+	const int32 ChunkId = Asset.IsValid() ? Asset->ChunkId : INDEX_NONE;
+	const bool bPublished = Asset.IsValid() && !Asset->AssetId.IsEmpty();
+
+	FMenuBuilder Menu(/*bShouldCloseWindowAfterMenuSelection=*/true, nullptr);
+
+	Menu.BeginSection(NAME_None, LOCTEXT("NextPublishSource", "Next publish"));
+	{
+		Menu.AddMenuEntry(
+			LOCTEXT("IncludeSource", "Include in the next publish"),
+			LOCTEXT("UploadArchiveTip",
+				"Sends your project alongside the paks, so Convai can repackage this asset for future "
+				"Unreal Engine versions without you republishing it. It is the longest step of a publish; "
+				"turn it off while iterating. Applies to every asset in this project."),
+			FSlateIcon(),
+			FUIAction(
+				FExecuteAction::CreateLambda([]
+				{
+					const bool bUpload = !UCPM_PakManagerSettings::Get().bUploadRawProjectArchive;
+
+					// Only turning it OFF is explained, and only before it takes effect: this is the
+					// choice that costs the creator something later, and the cost is invisible until
+					// an engine version they have not heard of yet ships.
+					if (!bUpload && !ConfirmSkippingRawArchive())
+					{
+						return;
+					}
+
+					UCPM_PakManagerSettings* Settings = GetMutableDefault<UCPM_PakManagerSettings>();
+					Settings->bUploadRawProjectArchive = bUpload;
+					if (!Settings->TryUpdateDefaultConfigFile())
+					{
+						// The session honours it either way; said out loud because the change
+						// silently coming back after a restart is the confusing half.
+						Notify(LOCTEXT("UploadArchiveNotSaved",
+							"Could not write DefaultGame.ini - this applies to the current session only."),
+							SNotificationItem::CS_Fail);
+					}
+				}),
+				// Not gated on the Policy: unticking is always allowed, and when the Policy asks for
+				// no archive the row says so and the setting cannot add one anyway.
+				FCanExecuteAction::CreateLambda([this] { return !IsBusy(); }),
+				FIsActionChecked::CreateLambda([]
+				{
+					return UCPM_PakManagerSettings::Get().bUploadRawProjectArchive;
+				})),
+			NAME_None,
+			EUserInterfaceActionType::ToggleButton);
+	}
+	Menu.EndSection();
+
+	Menu.BeginSection(NAME_None, LOCTEXT("OnConvaiSource", "On Convai"));
+	{
+		Menu.AddMenuEntry(
+			LOCTEXT("DeleteSourceVersion", "Delete the project source Convai holds..."),
+			LOCTEXT("DeleteSourceVersionTip",
+				"Removes the copy of your project Convai holds. The asset and its builds stay, but Convai can no "
+				"longer move this asset to a future Unreal version on its own."),
+			FSlateIcon(),
+			FUIAction(
+				FExecuteAction::CreateLambda([this, ChunkId]
+				{
+					const FText Question = FText::Format(
+						LOCTEXT("DeleteSourceAsk",
+							"Delete the copy of your project that Convai holds for \"{0}\"?\n\nThe asset and its "
+							"builds stay. Convai will no longer be able to move this asset to a future Unreal "
+							"version on its own - you would publish it again yourself.\n\nThis cannot be undone."),
+						FText::FromString(Asset.IsValid() ? Asset->Name : FString()));
+					if (FMessageDialog::Open(EAppMsgType::YesNo, Question) != EAppReturnType::Yes)
+					{
+						return;
+					}
+					if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
+					{
+						Subsystem->DeleteVersion(ChunkId, ECPM_Platform::Raw);
+					}
+				}),
+				FCanExecuteAction::CreateLambda([this, bPublished] { return bPublished && !IsBusy(); })));
+	}
+	Menu.EndSection();
+
+	return Menu.MakeWidget();
+}
+
 TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPlatformRowMenu(const ECPM_Platform Platform)
 {
 	const int32 ChunkId = Asset.IsValid() ? Asset->ChunkId : INDEX_NONE;
@@ -1293,39 +1337,68 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPlatformRowMenu(const ECPM_Platf
 			[Platform](const FCPM_PakPlatformStatus& S) { return S.Platform == Platform; })
 		: nullptr;
 	const bool bHasPak = Status && Status->bExists;
-	const FString PakPath = Status ? Status->PakPath : FString();
 	const bool bPublished = Asset.IsValid() && !Asset->AssetId.IsEmpty();
 
 	FMenuBuilder Menu(/*bShouldCloseWindowAfterMenuSelection=*/true, nullptr);
 
-	Menu.BeginSection(NAME_None, LOCTEXT("OnThisComputer", "On this computer"));
+	Menu.BeginSection(NAME_None, LOCTEXT("NextPublish", "Next publish"));
 	{
-		// This is where the standalone Reveal button went.
-		Menu.AddMenuEntry(
-			LOCTEXT("ShowPakInExplorer", "Show the built pak in Explorer"),
-			bHasPak
-				? LOCTEXT("ShowPakTip", "Opens the folder holding this platform's pak.")
-				: FText::Format(LOCTEXT("NoPakTip", "No {0} pak on this computer."), PlatformName),
-			FSlateIcon(),
-			FUIAction(
-				FExecuteAction::CreateLambda([PakPath] { FPlatformProcess::ExploreFolder(*FPaths::GetPath(PakPath)); }),
-				// Deliberately NOT gated on busy: opening a folder contends with nothing, and a
-				// twenty-minute publish is exactly when someone wants to look.
-				FCanExecuteAction::CreateLambda([bHasPak] { return bHasPak; })));
+		const bool bInPolicy = PolicyPlatforms().Contains(Platform);
 
 		Menu.AddMenuEntry(
-			LOCTEXT("DeleteBuiltPak", "Delete the built pak"),
+			LOCTEXT("IncludePlatform", "Include in the next publish"),
+			// The tooltip carries the whole Platform Selection rule, because this is the only place
+			// a creator meets it - and it reads differently depending on which way it departs from
+			// what Convai asks for.
+			bInPolicy
+				? LOCTEXT("PlatformIncludedTip",
+					"Build and upload this platform on the next publish. Convai asks this project for it; "
+					"turning it off sends the others alone.")
+				: LOCTEXT("PlatformForcedTip",
+					"Build and upload this platform on the next publish, even though Convai does not ask this "
+					"project for it. For a project Convai has agreed to host this platform for."),
+			FSlateIcon(),
+			FUIAction(
+				FExecuteAction::CreateLambda([this, Platform]
+				{
+					if (!Asset.IsValid())
+					{
+						return;
+					}
+					if (Asset->SelectedPlatforms.Contains(Platform))
+					{
+						Asset->SelectedPlatforms.Remove(Platform);
+					}
+					else
+					{
+						Asset->SelectedPlatforms.Add(Platform);
+					}
+				}),
+				FCanExecuteAction::CreateLambda([this] { return !IsBusy(); }),
+				FIsActionChecked::CreateLambda([this, Platform]
+				{
+					return Asset.IsValid() && Asset->SelectedPlatforms.Contains(Platform);
+				})),
+			NAME_None,
+			EUserInterfaceActionType::ToggleButton);
+	}
+	Menu.EndSection();
+
+	Menu.BeginSection(NAME_None, LOCTEXT("OnThisComputer", "On this computer"));
+	{
+		Menu.AddMenuEntry(
+			FText::Format(LOCTEXT("DeleteBuiltPak", "Clean up the {0} package"), PlatformName),
 			LOCTEXT("DeleteBuiltPakTip",
-				"Deletes this pak on this computer. Convai keeps the version it already holds, and your next "
-				"publish builds a new one."),
+				"Deletes what this project built for this platform on this computer. Convai keeps the version it "
+				"already holds, and your next publish builds it again."),
 			FSlateIcon(),
 			FUIAction(
 				FExecuteAction::CreateLambda([this, ChunkId, Platform, PlatformName]
 				{
 					const FText Question = FText::Format(
 						LOCTEXT("DeleteBuiltPakAsk",
-							"Delete the {0} pak on this computer?\n\nConvai keeps the version it already holds, "
-							"and your next publish builds a new one."),
+							"Clean up what this project built for {0} on this computer?\n\nConvai keeps the version "
+							"it already holds, and your next publish builds it again."),
 						PlatformName);
 					if (FMessageDialog::Open(EAppMsgType::YesNo, Question) != EAppReturnType::Yes)
 					{
@@ -1336,9 +1409,9 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPlatformRowMenu(const ECPM_Platf
 						const bool bDeleted = Subsystem->DeleteBuiltPak(ChunkId, Platform);
 						Notify(
 							bDeleted
-								? FText::Format(LOCTEXT("DeletedPak", "Deleted the {0} pak."), PlatformName)
+								? FText::Format(LOCTEXT("DeletedPak", "Cleaned up the {0} package."), PlatformName)
 								: FText::Format(LOCTEXT("DeletePakFailed",
-									"Could not delete the {0} pak. It may be open in another program."), PlatformName),
+									"Could not clean up the {0} package. It may be open in another program."), PlatformName),
 							bDeleted ? SNotificationItem::CS_Success : SNotificationItem::CS_Fail);
 					}
 				}),
