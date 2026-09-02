@@ -61,6 +61,9 @@ public:
 	 * A stated policy, not an enforcement boundary: the plugin ships as source, so this documents
 	 * intent for creators who will never modify it and defends nothing against one who does.
 	 */
+	// TODO(release): hide from creators. A stated policy nobody outside Convai should be editing,
+	// exposed today only so internal projects can raise it. Move behind AdvancedDisplay, or drop
+	// the UPROPERTY and read it from the Publish Policy instead.
 	UPROPERTY(config, EditAnywhere, Category = "Publishing",
 		meta = (DisplayName = "Max Chunks Per Project", ClampMin = "0"))
 	int32 MaxChunksPerProject = 1;
@@ -82,6 +85,10 @@ public:
 	 * upload, not Convai, not the creator - can tell that from a fresh one. A platform with no
 	 * usable Pak on disk is still packaged normally.
 	 */
+	// TODO(release): remove this setting before shipping. It exists for debugging the post-cook
+	// stages and must not reach creators - left on, it publishes whatever the last cook produced
+	// and nothing downstream can tell that from fresh content. The per-run equivalent a creator is
+	// allowed to reach is FCPM_PublishRequest::bReuseExistingPaks, chosen one publish at a time.
 	UPROPERTY(config, EditAnywhere, Category = "Publishing",
 		meta = (DisplayName = "Use Existing Pak File"))
 	bool bUseExistingPakFile = false;

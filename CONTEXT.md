@@ -36,9 +36,13 @@ _Avoid_: asset, uasset, content
 The one **Source Package** in a Chunk that a Convai product opens — the level for a Scene, the
 blueprint for an Avatar. A Chunk gathers everything in its label's reach and does not on its own say
 which of those things is the thing to load; the Entry Point does. Its kind must match the **Asset
-Type**, and the UI labels it "Entry point" — not "source package", which names any member of the
-Chunk, not the distinguished one.
-_Avoid_: source package (for this), main asset, selected asset
+Type**.
+The UI does NOT use this term. It labels the field "Selected asset", because a creator reads "entry
+point" as a place — it sits two rows from "Spawn point" — and because one general label is right
+where the code needs a general concept: the field holds a level path or a blueprint path and the
+creator only ever meets one of them. "Entry Point" stays the word in code, in the Commands and here.
+Still not "source package", which names any member of the Chunk, not the distinguished one.
+_Avoid_: source package (for this), main asset; and "Entry point" as a UI label
 
 **Chunk**:
 The Source Packages gathered into one publishable unit by one Primary Asset Label, identified by
@@ -85,8 +89,18 @@ _Avoid_: upload, export, deploy — upload is one step of a Publish, not the who
 **Publish Policy**:
 Which platforms a Publish builds for, at which build configuration, and whether it includes the Raw
 Project Archive. Held by Convai and the same for every creator, so that what a Publish produces can
-be changed without every creator updating their tools.
+be changed without every creator updating their tools. States the DEFAULT, not the permitted maximum
+— see **Platform Selection**.
 _Avoid_: settings, options, preferences — a creator does not choose these
+
+**Platform Selection**:
+The platforms one **Publish** actually builds and uploads. Defaults to what the **Publish Policy**
+names and is chosen per Publish, never stored as a project setting — an override that outlives the
+run that needed it is how a project silently keeps publishing a platform nobody remembers agreeing
+to. May both add a platform the Policy omits and drop one it names; it is the only thing that may
+add, and it never extends to the **Raw Project Archive**.
+_Avoid_: platform override, forced platforms, target platforms — the first two name the exceptional
+use for the ordinary control, and a Selection that matches the Policy is the common case
 
 **Asset Type**:
 What kind of thing an Asset is — Scene or Avatar. Fixed when the Modding Tool generates the project,
@@ -109,8 +123,18 @@ _Avoid_: category, entity type
 
 - A creator's project settings may make a **Publish** do LESS than the **Publish Policy** asks —
   build no **Pak** that is already on disk, send no **Raw Project Archive** the **Asset** already
-  holds — and never more. Which **Versions** an Asset carries stays Convai's decision; the settings
-  only skip work whose result is already there
+  holds — and never more. A *setting* only skips work whose result is already there
+
+- The **Platform Selection** is the exception, and the only one: it may both add and remove
+  platforms. The **Publish Policy** states what a project publishes *by default*, not what it is
+  permitted to publish, because the two diverge for a real customer — Convai agrees to host a Linux
+  build for one enterprise project while the published policy names Windows alone, and the reverse
+  once Linux is general but one creator should send Windows only. Neither is expressible by a policy
+  that is the same for every creator, and neither is worth a policy branch per customer.
+  The **Raw Project Archive** is NOT covered by this: it still only subtracts, because a Publish
+  that adds an archive nothing expects sends the creator's whole project somewhere it was not asked
+  for. Whether Convai *serves* a Version it did not ask for stays Convai's decision; this only
+  governs what a Publish uploads
 
 ## Flagged ambiguities
 
