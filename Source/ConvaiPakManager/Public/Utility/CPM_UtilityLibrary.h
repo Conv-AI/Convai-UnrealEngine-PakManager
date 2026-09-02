@@ -73,6 +73,10 @@ public:
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Convai|PakManager")
 	static void GetModdingMetadata(FCPM_ModdingMetadata& OutData);
+
+	/** What the Modding Tool decided about one Chunk. The overload above asks for the sole Chunk's. */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Convai|PakManager", meta = (DisplayName = "Get Modding Metadata For Chunk"))
+	static void GetModdingMetadataForChunk(int32 ChunkId, FCPM_ModdingMetadata& OutData);
 	
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static bool GetCreatedAssetsFromJSON(const FString& JsonString, FCPM_CreatedAssets& OutCreatedAssets);

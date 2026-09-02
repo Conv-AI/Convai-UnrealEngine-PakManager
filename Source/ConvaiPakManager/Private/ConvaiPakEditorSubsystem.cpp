@@ -12,6 +12,8 @@
 #include "Editor.h"
 #include "Engine/Blueprint.h"
 #include "EngineUtils.h"
+#include "FileHelpers.h"
+#include "ObjectTools.h"
 #include "Engine/TargetPoint.h"
 #include "Engine/World.h"
 #include "IContentBrowserSingleton.h"
@@ -767,7 +769,7 @@ bool UConvaiPakEditorSubsystem::CancelPublish(const int32 ChunkId)
 	return Manager && Manager->ICancelWorkflow(*Handle, /*bForce=*/false);
 }
 
-bool UConvaiPakEditorSubsystem::DeleteAsset(const int32 ChunkId, const FString& Version)
+bool UConvaiPakEditorSubsystem::DeleteAsset(const int32 ChunkId, const FString& Version, const bool bAlsoDeletePluginContent)
 {
 	const FString AssetId = GetAssetId(ChunkId);
 	if (AssetId.IsEmpty())
@@ -797,6 +799,10 @@ bool UConvaiPakEditorSubsystem::DeleteAsset(const int32 ChunkId, const FString& 
 
 	DeletingChunkId = ChunkId;
 	DeletingVersion = Version;
+
+	// Only a whole-asset delete takes the content: deleting one Version leaves the Asset, and the
+	// content is what every remaining Version was built from.
+	bDeletingPluginContent = bAlsoDeletePluginContent && Version.IsEmpty();
 	SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Begin);
 
 	DeleteProxy->OnSuccess.AddDynamic(this, &UConvaiPakEditorSubsystem::HandleDeleteSucceeded);
@@ -810,8 +816,10 @@ void UConvaiPakEditorSubsystem::HandleDeleteSucceeded(const FString& ResponseStr
 	const int32 ChunkId = DeletingChunkId;
 	const FString Version = DeletingVersion;
 	const bool bWholeAsset = Version.IsEmpty();
+	const bool bDeleteContent = bDeletingPluginContent;
 	DeletingChunkId = INDEX_NONE;
 	DeletingVersion.Reset();
+	bDeletingPluginContent = false;
 	DeleteProxy = nullptr;
 
 	if (ChunkId == INDEX_NONE)
@@ -819,54 +827,102 @@ void UConvaiPakEditorSubsystem::HandleDeleteSucceeded(const FString& ResponseStr
 		return;
 	}
 
-	// Whichever of the two took the archive with it. Kept up to date because the record is what
-	// lets a Publish reuse the archive: left behind, it would authorise reusing one Convai no
-	// longer has.
-	if (bWholeAsset || Version.Equals(TEXT("raw"), ESearchCase::IgnoreCase))
-	{
-		const FString ArchiveRecordPath = ConvaiPakManager::Chunk::GetRawArchiveRecordPath(ChunkId);
-
-		// Reported as a failure although the server did delete, as the Asset record below is: a
-		// record left behind says Convai holds an archive it has just lost, and the next Publish
-		// would believe it. That stays true for a whole-asset delete, where the Asset record is
-		// cleared now but a later Publish writes a new one the moment it creates an Asset.
-		if (!IFileManager::Get().Delete(*ArchiveRecordPath, /*RequireExists=*/false, /*EvenReadOnly=*/true))
-		{
-			SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed,
-				FString::Printf(TEXT("the delete succeeded on Convai but %s could not be cleared; remove it by hand"),
-					*ArchiveRecordPath));
-			return;
-		}
-	}
+	TArray<FString> Undeleted;
 
 	if (bWholeAsset)
 	{
-		// The Asset is gone from Convai, so the record naming it must go too - a kept AssetId would
-		// make the next Publish update something that no longer exists. Name, description and Entry
-		// Point live in the pak metadata, not here, so deleting this file keeps the creator's draft.
-		const FString RecordPath = ConvaiPakManager::Chunk::GetCreateAssetDataPath(ChunkId);
-		const bool bRecordCleared = IFileManager::Get().Delete(*RecordPath, /*RequireExists=*/false, /*EvenReadOnly=*/true);
-
-		// The pak metadata carries server-issued identity beside the draft fields, so the identity
-		// is cleared field by field rather than by deleting the file that name and description live in.
-		const bool bIdentityCleared = WriteMetadataFields(ChunkId, {
-			{ TEXT("scene_id"), FString() },
-			{ TEXT("entity_id"), FString() },
-			{ TEXT("version"), FString() },
-		});
-
-		// Reported as a failure although the server did delete: success with the AssetId still on
-		// disk would offer Update against an Asset that no longer exists.
-		if (!bRecordCleared || !bIdentityCleared)
+		// Everything this Chunk said about the Asset goes with the Asset. Nothing here describes
+		// anything any more: the id would offer Update against nothing, and the draft it used to be
+		// worth keeping described an Asset the creator has just destroyed.
+		ConvaiPakManager::Chunk::ClearAssetRecords(ChunkId, Undeleted);
+	}
+	else if (Version.Equals(TEXT("raw"), ESearchCase::IgnoreCase))
+	{
+		// Only the archive record, because only the archive is gone. The Asset survives a Version
+		// delete, so this file is the one thing that would otherwise keep authorising a reuse.
+		const FString ArchiveRecordPath = ConvaiPakManager::Chunk::GetRawArchiveRecordPath(ChunkId);
+		if (!IFileManager::Get().Delete(*ArchiveRecordPath, /*RequireExists=*/false, /*EvenReadOnly=*/true))
 		{
-			SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed,
-				FString::Printf(TEXT("the asset was deleted on Convai but its local record could not be cleared; remove %s by hand"), *RecordPath));
-			return;
+			Undeleted.Add(ArchiveRecordPath);
 		}
 	}
 
-	// Broadcast after the record is cleared, so a UI refreshing on this status reads Draft.
+	// Reported as a failure although the server did delete: a record left on disk describes an Asset
+	// that no longer exists, and the next Publish would believe it.
+	if (!Undeleted.IsEmpty())
+	{
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed,
+			FString::Printf(TEXT("the delete succeeded on Convai but %s could not be cleared; remove it by hand"),
+				*FString::Join(Undeleted, TEXT(", "))));
+		return;
+	}
+
+	if (bDeleteContent)
+	{
+		const int32 Deleted = DeletePluginContent(ChunkId);
+		UCPM_UtilityLibrary::CPM_LogMessage(
+			FString::Printf(TEXT("Deleted %d source package(s) from chunk %d's plugin; its asset label was kept."),
+				Deleted, ChunkId),
+			ECPM_LogLevel::Warning);
+	}
+
+	// Broadcast after the records are cleared, so a UI refreshing on this status reads Draft.
 	SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Success);
+}
+
+int32 UConvaiPakEditorSubsystem::DeletePluginContent(const int32 ChunkId)
+{
+	FCPM_ModdingMetadata Modding;
+	UCPM_UtilityLibrary::GetModdingMetadataForChunk(ChunkId, Modding);
+	if (Modding.PluginName.IsEmpty())
+	{
+		// Refused rather than guessed. The mount root is the only thing bounding what gets deleted,
+		// and a guessed one could name the whole project.
+		CPM_LOG(Error, TEXT("Chunk %d records no plugin name, so its content was left alone."), ChunkId);
+		return 0;
+	}
+
+	IAssetRegistry* AssetRegistry = IAssetRegistry::Get();
+	if (!AssetRegistry)
+	{
+		return 0;
+	}
+
+	const FName MountRoot(*FString::Printf(TEXT("/%s"), *Modding.PluginName));
+	TArray<FAssetData> Assets;
+	AssetRegistry->GetAssetsByPath(MountRoot, Assets, /*bRecursive=*/true);
+
+	// The label is what makes this Chunk exist and what the Pak Manager lists it by, so deleting it
+	// would take the Chunk out of the tool along with the content the creator asked to clear.
+	FName LabelPackage;
+	for (const FCPM_Chunk& Chunk : ConvaiPakManager::Chunk::Discover())
+	{
+		if (Chunk.Id == ChunkId)
+		{
+			LabelPackage = Chunk.LabelPackage;
+			break;
+		}
+	}
+	Assets.RemoveAll([&LabelPackage](const FAssetData& Asset) { return Asset.PackageName == LabelPackage; });
+
+	if (Assets.IsEmpty())
+	{
+		return 0;
+	}
+
+	// A level being deleted cannot be the one open in the editor, and the Entry Point of a Scene
+	// usually is exactly that. Leaving it open makes the delete fail on the asset that matters most.
+	const UWorld* EditorWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	const FName OpenPackage = EditorWorld ? FName(*EditorWorld->GetOutermost()->GetName()) : NAME_None;
+	if (Assets.ContainsByPredicate([&OpenPackage](const FAssetData& Asset) { return Asset.PackageName == OpenPackage; }))
+	{
+		UEditorLoadingAndSavingUtils::NewBlankMap(/*bSaveExistingMap=*/false);
+	}
+
+	// The editor's own delete, not a file remove: it closes asset editors, unloads the objects and
+	// puts referencers in front of the creator. Deleting the files underneath a loaded package would
+	// leave the editor holding objects whose packages no longer exist.
+	return ObjectTools::DeleteAssets(Assets, /*bShowConfirmation=*/false);
 }
 
 void UConvaiPakEditorSubsystem::HandleDeleteFailed(const FString& ResponseString)
@@ -874,6 +930,7 @@ void UConvaiPakEditorSubsystem::HandleDeleteFailed(const FString& ResponseString
 	const int32 ChunkId = DeletingChunkId;
 	DeletingChunkId = INDEX_NONE;
 	DeletingVersion.Reset();
+	bDeletingPluginContent = false;
 	DeleteProxy = nullptr;
 
 	if (ChunkId != INDEX_NONE)

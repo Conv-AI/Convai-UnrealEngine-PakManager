@@ -83,6 +83,26 @@ CONVAIPAKMANAGER_API FString GetRawArchiveRecordPath(int32 ChunkId);
 CONVAIPAKMANAGER_API FString GetThumbnailPath(int32 ChunkId);
 
 /**
+ * Deletes everything this Chunk recorded about the Asset it was published as - the Asset record,
+ * the metadata document, the thumbnail and the archive record.
+ *
+ * For a deleted Asset: what these describe no longer exists on Convai, and a kept copy would offer
+ * Update against nothing, publish a thumbnail for an Asset that is gone, or reuse an archive that
+ * went with it. The Chunk returns to Draft with an empty form.
+ *
+ * ModdingMetaData is deliberately NOT among them: it says what the Modding Tool decided about this
+ * project - its plugin and Asset Type - which is true of the project whether or not anything is
+ * published from it, and nothing regenerates it.
+ *
+ * @param OutUndeleted  Paths that exist and could not be removed. Empty on success.
+ */
+CONVAIPAKMANAGER_API void ClearAssetRecords(int32 ChunkId, TArray<FString>& OutUndeleted);
+
+/** Against an explicit root, so tests need no project on disk. */
+CONVAIPAKMANAGER_API void ClearAssetRecordsIn(
+	const FString& EssentialsDirectory, int32 ChunkId, TArray<FString>& OutUndeleted);
+
+/**
  * Fills in every field the Convai asset API requires, from the ones the document already carries.
  *
  * The document is the server's schema, not ours. It used to be assembled by the Asset Uploader

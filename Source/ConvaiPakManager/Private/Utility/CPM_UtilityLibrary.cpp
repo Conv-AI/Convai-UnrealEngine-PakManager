@@ -288,7 +288,12 @@ FString UCPM_UtilityLibrary::GetPakFilePathFromChunkID(const ECPM_Platform Platf
 
 void UCPM_UtilityLibrary::GetModdingMetadata(FCPM_ModdingMetadata& OutData)
 {
-	const FString FilePath = ConvaiPakManager::Chunk::GetModdingMetadataPath(ConvaiPakManager::Chunk::GetSoleChunkId());
+	GetModdingMetadataForChunk(ConvaiPakManager::Chunk::GetSoleChunkId(), OutData);
+}
+
+void UCPM_UtilityLibrary::GetModdingMetadataForChunk(const int32 ChunkId, FCPM_ModdingMetadata& OutData)
+{
+	const FString FilePath = ConvaiPakManager::Chunk::GetModdingMetadataPath(ChunkId);
 	FString FileContent;
 
 	if (!FFileHelper::LoadFileToString(FileContent, *FilePath))

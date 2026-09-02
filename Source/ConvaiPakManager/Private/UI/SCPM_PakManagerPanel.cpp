@@ -4,12 +4,15 @@
 
 #include "ConvaiPakEditorSubsystem.h"
 #include "Editor.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Misc/MessageDialog.h"
 #include "UI/CPM_PakManagerStyle.h"
 #include "UI/SCPM_AssetDetailPanel.h"
 #include "UI/SCPM_AssetListPanel.h"
+#include "Utility/CPM_UtilityLibrary.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SComboBox.h"
 #include "Widgets/Input/SComboButton.h"
 #include "Widgets/Layout/SBox.h"
@@ -17,6 +20,7 @@
 #include "Widgets/Notifications/SNotificationList.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SNullWidget.h"
+#include "Widgets/SWindow.h"
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "SCPM_PakManagerPanel"
@@ -46,6 +50,96 @@ namespace
 		return AssetVM->Name.IsEmpty()
 			? FText::FromString(FString::Printf(TEXT("Chunk %d"), AssetVM->ChunkId))
 			: FText::FromString(AssetVM->Name);
+	}
+
+	/**
+	 * The delete confirmation and the one choice it carries.
+	 *
+	 * Its own window rather than FMessageDialog because a message box has nowhere to put a choice,
+	 * and this one must be made in the same breath as the confirmation: deleting the content is a
+	 * second, larger destruction - the creator's own authored Source Packages - so it is opt-in,
+	 * off every time the dialog opens, and never remembered.
+	 *
+	 * Blocks until the creator answers, so the outputs are read from the stack of the caller.
+	 */
+	void ShowDeleteAssetDialog(
+		const FText& AssetName, const FString& PluginName, bool& bOutConfirmed, bool& bOutDeleteContent)
+	{
+		bOutConfirmed = false;
+		bOutDeleteContent = false;
+
+		TSharedRef<SWindow> Window = SNew(SWindow)
+			.Title(LOCTEXT("DeleteAssetTitle", "Delete asset"))
+			.SizingRule(ESizingRule::Autosized)
+			.SupportsMaximize(false)
+			.SupportsMinimize(false);
+
+		Window->SetContent(
+			SNew(SBox)
+			.Padding(16.0f)
+			.MaxDesiredWidth(460.0f)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SNew(STextBlock)
+					.AutoWrapText(true)
+					.Text(FText::Format(LOCTEXT("DeleteAssetBody",
+						"Delete \"{0}\"?\n\nThis permanently removes the asset and all of its versions from Convai. "
+						"It cannot be undone.\n\nThis project's record of it - name, description, thumbnail and "
+						"entry point - is cleared with it."), AssetName))
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 0.0f)
+				[
+					SNew(SCheckBox)
+					// Hidden rather than disabled where no plugin is recorded: there is no folder to
+					// name, and an option that cannot say what it deletes should not be offered.
+					.Visibility(PluginName.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+					.IsChecked(ECheckBoxState::Unchecked)
+					.OnCheckStateChanged_Lambda([&bOutDeleteContent](ECheckBoxState State)
+					{
+						bOutDeleteContent = State == ECheckBoxState::Checked;
+					})
+					.ToolTipText(LOCTEXT("DeleteContentTip",
+						"Deletes the levels, blueprints and other content you added under this plugin. Its asset "
+						"label is kept, so the asset stays in this list and can be filled again. Cannot be undone."))
+					[
+						SNew(STextBlock)
+						.AutoWrapText(true)
+						.Text(FText::Format(LOCTEXT("DeleteContentOption",
+							"Also delete the content I added in plugin {0}"), FText::FromString(PluginName)))
+					]
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 16.0f, 0.0f, 0.0f).HAlign(HAlign_Right)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth()
+					[
+						SNew(SButton)
+						.ButtonStyle(&FCPM_PakManagerStyle::Get().GetWidgetStyle<FButtonStyle>("CPM.Button.Secondary"))
+						.Text(LOCTEXT("DeleteCancel", "Cancel"))
+						.OnClicked_Lambda([Window]
+						{
+							Window->RequestDestroyWindow();
+							return FReply::Handled();
+						})
+					]
+					+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(SButton)
+						.ButtonStyle(&FCPM_PakManagerStyle::Get().GetWidgetStyle<FButtonStyle>("CPM.Button.Danger"))
+						.Text(LOCTEXT("DeleteConfirm", "Delete"))
+						.OnClicked_Lambda([Window, &bOutConfirmed]
+						{
+							bOutConfirmed = true;
+							Window->RequestDestroyWindow();
+							return FReply::Handled();
+						})
+					]
+				]
+			]);
+
+		FSlateApplication::Get().AddModalWindow(Window, nullptr);
 	}
 }
 
@@ -448,22 +542,28 @@ FReply SCPM_PakManagerPanel::HandleDeleteClicked()
 		return FReply::Handled();
 	}
 
-	const FText Body = FText::Format(LOCTEXT("DeleteAssetBody",
-		"Delete \"{0}\"?\n\nThis removes the published Convai asset and its versions. The local project files and source package remain unchanged."),
-		DisplayNameOf(Active));
+	// Its own window rather than FMessageDialog, which has no room for a choice: the second, opt-in
+	// destruction here is of the creator's own authored content, and it has to be visible and off
+	// by default in the same breath as the confirmation.
+	FCPM_ModdingMetadata Modding;
+	UCPM_UtilityLibrary::GetModdingMetadataForChunk(Active->ChunkId, Modding);
 
-	// Default answer is No: Enter on a destructive dialog must not destroy.
-	if (FMessageDialog::Open(EAppMsgType::YesNo, EAppReturnType::No, Body, LOCTEXT("DeleteAssetTitle", "Delete asset")) == EAppReturnType::Yes)
+	bool bConfirmed = false;
+	bool bDeleteContent = false;
+	ShowDeleteAssetDialog(DisplayNameOf(Active), Modding.PluginName, bConfirmed, bDeleteContent);
+	if (!bConfirmed)
 	{
-		// Empty Version deletes the whole Asset rather than one of its Versions.
-		if (!Subsystem->DeleteAsset(Active->ChunkId, FString()))
-		{
-			const FString Why = Subsystem->GetChunkStatus(Active->ChunkId).Message;
-			Notify(Why.IsEmpty()
-				? LOCTEXT("DeleteRefused", "The delete was not accepted.")
-				: FText::FromString(Why),
-				SNotificationItem::CS_Fail);
-		}
+		return FReply::Handled();
+	}
+
+	// Empty Version deletes the whole Asset rather than one of its Versions.
+	if (!Subsystem->DeleteAsset(Active->ChunkId, FString(), bDeleteContent))
+	{
+		const FString Why = Subsystem->GetChunkStatus(Active->ChunkId).Message;
+		Notify(Why.IsEmpty()
+			? LOCTEXT("DeleteRefused", "The delete was not accepted.")
+			: FText::FromString(Why),
+			SNotificationItem::CS_Fail);
 	}
 	return FReply::Handled();
 }

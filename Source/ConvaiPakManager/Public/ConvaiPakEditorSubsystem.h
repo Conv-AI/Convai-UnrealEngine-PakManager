@@ -203,12 +203,16 @@ public:
 	/**
 	 * Deletes one Version of this Chunk's Asset, or the whole Asset when Version is empty.
 	 *
-	 * A whole-asset delete also clears the Chunk's local record of the Asset - the AssetId and
-	 * publish history - but keeps the draft fields: name, description, thumbnail and Entry Point.
-	 * The Chunk returns to Draft with the create form prefilled.
+	 * A whole-asset delete also clears everything this Chunk recorded about that Asset - its id,
+	 * metadata document, thumbnail and archive record - so the Chunk returns to Draft with an empty
+	 * form. What Convai holds is gone; a kept copy would describe nothing.
+	 *
+	 * bAlsoDeletePluginContent additionally deletes the Source Packages in this Chunk's Modding
+	 * Plugin, keeping the Primary Asset Label so the Chunk itself survives and can be filled again.
+	 * NOT REVERSIBLE, and it is the creator's own authored content - callers must ask first.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
-	bool DeleteAsset(int32 ChunkId, const FString& Version);
+	bool DeleteAsset(int32 ChunkId, const FString& Version, bool bAlsoDeletePluginContent = false);
 
 	// ---- Observation ----
 
@@ -262,6 +266,17 @@ private:
 	 * of the archive from the record of the Asset apart.
 	 */
 	FString DeletingVersion;
+
+	/** Whether that delete was asked to take the Chunk's authored content with it. */
+	bool bDeletingPluginContent = false;
+
+	/**
+	 * Deletes every Source Package in this Chunk's Modding Plugin except the Primary Asset Label.
+	 *
+	 * The label is what makes the Chunk exist, so keeping it leaves an empty Chunk the creator can
+	 * fill again rather than one that vanishes from the tool along with its content.
+	 */
+	int32 DeletePluginContent(int32 ChunkId);
 
 	UFUNCTION()
 	void HandleDeleteSucceeded(const FString& ResponseString);

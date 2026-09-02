@@ -172,6 +172,33 @@ FString GetRawArchiveRecordPath(const int32 ChunkId)
 	return FPaths::Combine(GetStateDirectory(ChunkId), FString::Printf(TEXT("RawArchive_%d.txt"), ChunkId));
 }
 
+void ClearAssetRecordsIn(const FString& EssentialsDirectory, const int32 ChunkId, TArray<FString>& OutUndeleted)
+{
+	const FString Directory = FPaths::Combine(EssentialsDirectory, FString::Printf(TEXT("ChunkId_%d"), ChunkId));
+
+	const TArray<FString> Records = {
+		FPaths::Combine(Directory, FString::Printf(TEXT("CreateAssetData_%d.json"), ChunkId)),
+		FPaths::Combine(Directory, FString::Printf(TEXT("PakMetaData_%d.json"), ChunkId)),
+		FPaths::Combine(Directory, FString::Printf(TEXT("Thumbnail_%d.png"), ChunkId)),
+		FPaths::Combine(Directory, FString::Printf(TEXT("RawArchive_%d.txt"), ChunkId)),
+	};
+
+	for (const FString& Record : Records)
+	{
+		// EvenReadOnly, because a project under source control keeps these read-only until checked
+		// out and the creator has already said to delete them.
+		if (!IFileManager::Get().Delete(*Record, /*RequireExists=*/false, /*EvenReadOnly=*/true))
+		{
+			OutUndeleted.Add(Record);
+		}
+	}
+}
+
+void ClearAssetRecords(const int32 ChunkId, TArray<FString>& OutUndeleted)
+{
+	ClearAssetRecordsIn(GetEssentialsDirectory(), ChunkId, OutUndeleted);
+}
+
 FString GetThumbnailPath(const int32 ChunkId)
 {
 	return FPaths::Combine(GetStateDirectory(ChunkId), FString::Printf(TEXT("Thumbnail_%d.png"), ChunkId));
