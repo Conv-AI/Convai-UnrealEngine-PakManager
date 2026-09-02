@@ -678,6 +678,13 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPackagingSection()
 					SNew(STextBlock)
 					.Text_Lambda([this]
 					{
+						// Said before anything about uploads: with the Policy asking for no archive,
+						// the checkbox beside this cannot cause one, and a row that only said "not
+						// uploaded yet" would leave the creator waiting for a publish to fix it.
+						if (UCPM_PakManagerSettings::Get().PolicyExcludesRawArchive())
+						{
+							return LOCTEXT("RawArchiveNotInPolicy", "Not part of this project's publish policy");
+						}
 						if (!Asset.IsValid() || !Asset->HasPublishedRawArchive())
 						{
 							// Not "sent by the next publish": whether one is sent at all is the

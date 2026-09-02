@@ -449,7 +449,7 @@ void SCPM_PakManagerPanel::HandleChunkStatusChanged(const FCPM_ChunkStatus& Stat
 	case ECPM_AssetManagerStatus::Delete_Success:
 		bTerminal = true;
 		State = SNotificationItem::CS_Success;
-		Message = FText::Format(LOCTEXT("DeleteSucceeded", "Deleted \"{0}\". The local files were kept."), DisplayNameOf(AssetVM));
+		Message = FText::Format(LOCTEXT("DeleteSucceeded", "Deleted \"{0}\"."), DisplayNameOf(AssetVM));
 		break;
 
 	case ECPM_AssetManagerStatus::Publish_Cancelled:

@@ -11,6 +11,7 @@
 #include "ContentBrowserModule.h"
 #include "Editor.h"
 #include "Engine/Blueprint.h"
+#include "Containers/Ticker.h"
 #include "EngineUtils.h"
 #include "FileHelpers.h"
 #include "ObjectTools.h"
@@ -541,10 +542,10 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 		return false;
 	}
 
-	// The mirror of the guard DeleteAsset already has, and load-bearing since a Publish reads what
-	// a delete revokes: started in the seconds a delete is in flight, it would decide to reuse an
-	// archive from a record the delete is about to remove.
-	if (DeletingChunkId == ChunkId)
+	// The mirror of the guard DeleteAsset already has: a Publish started while a delete is in flight
+	// reads records that delete is about to remove, and one started while a content deletion is
+	// queued would package Source Packages that are about to go.
+	if (DeletingChunkId == ChunkId || PendingContentDeleteChunkId == ChunkId)
 	{
 		SetStatus(ChunkId, Refusal, TEXT("this chunk is being deleted"));
 		return false;
@@ -817,7 +818,7 @@ bool UConvaiPakEditorSubsystem::DeleteAsset(const int32 ChunkId, const FString& 
 		return false;
 	}
 
-	if (DeletingChunkId != INDEX_NONE)
+	if (DeletingChunkId != INDEX_NONE || PendingContentDeleteChunkId != INDEX_NONE)
 	{
 		SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed, TEXT("another delete is already in flight"));
 		return false;
@@ -890,17 +891,39 @@ void UConvaiPakEditorSubsystem::HandleDeleteSucceeded(const FString& ResponseStr
 		return;
 	}
 
-	if (bDeleteContent)
-	{
-		const int32 Deleted = DeletePluginContent(ChunkId);
-		UCPM_UtilityLibrary::CPM_LogMessage(
-			FString::Printf(TEXT("Deleted %d source package(s) from chunk %d's plugin; its asset label was kept."),
-				Deleted, ChunkId),
-			ECPM_LogLevel::Warning);
-	}
-
 	// Broadcast after the records are cleared, so a UI refreshing on this status reads Draft.
 	SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Success);
+
+	if (bDeleteContent)
+	{
+		// NEVER from inside this callback. Deleting assets collects garbage and may change the open
+		// map, and this function is running inside the delete request's own response dispatch with
+		// DeleteProxy already cleared - so a collection here destroys the proxy whose callback is
+		// still on the stack. That crashed the editor in the allocator, one ensure removed from the
+		// actual cause. One tick later there is no request in flight to corrupt.
+		PendingContentDeleteChunkId = ChunkId;
+
+		TWeakObjectPtr<UConvaiPakEditorSubsystem> WeakThis(this);
+		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakThis, ChunkId](float)
+		{
+			if (UConvaiPakEditorSubsystem* Self = WeakThis.Get())
+			{
+				const int32 Deleted = Self->DeletePluginContent(ChunkId);
+				UCPM_UtilityLibrary::CPM_LogMessage(
+					FString::Printf(TEXT("Deleted %d source package(s) from chunk %d's plugin; its asset label was kept."),
+						Deleted, ChunkId),
+					ECPM_LogLevel::Warning);
+
+				Self->PendingContentDeleteChunkId = INDEX_NONE;
+
+				// Re-broadcast so the form re-reads a Chunk whose Entry Point has just gone. The UI
+				// toasts only what was busy, and this Chunk stopped being busy above, so this
+				// refreshes without saying "deleted" a second time.
+				Self->SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Success);
+			}
+			return false;
+		}), 0.0f);
+	}
 }
 
 int32 UConvaiPakEditorSubsystem::DeletePluginContent(const int32 ChunkId)

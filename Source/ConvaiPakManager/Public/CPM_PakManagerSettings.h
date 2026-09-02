@@ -163,5 +163,18 @@ public:
 	 */
 	UPROPERTY(config, EditAnywhere, Category = "Publish Policy Override",
 		meta = (EditCondition = "PolicySource == ECPM_PolicySource::OverrideSettings", EditConditionHides))
-	FCPM_PublishPolicy PolicyOverride;
+	FCPM_PublishPolicy PolicyOverride = FCPM_PublishPolicy::Defaults();
+
+	/**
+	 * True when this project states its own Policy and that Policy asks for no Raw Project Archive.
+	 *
+	 * For the UI, which otherwise offers an Upload checkbox that cannot do anything: the Policy is
+	 * what decides whether an archive is published at all, and the creator's setting only subtracts
+	 * from it. Answered only for the typed override - the other sources are a file read and a JSON
+	 * parse, which is not work to do from a widget's paint.
+	 */
+	bool PolicyExcludesRawArchive() const
+	{
+		return PolicySource == ECPM_PolicySource::OverrideSettings && !PolicyOverride.bUploadRawProject;
+	}
 };

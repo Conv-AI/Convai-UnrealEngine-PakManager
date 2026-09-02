@@ -82,6 +82,17 @@ bool FCPM_PublishPolicy::Validate(FString& OutError) const
 	return true;
 }
 
+FCPM_PublishPolicy FCPM_PublishPolicy::Defaults()
+{
+	FCPM_PublishPolicy Policy;
+	Policy.Windows.bShouldPackage = true;
+	Policy.Windows.Configuration = TEXT("Shipping");
+	Policy.Linux.bShouldPackage = true;
+	Policy.Linux.Configuration = TEXT("Shipping");
+	Policy.bUploadRawProject = true;
+	return Policy;
+}
+
 TArray<ECPM_Platform> FCPM_PublishPolicy::PlatformsToPackage() const
 {
 	TArray<ECPM_Platform> Platforms;

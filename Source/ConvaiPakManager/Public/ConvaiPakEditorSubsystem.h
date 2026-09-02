@@ -271,6 +271,14 @@ private:
 	bool bDeletingPluginContent = false;
 
 	/**
+	 * The Chunk whose content deletion is waiting for the next tick, or INDEX_NONE.
+	 *
+	 * Busy in every sense that matters even though no request is in flight: a Publish accepted in
+	 * this window would package content that is about to be deleted underneath it.
+	 */
+	int32 PendingContentDeleteChunkId = INDEX_NONE;
+
+	/**
 	 * Deletes every Source Package in this Chunk's Modding Plugin except the Primary Asset Label.
 	 *
 	 * The label is what makes the Chunk exist, so keeping it leaves an empty Chunk the creator can

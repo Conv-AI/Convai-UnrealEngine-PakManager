@@ -61,6 +61,16 @@ struct CONVAIPAKMANAGER_API FCPM_PublishPolicy
 	 */
 	bool Validate(FString& OutError) const;
 
+	/**
+	 * What Convai's own Policy says today: both platforms at Shipping, with the Raw Project Archive.
+	 *
+	 * The starting point a project's typed override is filled with, so overriding begins from a
+	 * policy that publishes what production publishes and the creator edits away from it. NOT the
+	 * default of the struct itself: a default-constructed Policy is the one a failed read leaves
+	 * behind, and it has to stay "packages nothing" so a misread cannot look like an instruction.
+	 */
+	static FCPM_PublishPolicy Defaults();
+
 	/** Platforms this policy asks for, in a fixed order so a Job Queue built twice is built the same. */
 	TArray<ECPM_Platform> PlatformsToPackage() const;
 
