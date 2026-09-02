@@ -196,6 +196,19 @@ struct CONVAIPAKMANAGER_API FCPM_PakArtifact
 	/** e.g. "ue-5.8-Windows". Names the Version this Pak occupies on the Asset. */
 	UPROPERTY()
 	FString VersionSlot;
+
+	/**
+	 * The Version slot a platform occupies, e.g. "ue-5.8-Windows", or "raw" for the Raw Project
+	 * Archive. Empty for a platform that has no Version.
+	 *
+	 * Built from the RUNNING engine rather than a stored value: a Pak is only loadable by the engine
+	 * that cooked it, so the two can never legitimately differ, and reading it from anywhere else is
+	 * a way for them to.
+	 *
+	 * Public because deleting one Version means naming its slot, and a caller that spells the name
+	 * itself is a caller that can spell it differently from the one that wrote it.
+	 */
+	static FString VersionSlotFor(ECPM_Platform Platform);
 };
 
 /**

@@ -20,9 +20,6 @@ namespace
 	const TCHAR* UatCompleted = TEXT("Completed");
 	const TCHAR* UatCanceled = TEXT("Canceled");
 
-	/** The `raw` Version slot, named on the wire rather than by engine and platform. */
-	const TCHAR* RawVersionSlot = TEXT("raw");
-
 	FString PlatformName(const ECPM_Platform Platform)
 	{
 		switch (Platform)
@@ -34,19 +31,6 @@ namespace
 		default:
 			return FString();
 		}
-	}
-
-	/**
-	 * The Version slot a Pak occupies, e.g. "ue-5.8-Windows".
-	 *
-	 * Built from the running engine rather than from a stored value: a Pak is only loadable by the
-	 * engine that cooked it, so the two can never legitimately differ, and reading it from anywhere
-	 * else is a way for them to.
-	 */
-	FString VersionSlotForPlatform(const ECPM_Platform Platform)
-	{
-		const FEngineVersion& Engine = FEngineVersion::Current();
-		return FString::Printf(TEXT("ue-%d.%d-%s"), Engine.GetMajor(), Engine.GetMinor(), *PlatformName(Platform));
 	}
 
 	/** What every Asset published from here is: a Pak, and the kind of thing it holds. */
@@ -230,7 +214,7 @@ FCPM_PakArtifact UCPM_PackagePaksJob::ArtifactFor(const ECPM_Platform Platform) 
 {
 	FCPM_PakArtifact Artifact;
 	Artifact.Platform = Platform;
-	Artifact.VersionSlot = VersionSlotForPlatform(Platform);
+	Artifact.VersionSlot = FCPM_PakArtifact::VersionSlotFor(Platform);
 	Artifact.PakPath = UCPM_UtilityLibrary::GetPakFilePathFromChunkID(Platform, FString::FromInt(Request.ChunkId));
 	return Artifact;
 }
@@ -394,7 +378,7 @@ void UCPM_CreateAssetJob::IExecute_Implementation()
 
 	// The upload endpoint rejects a request with no tags.
 	Params.Tags = PakTagsFor(Modding.AssetType);
-	Params.Version = VersionSlotForPlatform(
+	Params.Version = FCPM_PakArtifact::VersionSlotFor(
 		Request.Policy.PlatformsToPackage().IsEmpty() ? ECPM_Platform::Windows : Request.Policy.PlatformsToPackage()[0]);
 	RequestedVersion = Params.Version;
 	Params.Thumbnail = UCPM_UtilityLibrary::CPM_LoadTexture2DFromDisk(
@@ -571,7 +555,7 @@ void UCPM_UploadArtifactsJob::IExecute_Implementation()
 		FCPM_RawArchive Archive;
 		if (Context->TryGet(Archive))
 		{
-			Pending.Add({ RawVersionSlot, Archive.ZipPath });
+			Pending.Add({ FCPM_PakArtifact::VersionSlotFor(ECPM_Platform::Raw), Archive.ZipPath });
 		}
 	}
 

@@ -2,6 +2,7 @@
 
 #include "Publish/CPM_PublishTypes.h"
 
+#include "Misc/EngineVersion.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 
@@ -27,6 +28,27 @@ namespace
 		(*Object)->TryGetBoolField(TEXT("should-package"), OutPolicy.bShouldPackage);
 		(*Object)->TryGetStringField(TEXT("configuration"), OutPolicy.Configuration);
 	}
+}
+
+FString FCPM_PakArtifact::VersionSlotFor(const ECPM_Platform Platform)
+{
+	// Named on the wire rather than by engine and platform: one archive of the creator's project
+	// serves every engine version, which is the whole point of holding it.
+	if (Platform == ECPM_Platform::Raw)
+	{
+		return TEXT("raw");
+	}
+
+	const TCHAR* Name =
+		Platform == ECPM_Platform::Windows ? TEXT("Windows") :
+		Platform == ECPM_Platform::Linux ? TEXT("Linux") : nullptr;
+	if (!Name)
+	{
+		return FString();
+	}
+
+	const FEngineVersion& Engine = FEngineVersion::Current();
+	return FString::Printf(TEXT("ue-%d.%d-%s"), Engine.GetMajor(), Engine.GetMinor(), Name);
 }
 
 bool FCPM_PublishPolicy::ParseFromJson(const FString& Json, FString& OutError)

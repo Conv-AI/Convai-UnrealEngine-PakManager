@@ -941,6 +941,66 @@ bool UConvaiPakEditorSubsystem::DeleteAsset(const int32 ChunkId, const FString& 
 	return true;
 }
 
+bool UConvaiPakEditorSubsystem::DeleteVersion(const int32 ChunkId, const ECPM_Platform Platform)
+{
+	const FString Slot = FCPM_PakArtifact::VersionSlotFor(Platform);
+	if (Slot.IsEmpty())
+	{
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed, TEXT("that platform has no version"));
+		return false;
+	}
+
+	// Never the whole Asset: an empty Version is what DeleteAsset reads as "all of it", and a
+	// platform that failed to name a slot must not fall through into that.
+	return DeleteAsset(ChunkId, Slot, /*bAlsoDeletePluginContent=*/false);
+}
+
+bool UConvaiPakEditorSubsystem::DeleteBuiltPak(const int32 ChunkId, const ECPM_Platform Platform)
+{
+	// Mirrors BeginPolicyRun's guards: a cook in flight is writing the very file this would remove,
+	// and a queued content delete is about to move the ground under both.
+	if (IsRunInFlight(ChunkId) || DeletingChunkId == ChunkId || PendingContentDeleteChunkId != INDEX_NONE)
+	{
+		CPM_LOG(Warning, TEXT("Refusing to delete the %s pak for chunk %d: this chunk is busy."),
+			*UEnum::GetDisplayValueAsText(Platform).ToString(), ChunkId);
+		return false;
+	}
+
+	const FString PakPath = UCPM_UtilityLibrary::GetPakFilePathFromChunkID(Platform, FString::FromInt(ChunkId));
+	if (PakPath.IsEmpty() || !FPaths::FileExists(PakPath))
+	{
+		// Already the state the caller asked for. Not a failure.
+		return true;
+	}
+
+	const bool bDeleted = UCPM_UtilityLibrary::CPM_DeleteFileByPath(PakPath);
+	if (!bDeleted)
+	{
+		CPM_LOG(Warning, TEXT("Could not delete the pak at %s. It may be open in another program."), *PakPath);
+		return false;
+	}
+
+	// Broadcast so the panel re-reads GetPakStatuses: nothing else tells it a file it is describing
+	// has gone, and bExists comes from mounting the pak rather than from anything cached here.
+	SetStatus(ChunkId, GetChunkStatus(ChunkId).Status);
+	return true;
+}
+
+int32 UConvaiPakEditorSubsystem::DeleteBuiltPaks(const int32 ChunkId)
+{
+	// Every platform GetPakStatuses reports, not only the ones the Policy asks for today: a pak
+	// orphaned by a policy that changed is exactly the thing worth cleaning up.
+	int32 Deleted = 0;
+	for (const FCPM_PakPlatformStatus& Status : GetPakStatuses(ChunkId))
+	{
+		if (Status.bExists && DeleteBuiltPak(ChunkId, Status.Platform))
+		{
+			++Deleted;
+		}
+	}
+	return Deleted;
+}
+
 void UConvaiPakEditorSubsystem::HandleDeleteSucceeded(const FString& ResponseString)
 {
 	const int32 ChunkId = DeletingChunkId;

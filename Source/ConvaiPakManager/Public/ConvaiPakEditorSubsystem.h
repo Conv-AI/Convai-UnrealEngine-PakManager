@@ -246,6 +246,33 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool DeleteAsset(int32 ChunkId, const FString& Version, bool bAlsoDeletePluginContent = false);
 
+	/**
+	 * Deletes one platform's Version from this Chunk's Asset, keeping the Asset and its others.
+	 *
+	 * ECPM_Platform::Raw names the Raw Project Archive. Exists so a caller never has to spell a
+	 * Version slot: one that spells it itself can spell it differently from whatever wrote it.
+	 *
+	 * Does NOT require this project to have a record of that upload. A fresh clone, a second
+	 * machine, or a lost marker must not lock an operator out of removing something Convai holds -
+	 * the request simply changes nothing when there is nothing there.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool DeleteVersion(int32 ChunkId, ECPM_Platform Platform);
+
+	/**
+	 * Deletes this Chunk's built Pak for one platform from THIS COMPUTER. Convai keeps whatever
+	 * Version it already holds; the next Publish builds a new one.
+	 *
+	 * Returns whether the file is gone - including when there was none to begin with, which is the
+	 * state the caller asked for.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool DeleteBuiltPak(int32 ChunkId, ECPM_Platform Platform);
+
+	/** DeleteBuiltPak for every platform, including ones the Policy no longer asks for. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	int32 DeleteBuiltPaks(int32 ChunkId);
+
 	// ---- Observation ----
 
 	/** For C++ callers - the Slate panel binds this. */
