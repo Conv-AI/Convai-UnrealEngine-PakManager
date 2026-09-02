@@ -5,8 +5,11 @@
 #include "ConvaiPakEditorSubsystem.h"
 #include "Editor.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Framework/Notifications/NotificationManager.h"
+#include "ISettingsModule.h"
 #include "Misc/MessageDialog.h"
+#include "Modules/ModuleManager.h"
 #include "UI/CPM_PakManagerStyle.h"
 #include "UI/SCPM_AssetDetailPanel.h"
 #include "UI/SCPM_AssetListPanel.h"
@@ -330,21 +333,190 @@ TSharedRef<SWidget> SCPM_PakManagerPanel::BuildActionBar()
 
 TSharedRef<SWidget> SCPM_PakManagerPanel::BuildMoreMenu()
 {
-	return SNew(SBorder)
-		.BorderImage(FCPM_PakManagerStyle::Get().GetBrush("CPM.Panel"))
-		.Padding(4.0f)
-		[
-			SNew(SButton)
-			.ButtonStyle(&FCPM_PakManagerStyle::Get().GetWidgetStyle<FButtonStyle>("CPM.Button.Danger"))
-			.Text(LOCTEXT("DeleteAsset", "Delete asset..."))
-			.ToolTipText(LOCTEXT("DeleteAssetTip", "Removes the published Convai asset. Local project files stay untouched."))
-			.IsEnabled_Lambda([this]
+	// Two predicates, named once, so nine entries cannot each forget one. Read-only entries below
+	// deliberately use neither: reading a string or opening a settings page contends with nothing,
+	// and a twenty-minute publish is exactly when someone reaches for them.
+	auto IsBusy = [this]
+	{
+		return Project.Active.IsValid() && (Project.Active->Status.IsBusy() || Project.AnyPublishInFlight());
+	};
+	auto IsPublished = [this]
+	{
+		return Project.Active.IsValid() && !Project.Active->AssetId.IsEmpty();
+	};
+
+	FMenuBuilder Menu(/*bShouldCloseWindowAfterMenuSelection=*/true, nullptr);
+
+	Menu.BeginSection(NAME_None, LOCTEXT("MenuPublish", "Publish"));
+	{
+		Menu.AddMenuEntry(
+			LOCTEXT("PackageNow", "Package now"),
+			LOCTEXT("PackageNowTip", "Builds the paks this publish would build. Nothing is uploaded."),
+			FSlateIcon(),
+			FUIAction(
+				FExecuteAction::CreateSP(this, &SCPM_PakManagerPanel::HandlePackageNow),
+				FCanExecuteAction::CreateLambda([IsBusy] { return !IsBusy(); })));
+
+		Menu.AddMenuEntry(
+			LOCTEXT("PublishReusing", "Publish without repackaging"),
+			LOCTEXT("PublishReusingTip",
+				"Uploads the paks already on this computer instead of building new ones. Use it only when you know "
+				"they match your content - nothing downstream can tell an old pak from a fresh one."),
+			FSlateIcon(),
+			FUIAction(
+				FExecuteAction::CreateSP(this, &SCPM_PakManagerPanel::HandlePublishReusingPaks),
+				FCanExecuteAction::CreateLambda([this, IsBusy]
+				{
+					return !IsBusy() && DetailPanel.IsValid() && DetailPanel->HasAnyBuiltPak();
+				})));
+
+		Menu.AddMenuEntry(
+			LOCTEXT("DeleteBuiltPaks", "Delete every built pak"),
+			LOCTEXT("DeleteBuiltPaksTip",
+				"Deletes the pak files this project has built on this computer. Convai keeps the versions it "
+				"already holds."),
+			FSlateIcon(),
+			FUIAction(
+				FExecuteAction::CreateSP(this, &SCPM_PakManagerPanel::HandleDeleteBuiltPaks),
+				FCanExecuteAction::CreateLambda([this, IsBusy]
+				{
+					return !IsBusy() && Project.Active.IsValid()
+						&& Project.Active->PakStatuses.ContainsByPredicate(
+							[](const FCPM_PakPlatformStatus& Status) { return Status.bExists; });
+				})));
+	}
+	Menu.EndSection();
+
+	Menu.BeginSection(NAME_None, LOCTEXT("MenuShow", "Show"));
+	{
+		Menu.AddMenuEntry(
+			LOCTEXT("ShowEveryPlatform", "Show every platform"),
+			LOCTEXT("ShowEveryPlatformTip",
+				"Lists platforms this project's publish policy does not ask for, so you can reach a pak or a "
+				"version you already have, or publish one Convai has agreed to host for this project."),
+			FSlateIcon(),
+			FUIAction(
+				FExecuteAction::CreateLambda([this]
+				{
+					if (DetailPanel.IsValid())
+					{
+						DetailPanel->ToggleShowAllPlatforms();
+					}
+				}),
+				FCanExecuteAction(),
+				FIsActionChecked::CreateLambda([this]
+				{
+					return DetailPanel.IsValid() && DetailPanel->IsShowingAllPlatforms();
+				})),
+			NAME_None,
+			EUserInterfaceActionType::ToggleButton);
+
+		Menu.AddMenuEntry(
+			LOCTEXT("RereadPolicy", "Re-read the publish policy"),
+			LOCTEXT("RereadPolicyTip", "Asks Convai again which platforms this project publishes for."),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateLambda([]
 			{
-				return Project.Active.IsValid() && !Project.Active->AssetId.IsEmpty()
-					&& !Project.Active->Status.IsBusy();
-			})
-			.OnClicked(this, &SCPM_PakManagerPanel::HandleDeleteClicked)
-		];
+				if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
+				{
+					Subsystem->RefreshPolicy();
+				}
+			})));
+	}
+	Menu.EndSection();
+
+	Menu.BeginSection(NAME_None, LOCTEXT("MenuAsset", "Asset"));
+	{
+		Menu.AddMenuEntry(
+			LOCTEXT("PublishSettings", "Publish settings..."),
+			LOCTEXT("PublishSettingsTip", "Opens this plugin's settings in Project Settings."),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateLambda([]
+			{
+				if (ISettingsModule* Settings = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
+				{
+					Settings->ShowViewer("Project", "Plugins", "Convai Pak Manager");
+				}
+			})));
+
+		Menu.AddSeparator();
+
+		Menu.AddMenuEntry(
+			LOCTEXT("DeleteAsset", "Delete asset..."),
+			LOCTEXT("DeleteAssetTip", "Removes the published Convai asset. Local project files stay untouched."),
+			FSlateIcon(),
+			FUIAction(
+				FExecuteAction::CreateLambda([this] { HandleDeleteClicked(); }),
+				FCanExecuteAction::CreateLambda([IsBusy, IsPublished] { return IsPublished() && !IsBusy(); })));
+	}
+	Menu.EndSection();
+
+	return Menu.MakeWidget();
+}
+
+void SCPM_PakManagerPanel::HandlePackageNow()
+{
+	TSharedPtr<FCPM_AssetViewModel> Active = Project.Active;
+	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+	if (!Active.IsValid() || !Subsystem || !DetailPanel.IsValid())
+	{
+		return;
+	}
+
+	if (!Subsystem->PackageWithOptions(Active->ChunkId, DetailPanel->BuildPublishOptions(/*bReuseExistingPaks=*/false)))
+	{
+		NotifyRefusal(Active->ChunkId, LOCTEXT("PackageRefused", "The packaging run was not accepted."));
+	}
+}
+
+void SCPM_PakManagerPanel::HandlePublishReusingPaks()
+{
+	TSharedPtr<FCPM_AssetViewModel> Active = Project.Active;
+	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+	if (!Active.IsValid() || !Subsystem || !DetailPanel.IsValid())
+	{
+		return;
+	}
+
+	// Same auto-save as the primary button: this is a publish, and a publish sends what is saved.
+	if (!SaveActive(false))
+	{
+		return;
+	}
+
+	if (!Subsystem->PublishWithOptions(Active->ChunkId, DetailPanel->BuildPublishOptions(/*bReuseExistingPaks=*/true)))
+	{
+		NotifyRefusal(Active->ChunkId, LOCTEXT("PublishRefused2", "The publish was not accepted."));
+	}
+}
+
+void SCPM_PakManagerPanel::HandleDeleteBuiltPaks()
+{
+	TSharedPtr<FCPM_AssetViewModel> Active = Project.Active;
+	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+	if (!Active.IsValid() || !Subsystem)
+	{
+		return;
+	}
+
+	const FText Question = LOCTEXT("DeleteBuiltPaksAsk",
+		"Delete every pak this project has built on this computer?\n\nConvai keeps the versions it already holds, "
+		"and your next publish builds new ones.");
+	if (FMessageDialog::Open(EAppMsgType::YesNo, Question) != EAppReturnType::Yes)
+	{
+		return;
+	}
+
+	const int32 Deleted = Subsystem->DeleteBuiltPaks(Active->ChunkId);
+	Notify(FText::Format(LOCTEXT("DeletedPaks", "Deleted {0} pak file(s)."), FText::AsNumber(Deleted)),
+		SNotificationItem::CS_Success);
+}
+
+void SCPM_PakManagerPanel::NotifyRefusal(const int32 ChunkId, const FText& Fallback)
+{
+	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+	const FString Why = Subsystem ? Subsystem->GetChunkStatus(ChunkId).Message : FString();
+	Notify(Why.IsEmpty() ? Fallback : FText::FromString(Why), SNotificationItem::CS_Fail);
 }
 
 UConvaiPakEditorSubsystem* SCPM_PakManagerPanel::GetSubsystem()
@@ -517,13 +689,15 @@ FReply SCPM_PakManagerPanel::HandlePrimaryClicked()
 		return FReply::Handled();
 	}
 
-	if (!Subsystem->Publish(Active->ChunkId))
+	// Carries this Chunk's Platform Selection. When it matches the Policy the options are empty and
+	// this behaves exactly as Publish(ChunkId) always did.
+	const FCPM_PublishOptions Options = DetailPanel.IsValid()
+		? DetailPanel->BuildPublishOptions(/*bReuseExistingPaks=*/false)
+		: FCPM_PublishOptions();
+
+	if (!Subsystem->PublishWithOptions(Active->ChunkId, Options))
 	{
-		const FString Why = Subsystem->GetChunkStatus(Active->ChunkId).Message;
-		Notify(Why.IsEmpty()
-			? LOCTEXT("PublishRefused", "The publish was not accepted.")
-			: FText::FromString(Why),
-			SNotificationItem::CS_Fail);
+		NotifyRefusal(Active->ChunkId, LOCTEXT("PublishRefused", "The publish was not accepted."));
 	}
 	return FReply::Handled();
 }

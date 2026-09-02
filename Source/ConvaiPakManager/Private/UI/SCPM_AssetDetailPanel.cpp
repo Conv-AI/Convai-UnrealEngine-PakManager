@@ -7,8 +7,12 @@
 #include "ContentBrowserModule.h"
 #include "Editor.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "HAL/PlatformApplicationMisc.h"
+#include "Misc/ConfigCacheIni.h"
+#include "Misc/MessageDialog.h"
+#include "Widgets/Input/SComboButton.h"
 #include "IContentBrowserSingleton.h"
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
@@ -178,6 +182,8 @@ namespace
 
 void SCPM_AssetDetailPanel::Construct(const FArguments& InArgs)
 {
+	LoadShowAllPlatforms();
+
 	if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
 	{
 		bIsScene = Subsystem->GetAssetType() != ECPM_AssetType::Avatar;
@@ -213,7 +219,7 @@ void SCPM_AssetDetailPanel::Construct(const FArguments& InArgs)
 				]
 				+ SScrollBox::Slot().Padding(12.0f, 8.0f, 12.0f, 0.0f)
 				[
-					BuildPackagingSection()
+					BuildUploadSection()
 				]
 				+ SScrollBox::Slot().Padding(12.0f, 8.0f, 12.0f, 12.0f)
 				[
@@ -240,6 +246,64 @@ void SCPM_AssetDetailPanel::Construct(const FArguments& InArgs)
 		// Polled: nothing broadcasts when a creator moves or deletes tagged actors in the level.
 		RegisterActiveTimer(1.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SCPM_AssetDetailPanel::RefreshSpawnStatus));
 	}
+
+	if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
+	{
+		// The rows are the Policy's platforms, so the panel cannot draw them until one is read.
+		// Asked for here, once, and never from a paint path - the read is over the network.
+		Subsystem->OnPolicyChanged.AddSP(this, &SCPM_AssetDetailPanel::OnPolicyChanged);
+		Subsystem->RefreshPolicy();
+	}
+}
+
+void SCPM_AssetDetailPanel::LoadShowAllPlatforms()
+{
+	GConfig->GetBool(TEXT("ConvaiPakManager"), TEXT("bShowAllPlatforms"), bShowAllPlatforms, GEditorPerProjectIni);
+}
+
+void SCPM_AssetDetailPanel::SetShowAllPlatforms(const bool bShow)
+{
+	bShowAllPlatforms = bShow;
+	GConfig->SetBool(TEXT("ConvaiPakManager"), TEXT("bShowAllPlatforms"), bShow, GEditorPerProjectIni);
+	RebuildUploadRows();
+}
+
+FCPM_PublishOptions SCPM_AssetDetailPanel::BuildPublishOptions(const bool bReuseExistingPaks) const
+{
+	if (!Asset.IsValid())
+	{
+		FCPM_PublishOptions Options;
+		Options.bReuseExistingPaks = bReuseExistingPaks;
+		return Options;
+	}
+	return Asset->PublishOptions(PolicyPlatforms(), bReuseExistingPaks);
+}
+
+bool SCPM_AssetDetailPanel::HasAnyBuiltPak() const
+{
+	if (!Asset.IsValid())
+	{
+		return false;
+	}
+	return Asset->PakStatuses.ContainsByPredicate(
+		[this](const FCPM_PakPlatformStatus& Status)
+		{
+			// Only a Pak this run would actually send counts: reusing one for a platform the
+			// Selection excludes changes nothing about what gets published.
+			return Status.bExists && Asset->SelectedPlatforms.Contains(Status.Platform);
+		});
+}
+
+void SCPM_AssetDetailPanel::OnPolicyChanged()
+{
+	if (Asset.IsValid())
+	{
+		Asset->SeedPlatformSelection(PolicyPlatforms());
+	}
+
+	// The read typically lands a few hundred ms after the panel opens, and nothing else would
+	// repaint: the row set is derived from the Policy, not from anything the view model watches.
+	RebuildUploadRows();
 }
 
 void SCPM_AssetDetailPanel::SetAssetViewModel(TSharedPtr<FCPM_AssetViewModel> InAsset)
@@ -250,17 +314,17 @@ void SCPM_AssetDetailPanel::SetAssetViewModel(TSharedPtr<FCPM_AssetViewModel> In
 	EntryPointError = FText::GetEmpty();
 
 	RebuildStageRow();
-	BuiltPakRowCount = INDEX_NONE;
-	RebuildPackagingRows();
+	BuiltRowSignature.Reset();
+	RebuildUploadRows();
 	RefreshThumbnailBrush(true);
 
 	// Only a real switch resets what the creator expanded; a tab-foreground refresh keeps it.
 	if (!bSameChunk)
 	{
-		if (PackagingArea.IsValid())
+		if (UploadArea.IsValid())
 		{
 			// Paks cannot exist before the first Publish, so the section starts out of the way.
-			PackagingArea->SetExpanded(Asset.IsValid() && !Asset->AssetId.IsEmpty());
+			UploadArea->SetExpanded(Asset.IsValid() && !Asset->AssetId.IsEmpty());
 		}
 		if (TechnicalArea.IsValid())
 		{
@@ -276,7 +340,7 @@ void SCPM_AssetDetailPanel::OnActiveStatusChanged()
 	{
 		RebuildStageRow();
 	}
-	RebuildPackagingRows();
+	RebuildUploadRows();
 	RefreshThumbnailBrush(false);
 }
 
@@ -422,7 +486,7 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildContentSourceSection()
 	using FPalette = FCPM_PakManagerStyle::FPalette;
 
 	return SNew(SExpandableArea)
-		.AreaTitle(LOCTEXT("ContentSourceSection", "Content source"))
+		.AreaTitle(LOCTEXT("ContentSourceSection", "Content"))
 		.InitiallyCollapsed(false)
 		.Padding(FMargin(12.0f, 8.0f))
 		.BodyContent()
@@ -430,7 +494,7 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildContentSourceSection()
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f)
 			[
-				Row(LOCTEXT("EntryPointLabel", "Entry point"),
+				Row(LOCTEXT("EntryPointLabel", "Selected asset"),
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 					[
@@ -631,21 +695,23 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPreviewSection()
 		];
 }
 
-TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPackagingSection()
+TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildUploadSection()
 {
 	using FPalette = FCPM_PakManagerStyle::FPalette;
 
-	return SAssignNew(PackagingArea, SExpandableArea)
-		.AreaTitle(LOCTEXT("PackagingSection", "Packaging"))
+	return SAssignNew(UploadArea, SExpandableArea)
+		// "Upload", not "Packaging": the project source is one of these rows now, and it is never
+		// packaged. Every row here says what Convai holds.
+		.AreaTitle(LOCTEXT("UploadSection", "Upload"))
 		.InitiallyCollapsed(true)
 		.Padding(FMargin(12.0f, 8.0f))
 		.BodyContent()
 		[
 			SNew(SVerticalBox)
-			// A sibling of the platform rows, never a child: RebuildPackagingRows clears that box.
+			// A sibling of the platform rows, never a child: RebuildUploadRows clears that box.
 			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SAssignNew(PackagingRows, SVerticalBox)
+				SAssignNew(UploadRows, SVerticalBox)
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
 			[
@@ -656,7 +722,7 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPackagingSection()
 					// The platform rows' label column, so the archive reads as one more of them.
 					.WidthOverride(90.0f)
 					[
-						SNew(STextBlock).Text(LOCTEXT("RawArchiveLabel", "Project archive"))
+						SNew(STextBlock).Text(LOCTEXT("RawArchiveLabel", "Project source"))
 					]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 6.0f, 0.0f)
@@ -736,7 +802,7 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPackagingSection()
 						"Unreal Engine versions without you republishing it. It is the longest step of a publish; "
 						"turn it off while iterating. Applies to every asset in this project."))
 					[
-						SNew(STextBlock).Text(LOCTEXT("UploadArchive", "Upload"))
+						SNew(STextBlock).Text(LOCTEXT("UploadArchive", "Include"))
 					]
 				]
 			]
@@ -994,107 +1060,304 @@ void SCPM_AssetDetailPanel::RebuildStageRow()
 	}
 }
 
-void SCPM_AssetDetailPanel::RebuildPackagingRows()
+TArray<ECPM_Platform> SCPM_AssetDetailPanel::PolicyPlatforms() const
 {
-	const int32 Count = Asset.IsValid() ? Asset->PakStatuses.Num() : 0;
-	if (!PackagingRows.IsValid() || Count == BuiltPakRowCount)
+	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+	if (!Subsystem)
+	{
+		return {};
+	}
+
+	FCPM_PublishPolicy Policy;
+	FDateTime ReadAt;
+	ECPM_PolicyReadState State = ECPM_PolicyReadState::Unread;
+	if (!Subsystem->GetPublishPolicy(Policy, ReadAt, State))
+	{
+		return {};
+	}
+	return Policy.PlatformsToPackage();
+}
+
+TArray<ECPM_Platform> SCPM_AssetDetailPanel::VisiblePlatforms() const
+{
+	const TArray<ECPM_Platform> Every = { ECPM_Platform::Windows, ECPM_Platform::Linux };
+
+	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+	if (!Subsystem)
+	{
+		return Every;
+	}
+
+	FCPM_PublishPolicy Policy;
+	FDateTime ReadAt;
+	ECPM_PolicyReadState State = ECPM_PolicyReadState::Unread;
+	Subsystem->GetPublishPolicy(Policy, ReadAt, State);
+
+	// Fail OPEN. A platform must never disappear because a GitHub read timed out - the creator may
+	// have a Pak on disk, or a Version on Convai, that this is the only route to.
+	if (State != ECPM_PolicyReadState::Read || bShowAllPlatforms)
+	{
+		return Every;
+	}
+
+	return Policy.PlatformsToPackage();
+}
+
+void SCPM_AssetDetailPanel::RebuildUploadRows()
+{
+	if (!UploadRows.IsValid())
 	{
 		return;
 	}
-	BuiltPakRowCount = Count;
-	PackagingRows->ClearChildren();
 
-	if (Count == 0)
+	const TArray<ECPM_Platform> Platforms = VisiblePlatforms();
+
+	// Keyed on what is actually rendered, not on a count: PakStatuses stays two entries long while
+	// the visible set changes with the Policy and the toggle, so a count would leave a stale row
+	// reading another platform's data under this platform's label.
+	FString Signature;
+	for (const ECPM_Platform Platform : Platforms)
 	{
-		PackagingRows->AddSlot().AutoHeight().Padding(0.0f, 4.0f)
+		Signature += PlatformText(Platform).ToString() + TEXT(",");
+	}
+	if (Signature == BuiltRowSignature)
+	{
+		return;
+	}
+	BuiltRowSignature = Signature;
+	UploadRows->ClearChildren();
+
+	if (Platforms.IsEmpty())
+	{
+		UploadRows->AddSlot().AutoHeight().Padding(0.0f, 4.0f)
 		[
 			SNew(STextBlock)
 			.TextStyle(&SecondaryTextStyle())
-			.Text(LOCTEXT("NoPaks", "Paks are produced by a publish."))
+			.AutoWrapText(true)
+			.Text(LOCTEXT("NoPlatforms", "This project's publish policy asks for no platforms."))
 		];
 		return;
 	}
 
-	using FPalette = FCPM_PakManagerStyle::FPalette;
-	for (int32 Index = 0; Index < Count; ++Index)
+	for (const ECPM_Platform Platform : Platforms)
 	{
-		// Rows read through the view model by index so a refresh does not require rebuilding them.
-		auto Pak = [this, Index]() -> const FCPM_PakPlatformStatus*
-		{
-			return Asset.IsValid() && Asset->PakStatuses.IsValidIndex(Index) ? &Asset->PakStatuses[Index] : nullptr;
-		};
-
-		PackagingRows->AddSlot().AutoHeight().Padding(0.0f, 3.0f)
+		UploadRows->AddSlot().AutoHeight().Padding(0.0f, 3.0f)
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-			[
-				SNew(SBox)
-				.WidthOverride(90.0f)
-				[
-					SNew(STextBlock)
-					.Text_Lambda([Pak]
-					{
-						const FCPM_PakPlatformStatus* Status = Pak();
-						return Status ? PlatformText(Status->Platform) : FText::GetEmpty();
-					})
-				]
-			]
-			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 6.0f, 0.0f)
-			[
-				SNew(SImage)
-				.Image_Lambda([Pak]
-				{
-					const FCPM_PakPlatformStatus* Status = Pak();
-					return FAppStyle::Get().GetBrush(Status && Status->bExists ? "Icons.Check" : "Icons.Warning");
-				})
-				.ColorAndOpacity_Lambda([Pak]
-				{
-					const FCPM_PakPlatformStatus* Status = Pak();
-					return FSlateColor(Status && Status->bExists ? FPalette::GreenPrimary : FPalette::Warning);
-				})
-			]
-			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
-			[
-				SNew(STextBlock)
-				.Text_Lambda([Pak]
-				{
-					const FCPM_PakPlatformStatus* Status = Pak();
-					if (!Status)
-					{
-						return FText::GetEmpty();
-					}
-					return Status->bExists
-						? FText::Format(LOCTEXT("PakFound", "Found - packaged {0}"), RelativeTimeText(Status->LastPackagedTime))
-						: LOCTEXT("PakMissing", "Missing - produced by publish");
-				})
-				.ColorAndOpacity_Lambda([Pak]
-				{
-					const FCPM_PakPlatformStatus* Status = Pak();
-					return FSlateColor(Status && Status->bExists ? FPalette::GreenPrimary : FPalette::Warning);
-				})
-			]
-			+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f, 0.0f, 0.0f)
-			[
-				SNew(SButton)
-				.ButtonStyle(&SecondaryButtonStyle())
-				.Text(LOCTEXT("RevealPak", "Reveal"))
-				.IsEnabled_Lambda([Pak]
-				{
-					const FCPM_PakPlatformStatus* Status = Pak();
-					return Status && Status->bExists;
-				})
-				.OnClicked_Lambda([Pak]
-				{
-					if (const FCPM_PakPlatformStatus* Status = Pak())
-					{
-						FPlatformProcess::ExploreFolder(*FPaths::GetPath(Status->PakPath));
-					}
-					return FReply::Handled();
-				})
-			]
+			BuildPlatformRow(Platform)
 		];
 	}
+}
+
+TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPlatformRow(const ECPM_Platform Platform)
+{
+	using FPalette = FCPM_PakManagerStyle::FPalette;
+
+	// Captures the PLATFORM, never an index into PakStatuses: the rendered set is a subset in a
+	// different order, so an index would read the wrong platform's state.
+	auto Pak = [this, Platform]() -> const FCPM_PakPlatformStatus*
+	{
+		if (!Asset.IsValid())
+		{
+			return nullptr;
+		}
+		return Asset->PakStatuses.FindByPredicate(
+			[Platform](const FCPM_PakPlatformStatus& Status) { return Status.Platform == Platform; });
+	};
+
+	return SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+		[
+			SNew(SBox).WidthOverride(90.0f)
+			[
+				SNew(STextBlock).Text(PlatformText(Platform))
+			]
+		]
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 6.0f, 0.0f)
+		[
+			SNew(SImage)
+			.Image_Lambda([Pak]
+			{
+				const FCPM_PakPlatformStatus* Status = Pak();
+				return FAppStyle::Get().GetBrush(Status && Status->bExists ? "Icons.Check" : "Icons.Info");
+			})
+			.ColorAndOpacity_Lambda([Pak]
+			{
+				const FCPM_PakPlatformStatus* Status = Pak();
+				// Never Warning for a missing Pak. A platform with nothing built yet is the ordinary
+				// state before a publish, and alarming about it is exactly what this rework removes.
+				return FSlateColor(Status && Status->bExists ? FPalette::GreenPrimary : FPalette::TextSecondary);
+			})
+		]
+		+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+		[
+			SNew(STextBlock)
+			.TextStyle(&SecondaryTextStyle())
+			.AutoWrapText(true)
+			.Text_Lambda([this, Pak, Platform]
+			{
+				const FCPM_PakPlatformStatus* Status = Pak();
+				if (Status && Status->bExists)
+				{
+					return FText::Format(
+						LOCTEXT("PakBuilt", "Built pak on disk, made {0}"), RelativeTimeText(Status->LastPackagedTime));
+				}
+
+				// Says what happens next rather than naming an absence, and only promises a build
+				// when this run would actually make one.
+				const bool bSelected = Asset.IsValid() && Asset->SelectedPlatforms.Contains(Platform);
+				return bSelected
+					? LOCTEXT("PakWillBuild", "No pak on this computer. The next publish builds one.")
+					: LOCTEXT("PakNotIncluded", "No pak on this computer.");
+			})
+		]
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
+		[
+			SNew(SCheckBox)
+			.IsChecked_Lambda([this, Platform]
+			{
+				return Asset.IsValid() && Asset->SelectedPlatforms.Contains(Platform)
+					? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+			})
+			.IsEnabled_Lambda([this] { return !IsBusy(); })
+			.OnCheckStateChanged_Lambda([this, Platform](ECheckBoxState State)
+			{
+				if (!Asset.IsValid())
+				{
+					return;
+				}
+				if (State == ECheckBoxState::Checked)
+				{
+					Asset->SelectedPlatforms.Add(Platform);
+				}
+				else
+				{
+					Asset->SelectedPlatforms.Remove(Platform);
+				}
+			})
+			.ToolTipText_Lambda([this, Platform]
+			{
+				// The tooltip carries the whole Platform Selection rule, because this checkbox is
+				// the only place a creator meets it.
+				return PolicyPlatforms().Contains(Platform)
+					? LOCTEXT("PlatformIncludedTip",
+						"Build and upload this platform on the next publish. Convai asks this project for it; "
+						"unticking sends the others alone.")
+					: LOCTEXT("PlatformForcedTip",
+						"Build and upload this platform on the next publish, even though Convai does not ask this "
+						"project for it. For a project Convai has agreed to host this platform for.");
+			})
+			[
+				SNew(STextBlock).Text(LOCTEXT("IncludePlatform", "Include"))
+			]
+		]
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6.0f, 0.0f, 0.0f, 0.0f)
+		[
+			SNew(SComboButton)
+			.ComboButtonStyle(&FAppStyle::Get().GetWidgetStyle<FComboButtonStyle>("SimpleComboButton"))
+			.HasDownArrow(false)
+			.ToolTipText(FText::Format(LOCTEXT("PlatformMoreTip", "More for {0}"), PlatformText(Platform)))
+			.OnGetMenuContent_Lambda([this, Platform] { return BuildPlatformRowMenu(Platform); })
+			.ButtonContent()
+			[
+				SNew(STextBlock).Text(LOCTEXT("RowMoreGlyph", "..."))
+			]
+		];
+}
+
+TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPlatformRowMenu(const ECPM_Platform Platform)
+{
+	const int32 ChunkId = Asset.IsValid() ? Asset->ChunkId : INDEX_NONE;
+	const FText PlatformName = PlatformText(Platform);
+
+	const FCPM_PakPlatformStatus* Status = Asset.IsValid()
+		? Asset->PakStatuses.FindByPredicate(
+			[Platform](const FCPM_PakPlatformStatus& S) { return S.Platform == Platform; })
+		: nullptr;
+	const bool bHasPak = Status && Status->bExists;
+	const FString PakPath = Status ? Status->PakPath : FString();
+	const bool bPublished = Asset.IsValid() && !Asset->AssetId.IsEmpty();
+
+	FMenuBuilder Menu(/*bShouldCloseWindowAfterMenuSelection=*/true, nullptr);
+
+	Menu.BeginSection(NAME_None, LOCTEXT("OnThisComputer", "On this computer"));
+	{
+		// This is where the standalone Reveal button went.
+		Menu.AddMenuEntry(
+			LOCTEXT("ShowPakInExplorer", "Show the built pak in Explorer"),
+			bHasPak
+				? LOCTEXT("ShowPakTip", "Opens the folder holding this platform's pak.")
+				: FText::Format(LOCTEXT("NoPakTip", "No {0} pak on this computer."), PlatformName),
+			FSlateIcon(),
+			FUIAction(
+				FExecuteAction::CreateLambda([PakPath] { FPlatformProcess::ExploreFolder(*FPaths::GetPath(PakPath)); }),
+				// Deliberately NOT gated on busy: opening a folder contends with nothing, and a
+				// twenty-minute publish is exactly when someone wants to look.
+				FCanExecuteAction::CreateLambda([bHasPak] { return bHasPak; })));
+
+		Menu.AddMenuEntry(
+			LOCTEXT("DeleteBuiltPak", "Delete the built pak"),
+			LOCTEXT("DeleteBuiltPakTip",
+				"Deletes this pak on this computer. Convai keeps the version it already holds, and your next "
+				"publish builds a new one."),
+			FSlateIcon(),
+			FUIAction(
+				FExecuteAction::CreateLambda([this, ChunkId, Platform, PlatformName]
+				{
+					const FText Question = FText::Format(
+						LOCTEXT("DeleteBuiltPakAsk",
+							"Delete the {0} pak on this computer?\n\nConvai keeps the version it already holds, "
+							"and your next publish builds a new one."),
+						PlatformName);
+					if (FMessageDialog::Open(EAppMsgType::YesNo, Question) != EAppReturnType::Yes)
+					{
+						return;
+					}
+					if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
+					{
+						const bool bDeleted = Subsystem->DeleteBuiltPak(ChunkId, Platform);
+						Notify(
+							bDeleted
+								? FText::Format(LOCTEXT("DeletedPak", "Deleted the {0} pak."), PlatformName)
+								: FText::Format(LOCTEXT("DeletePakFailed",
+									"Could not delete the {0} pak. It may be open in another program."), PlatformName),
+							bDeleted ? SNotificationItem::CS_Success : SNotificationItem::CS_Fail);
+					}
+				}),
+				FCanExecuteAction::CreateLambda([this, bHasPak] { return bHasPak && !IsBusy(); })));
+	}
+	Menu.EndSection();
+
+	Menu.BeginSection(NAME_None, LOCTEXT("OnConvai", "On Convai"));
+	{
+		Menu.AddMenuEntry(
+			FText::Format(LOCTEXT("DeleteVersion", "Delete the {0} version..."), PlatformName),
+			LOCTEXT("DeleteVersionTip", "Removes only this platform's version. The asset and its other versions stay."),
+			FSlateIcon(),
+			FUIAction(
+				FExecuteAction::CreateLambda([this, ChunkId, Platform, PlatformName]
+				{
+					const FText Question = FText::Format(
+						LOCTEXT("DeleteVersionAsk",
+							"Delete the {0} version of \"{1}\" from Convai?\n\nThe asset stays, with its other "
+							"versions. Anything loading it on {0} stops working until you publish again.\n\n"
+							"This cannot be undone. If Convai does not hold a {0} version, nothing changes."),
+						PlatformName, FText::FromString(Asset.IsValid() ? Asset->Name : FString()));
+					if (FMessageDialog::Open(EAppMsgType::YesNo, Question) != EAppReturnType::Yes)
+					{
+						return;
+					}
+					if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
+					{
+						Subsystem->DeleteVersion(ChunkId, Platform);
+					}
+				}),
+				// Not gated on a local record of the upload: a fresh clone or a second machine must
+				// still be able to remove something Convai holds.
+				FCanExecuteAction::CreateLambda([this, bPublished] { return bPublished && !IsBusy(); })));
+	}
+	Menu.EndSection();
+
+	return Menu.MakeWidget();
 }
 
 EActiveTimerReturnType SCPM_AssetDetailPanel::RefreshSpawnStatus(double InCurrentTime, float InDeltaTime)

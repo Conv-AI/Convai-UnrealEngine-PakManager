@@ -41,6 +41,33 @@ struct FCPM_AssetViewModel
 	/** Windows then Linux, as the subsystem answers. */
 	TArray<FCPM_PakPlatformStatus> PakStatuses;
 
+	/**
+	 * The **Platform Selection** for this Chunk's next Publish.
+	 *
+	 * Seeded from the Publish Policy the moment one is read, and only then - before that the panel
+	 * has nothing to seed from, and a selection seeded from an empty Policy would silently mean
+	 * "publish no platform". Reset by SeedPlatformSelection whenever the Policy changes underneath.
+	 */
+	TSet<ECPM_Platform> SelectedPlatforms;
+
+	/** True once a Policy has been read and SelectedPlatforms reflects a real answer. */
+	bool bPlatformSelectionSeeded = false;
+
+	/**
+	 * Fills SelectedPlatforms from what the Policy asks for, keeping any platform the creator added
+	 * or removed by hand. Called whenever the cached Policy changes.
+	 */
+	void SeedPlatformSelection(const TArray<ECPM_Platform>& PolicyPlatforms);
+
+	/**
+	 * The options this Chunk's next Publish runs with.
+	 *
+	 * bOverridePlatforms is set only when the Selection actually differs from the Policy, so a
+	 * creator who touched nothing publishes exactly as before - and the Publish still resolves the
+	 * Policy itself, which may have changed since this panel last read it.
+	 */
+	FCPM_PublishOptions PublishOptions(const TArray<ECPM_Platform>& PolicyPlatforms, bool bReuseExistingPaks) const;
+
 	/** When this Chunk's Asset last received a Raw Project Archive. MinValue means never, and no reuse. */
 	FDateTime RawArchiveUploadTime = FDateTime::MinValue();
 

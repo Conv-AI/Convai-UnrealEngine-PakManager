@@ -40,6 +40,14 @@ private:
 	TSharedRef<SWidget> BuildActionBar();
 	TSharedRef<SWidget> BuildMoreMenu();
 
+	/** More menu verbs. Each carries the active Chunk's Platform Selection. */
+	void HandlePackageNow();
+	void HandlePublishReusingPaks();
+	void HandleDeleteBuiltPaks();
+
+	/** Says why the subsystem refused, falling back when it recorded no message. */
+	void NotifyRefusal(int32 ChunkId, const FText& Fallback);
+
 	static UConvaiPakEditorSubsystem* GetSubsystem();
 
 	/** Selection change behind the D6 unsaved-edits guard: Save / Discard / Cancel. */

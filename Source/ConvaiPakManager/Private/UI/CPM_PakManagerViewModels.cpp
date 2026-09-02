@@ -32,6 +32,52 @@ void FCPM_AssetViewModel::LoadFrom(UConvaiPakEditorSubsystem& Subsystem)
 	Status = Subsystem.GetChunkStatus(ChunkId);
 }
 
+void FCPM_AssetViewModel::SeedPlatformSelection(const TArray<ECPM_Platform>& PolicyPlatforms)
+{
+	// Only the first read seeds. A creator who ticked Linux for this session must not lose it
+	// because the panel re-read the same Policy a minute later.
+	if (bPlatformSelectionSeeded)
+	{
+		return;
+	}
+
+	SelectedPlatforms.Reset();
+	for (const ECPM_Platform Platform : PolicyPlatforms)
+	{
+		SelectedPlatforms.Add(Platform);
+	}
+	bPlatformSelectionSeeded = true;
+}
+
+FCPM_PublishOptions FCPM_AssetViewModel::PublishOptions(
+	const TArray<ECPM_Platform>& PolicyPlatforms, const bool bReuseExistingPaks) const
+{
+	FCPM_PublishOptions Options;
+	Options.bReuseExistingPaks = bReuseExistingPaks;
+
+	if (!bPlatformSelectionSeeded)
+	{
+		// Nothing has been read to differ from, so this run follows whatever the Publish resolves.
+		return Options;
+	}
+
+	bool bDiffers = SelectedPlatforms.Num() != PolicyPlatforms.Num();
+	for (const ECPM_Platform Platform : PolicyPlatforms)
+	{
+		bDiffers |= !SelectedPlatforms.Contains(Platform);
+	}
+
+	// Left alone when it matches: the Publish re-reads the Policy for itself, and overriding with a
+	// copy this panel read earlier would pin a stale answer onto a run that could see a fresh one.
+	if (bDiffers)
+	{
+		Options.bOverridePlatforms = true;
+		Options.Platforms = SelectedPlatforms.Array();
+	}
+
+	return Options;
+}
+
 bool FCPM_AssetViewModel::IsDirty() const
 {
 	return Name != SavedName || Description != SavedDescription;
@@ -120,13 +166,13 @@ TArray<FText> FCPM_AssetViewModel::ValidationMessages() const
 		switch (AssetType)
 		{
 		case ECPM_AssetType::Scene:
-			Messages.Add(LOCTEXT("EntryPointRequiredScene", "Set an Entry point: the level this Scene opens."));
+			Messages.Add(LOCTEXT("EntryPointRequiredScene", "Pick the level this scene opens."));
 			break;
 		case ECPM_AssetType::Avatar:
-			Messages.Add(LOCTEXT("EntryPointRequiredAvatar", "Set an Entry point: the blueprint this Avatar loads."));
+			Messages.Add(LOCTEXT("EntryPointRequiredAvatar", "Pick the blueprint this avatar loads."));
 			break;
 		default:
-			Messages.Add(LOCTEXT("EntryPointRequired", "Set an Entry point."));
+			Messages.Add(LOCTEXT("EntryPointRequired", "Pick what this asset loads."));
 			break;
 		}
 	}

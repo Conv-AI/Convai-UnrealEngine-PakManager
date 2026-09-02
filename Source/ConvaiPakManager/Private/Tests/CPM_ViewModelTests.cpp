@@ -171,4 +171,56 @@ bool FCPMProjectViewModelReportsThePublishInFlight::RunTest(const FString&)
 	return true;
 }
 
+/**
+ * The Platform Selection only overrides when it actually differs from the Policy.
+ *
+ * The row that matters is the untouched one: a creator who changed nothing must publish with EMPTY
+ * options, so the Publish resolves the Policy itself. Pinning the copy this panel happened to read
+ * would silently publish yesterday's platforms after Convai changed them this morning.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMViewModelOverridesPlatformsOnlyWhenTheyDiffer,
+	"ConvaiPakManager.UI.ViewModel.OverridesPlatformsOnlyWhenTheyDiffer",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMViewModelOverridesPlatformsOnlyWhenTheyDiffer::RunTest(const FString&)
+{
+	const TArray<ECPM_Platform> WindowsOnly = { ECPM_Platform::Windows };
+
+	FCPM_AssetViewModel Model = MakeValidDraft();
+	TestFalse(TEXT("nothing is seeded before a policy is read"), Model.bPlatformSelectionSeeded);
+
+	// Before any policy read, options must stay empty rather than claim "publish no platform".
+	const FCPM_PublishOptions Unseeded = Model.PublishOptions(WindowsOnly, false);
+	TestFalse(TEXT("an unseeded selection overrides nothing"), Unseeded.bOverridePlatforms);
+
+	Model.SeedPlatformSelection(WindowsOnly);
+	TestTrue(TEXT("seeding takes the policy's platforms"), Model.SelectedPlatforms.Contains(ECPM_Platform::Windows));
+
+	const FCPM_PublishOptions Untouched = Model.PublishOptions(WindowsOnly, false);
+	TestFalse(TEXT("an untouched selection overrides nothing"), Untouched.bOverridePlatforms);
+	TestFalse(TEXT("and does not reuse paks"), Untouched.bReuseExistingPaks);
+
+	// Adding: the enterprise project Convai agreed to host Linux for.
+	Model.SelectedPlatforms.Add(ECPM_Platform::Linux);
+	const FCPM_PublishOptions Added = Model.PublishOptions(WindowsOnly, false);
+	TestTrue(TEXT("adding a platform overrides"), Added.bOverridePlatforms);
+	TestEqual(TEXT("carrying both platforms"), Added.Platforms.Num(), 2);
+
+	// Removing: one creator sending Windows alone once Linux is general.
+	Model.SelectedPlatforms.Remove(ECPM_Platform::Linux);
+	Model.SelectedPlatforms.Remove(ECPM_Platform::Windows);
+	const FCPM_PublishOptions Removed = Model.PublishOptions(WindowsOnly, true);
+	TestTrue(TEXT("removing every platform overrides"), Removed.bOverridePlatforms);
+	TestEqual(TEXT("carrying none"), Removed.Platforms.Num(), 0);
+	TestTrue(TEXT("and reuse rides along"), Removed.bReuseExistingPaks);
+
+	// A second policy read must not wipe what the creator chose this session.
+	Model.SelectedPlatforms.Add(ECPM_Platform::Linux);
+	Model.SeedPlatformSelection(WindowsOnly);
+	TestTrue(TEXT("re-seeding keeps the creator's choice"), Model.SelectedPlatforms.Contains(ECPM_Platform::Linux));
+
+	return true;
+}
+
 #endif  // WITH_AUTOMATION_TESTS
