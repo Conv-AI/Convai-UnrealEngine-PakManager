@@ -747,9 +747,11 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildUploadSection()
 						// Said before anything about uploads: with the Policy asking for no archive,
 						// the checkbox beside this cannot cause one, and a row that only said "not
 						// uploaded yet" would leave the creator waiting for a publish to fix it.
-						if (UCPM_PakManagerSettings::Get().PolicyExcludesRawArchive())
+						// Asked of the Policy actually read, not of the settings - the old check
+						// only ever answered for a hand-typed override.
+						if (!PolicyAsksForProjectSource())
 						{
-							return LOCTEXT("RawArchiveNotInPolicy", "Not part of this project's publish policy");
+							return LOCTEXT("RawArchiveNotInPolicy", "Convai does not ask this project for a copy of your project");
 						}
 						if (!Asset.IsValid() || !Asset->HasPublishedRawArchive())
 						{
@@ -1058,6 +1060,23 @@ void SCPM_AssetDetailPanel::RebuildStageRow()
 			})
 		];
 	}
+}
+
+bool SCPM_AssetDetailPanel::PolicyAsksForProjectSource() const
+{
+	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+	if (!Subsystem)
+	{
+		return true;
+	}
+
+	FCPM_PublishPolicy Policy;
+	FDateTime ReadAt;
+	ECPM_PolicyReadState State = ECPM_PolicyReadState::Unread;
+
+	// Unread or unreadable answers YES, matching how platforms fail open: telling a creator Convai
+	// wants no copy of their project, because a GitHub read timed out, is the worse lie.
+	return Subsystem->GetPublishPolicy(Policy, ReadAt, State) ? Policy.bUploadRawProject : true;
 }
 
 TArray<ECPM_Platform> SCPM_AssetDetailPanel::PolicyPlatforms() const

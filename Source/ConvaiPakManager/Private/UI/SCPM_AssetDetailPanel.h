@@ -70,6 +70,9 @@ private:
 	/** What the Policy asks for, empty unless it has actually been read. */
 	TArray<ECPM_Platform> PolicyPlatforms() const;
 
+	/** Whether the Policy asks this project for the Raw Project Archive. Fails open, as platforms do. */
+	bool PolicyAsksForProjectSource() const;
+
 	static UConvaiPakEditorSubsystem* GetSubsystem();
 
 	FReply HandleUseSelectedAsset();
