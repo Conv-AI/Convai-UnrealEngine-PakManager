@@ -449,7 +449,12 @@ void UConvaiPakEditorSubsystem::ResolvePolicy(
 {
 	const UCPM_PakManagerSettings& Settings = UCPM_PakManagerSettings::Get();
 
-	if (!Settings.PolicyOverrideFile.IsEmpty())
+	// A file named while the source still says Repository is a project configured before the source
+	// existed, and it means what it meant then.
+	const bool bLegacyFileOverride =
+		Settings.PolicySource == ECPM_PolicySource::Repository && !Settings.PolicyOverrideFile.IsEmpty();
+
+	if (Settings.PolicySource == ECPM_PolicySource::OverrideFile || bLegacyFileOverride)
 	{
 		FString Contents;
 		if (!FFileHelper::LoadFileToString(Contents, *Settings.PolicyOverrideFile))
@@ -463,6 +468,26 @@ void UConvaiPakEditorSubsystem::ResolvePolicy(
 		FString Error;
 		const bool bParsed = Policy.ParseFromJson(Contents, Error);
 		OnResolved(bParsed, Policy, Error);
+		return;
+	}
+
+	if (Settings.PolicySource == ECPM_PolicySource::OverrideText)
+	{
+		FCPM_PublishPolicy Policy;
+		FString Error;
+		const bool bParsed = Policy.ParseFromJson(Settings.PolicyOverrideJson, Error);
+		OnResolved(bParsed, Policy, Error);
+		return;
+	}
+
+	if (Settings.PolicySource == ECPM_PolicySource::OverrideSettings)
+	{
+		// Validated rather than trusted: these fields are typed by hand, and the two mistakes they
+		// can hold - a platform with no configuration, a policy that produces nothing - are the two
+		// nothing downstream would notice.
+		FString Error;
+		const bool bValid = Settings.PolicyOverride.Validate(Error);
+		OnResolved(bValid, bValid ? Settings.PolicyOverride : FCPM_PublishPolicy(), Error);
 		return;
 	}
 

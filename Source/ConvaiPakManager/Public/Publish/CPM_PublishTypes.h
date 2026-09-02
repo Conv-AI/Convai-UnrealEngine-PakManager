@@ -12,10 +12,12 @@ struct CONVAIPAKMANAGER_API FCPM_PlatformPolicy
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Convai|PakManager")
 	bool bShouldPackage = false;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
+	/** The build configuration to package at, e.g. "Shipping". Required when bShouldPackage. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Convai|PakManager",
+		meta = (EditCondition = "bShouldPackage"))
 	FString Configuration;
 };
 
@@ -31,13 +33,13 @@ struct CONVAIPAKMANAGER_API FCPM_PublishPolicy
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Convai|PakManager")
 	FCPM_PlatformPolicy Windows;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Convai|PakManager")
 	FCPM_PlatformPolicy Linux;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Convai|PakManager")
 	bool bUploadRawProject = false;
 
 	/**
@@ -48,6 +50,16 @@ struct CONVAIPAKMANAGER_API FCPM_PublishPolicy
 	 * Version, and nothing downstream would notice.
 	 */
 	bool ParseFromJson(const FString& Json, FString& OutError);
+
+	/**
+	 * Whether this policy is one a Publish can be run from.
+	 *
+	 * Shared by every way a policy arrives - parsed from Convai's, typed into a project's settings -
+	 * so a hand-written one is held to what a fetched one is held to. The two refusals it makes are
+	 * the ones nothing downstream would notice: a platform with no build configuration, and a policy
+	 * that would produce no artefact at all.
+	 */
+	bool Validate(FString& OutError) const;
 
 	/** Platforms this policy asks for, in a fixed order so a Job Queue built twice is built the same. */
 	TArray<ECPM_Platform> PlatformsToPackage() const;

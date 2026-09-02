@@ -7,7 +7,8 @@
 
 namespace
 {
-	bool ReadPlatform(const TSharedPtr<FJsonObject>& Engine, const TCHAR* Key, FCPM_PlatformPolicy& OutPolicy)
+	/** Reads one platform's section. What it reads is judged by Validate, not here. */
+	void ReadPlatform(const TSharedPtr<FJsonObject>& Engine, const TCHAR* Key, FCPM_PlatformPolicy& OutPolicy)
 	{
 		const TSharedPtr<FJsonObject>* Object = nullptr;
 		if (!Engine->TryGetObjectField(Key, Object) || !Object || !Object->IsValid())
@@ -15,21 +16,11 @@ namespace
 			// A platform the policy does not mention is not packaged. Absent and false mean the same
 			// thing here, which is why this is not an error.
 			OutPolicy = FCPM_PlatformPolicy();
-			return true;
+			return;
 		}
 
 		(*Object)->TryGetBoolField(TEXT("should-package"), OutPolicy.bShouldPackage);
 		(*Object)->TryGetStringField(TEXT("configuration"), OutPolicy.Configuration);
-
-		if (OutPolicy.bShouldPackage && OutPolicy.Configuration.IsEmpty())
-		{
-			// Refused rather than defaulted to Shipping: guessing a build configuration means
-			// publishing a Pak built differently from what Convai asked for, and nothing downstream
-			// can tell.
-			return false;
-		}
-
-		return true;
 	}
 }
 
@@ -51,20 +42,36 @@ bool FCPM_PublishPolicy::ParseFromJson(const FString& Json, FString& OutError)
 	}
 
 	FCPM_PublishPolicy Parsed;
-	if (!ReadPlatform(*Engine, TEXT("windows"), Parsed.Windows))
+	ReadPlatform(*Engine, TEXT("windows"), Parsed.Windows);
+	ReadPlatform(*Engine, TEXT("linux"), Parsed.Linux);
+	Root->TryGetBoolField(TEXT("raw-project-upload"), Parsed.bUploadRawProject);
+
+	if (!Parsed.Validate(OutError))
+	{
+		return false;
+	}
+
+	// Assigned only once everything parsed, so a failed read leaves the caller's policy alone.
+	*this = Parsed;
+	return true;
+}
+
+bool FCPM_PublishPolicy::Validate(FString& OutError) const
+{
+	// Refused rather than defaulted to Shipping: guessing a build configuration means publishing a
+	// Pak built differently from what was asked for, and nothing downstream can tell.
+	if (Windows.bShouldPackage && Windows.Configuration.IsEmpty())
 	{
 		OutError = TEXT("the publish policy asks to package Windows but names no configuration");
 		return false;
 	}
-	if (!ReadPlatform(*Engine, TEXT("linux"), Parsed.Linux))
+	if (Linux.bShouldPackage && Linux.Configuration.IsEmpty())
 	{
 		OutError = TEXT("the publish policy asks to package Linux but names no configuration");
 		return false;
 	}
 
-	Root->TryGetBoolField(TEXT("raw-project-upload"), Parsed.bUploadRawProject);
-
-	if (!Parsed.Windows.bShouldPackage && !Parsed.Linux.bShouldPackage && !Parsed.bUploadRawProject)
+	if (!Windows.bShouldPackage && !Linux.bShouldPackage && !bUploadRawProject)
 	{
 		// A Publish that would produce nothing is a policy the reader misunderstood, not an
 		// instruction. Better caught here than as an Asset with no Versions.
@@ -72,8 +79,6 @@ bool FCPM_PublishPolicy::ParseFromJson(const FString& Json, FString& OutError)
 		return false;
 	}
 
-	// Assigned only once everything parsed, so a failed read leaves the caller's policy alone.
-	*this = Parsed;
 	return true;
 }
 

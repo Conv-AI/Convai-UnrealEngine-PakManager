@@ -4,7 +4,31 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
+#include "Publish/CPM_PublishTypes.h"
 #include "CPM_PakManagerSettings.generated.h"
+
+/**
+ * Where a Publish reads its Publish Policy from.
+ *
+ * An explicit choice rather than "whichever override happens to be filled in": with three ways to
+ * state a policy, precedence by emptiness makes a half-edited field silently outrank the one being
+ * read, and neither the creator nor the log can see which won.
+ */
+UENUM()
+enum class ECPM_PolicySource : uint8
+{
+	/** Convai's own, fetched from the repository. What every creator project uses. */
+	Repository UMETA(DisplayName = "Convai repository"),
+
+	/** A JSON file on disk, in the shape Convai publishes. */
+	OverrideFile UMETA(DisplayName = "Override: JSON file"),
+
+	/** A JSON document typed into these settings, in the shape Convai publishes. */
+	OverrideText UMETA(DisplayName = "Override: JSON text"),
+
+	/** The fields below, with no JSON anywhere. */
+	OverrideSettings UMETA(DisplayName = "Override: these settings"),
+};
 
 /**
  * Project settings for the Pak Manager, held in DefaultGame.ini.
@@ -107,11 +131,37 @@ public:
 	FString PolicyPath = TEXT("resources/asset_uploader_config.json");
 
 	/**
-	 * Read the Publish Policy from this file instead of from the repository. Empty to use the repository.
+	 * Where the Publish Policy comes from.
 	 *
-	 * The escape hatch for publishing that must not depend on a public repository being reachable -
-	 * internal pipelines, and anyone genuinely offline. Set deliberately, per project.
+	 * The overrides exist for publishing that must not depend on a public repository being
+	 * reachable - internal pipelines, a policy being trialled, anyone genuinely offline. A creator
+	 * project leaves this on the repository; overriding it is a deliberate, per-project act.
 	 */
-	UPROPERTY(config, EditAnywhere, Category = "Publish Policy", meta = (FilePathFilter = "json"))
+	UPROPERTY(config, EditAnywhere, Category = "Publish Policy Override")
+	ECPM_PolicySource PolicySource = ECPM_PolicySource::Repository;
+
+	/** Read the policy from this JSON file, in the shape Convai publishes. */
+	UPROPERTY(config, EditAnywhere, Category = "Publish Policy Override", meta = (FilePathFilter = "json",
+		EditCondition = "PolicySource == ECPM_PolicySource::OverrideFile", EditConditionHides))
 	FString PolicyOverrideFile;
+
+	/**
+	 * The policy itself, as JSON, in the shape Convai publishes.
+	 *
+	 * For pasting a policy verbatim out of the repository or a ticket, where retyping it into the
+	 * fields below would be a chance to get it subtly wrong.
+	 */
+	UPROPERTY(config, EditAnywhere, Category = "Publish Policy Override", meta = (MultiLine = true,
+		EditCondition = "PolicySource == ECPM_PolicySource::OverrideText", EditConditionHides))
+	FString PolicyOverrideJson;
+
+	/**
+	 * The policy stated as fields, for a project that just wants to change what it builds.
+	 *
+	 * Held to what a fetched policy is held to - a platform being packaged names a configuration,
+	 * and a policy produces something - so an override cannot express what Convai's own cannot.
+	 */
+	UPROPERTY(config, EditAnywhere, Category = "Publish Policy Override",
+		meta = (EditCondition = "PolicySource == ECPM_PolicySource::OverrideSettings", EditConditionHides))
+	FCPM_PublishPolicy PolicyOverride;
 };

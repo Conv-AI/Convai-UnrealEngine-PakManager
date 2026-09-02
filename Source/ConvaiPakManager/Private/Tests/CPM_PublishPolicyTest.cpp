@@ -160,4 +160,40 @@ bool FCPMPublishPolicyArchiveUploadOnlySubtracts::RunTest(const FString&)
 	return true;
 }
 
+/**
+ * A policy typed into a project's settings is held to what a fetched one is held to.
+ *
+ * The fields skip the parser, so without this they would be the one way into a Publish that never
+ * met the two checks the parser exists for.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMPublishPolicyValidatesATypedOverride,
+	"ConvaiPakManager.Publish.Policy.ValidatesATypedOverride",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMPublishPolicyValidatesATypedOverride::RunTest(const FString&)
+{
+	FString Error;
+
+	FCPM_PublishPolicy Nothing;
+	TestFalse(TEXT("a policy that would produce nothing is refused"), Nothing.Validate(Error));
+
+	FCPM_PublishPolicy NoConfiguration;
+	NoConfiguration.Windows.bShouldPackage = true;
+	TestFalse(TEXT("packaging Windows with no configuration is refused"), NoConfiguration.Validate(Error));
+	TestTrue(TEXT("and says which platform"), Error.Contains(TEXT("Windows")));
+
+	FCPM_PublishPolicy RawOnly;
+	RawOnly.bUploadRawProject = true;
+	TestTrue(TEXT("the raw project alone is a policy"), RawOnly.Validate(Error));
+
+	FCPM_PublishPolicy Windows;
+	Windows.Windows.bShouldPackage = true;
+	Windows.Windows.Configuration = TEXT("Shipping");
+	TestTrue(TEXT("one platform with a configuration is a policy"), Windows.Validate(Error));
+	TestEqual(TEXT("and asks for that one platform"), Windows.PlatformsToPackage().Num(), 1);
+
+	return true;
+}
+
 #endif  // WITH_AUTOMATION_TESTS
