@@ -41,6 +41,11 @@ struct FCPM_AssetViewModel
 	/** Windows then Linux, as the subsystem answers. */
 	TArray<FCPM_PakPlatformStatus> PakStatuses;
 
+	/** When this Chunk's Asset last received a Raw Project Archive. MinValue means never, and no reuse. */
+	FDateTime RawArchiveUploadTime = FDateTime::MinValue();
+
+	bool HasPublishedRawArchive() const { return RawArchiveUploadTime != FDateTime::MinValue(); }
+
 	FCPM_ChunkStatus Status;
 
 	/** Re-reads everything from the subsystem. Keeps in-flight edits when they are dirty. */

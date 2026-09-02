@@ -1,5 +1,6 @@
 // Copyright 2025 Convai Inc. All Rights Reserved.
 
+#include "CPM_PakManagerSettings.h"
 #include "Misc/AutomationTest.h"
 #include "Publish/CPM_PublishTypes.h"
 
@@ -123,6 +124,39 @@ bool FCPMPublishPolicyLeavesTheOldPolicyIntactOnFailure::RunTest(const FString&)
 	TestTrue(TEXT("Linux survives"), Policy.Linux.bShouldPackage);
 	TestTrue(TEXT("the raw project flag survives"), Policy.bUploadRawProject);
 
+	return true;
+}
+
+/**
+ * What the creator's Reuse Published Raw Project Archive setting is allowed to do to a Policy.
+ *
+ * The whole truth table, not the interesting rows: the guarantees this encodes are that the setting
+ * can only ever subtract from the Policy, and that an Asset with no archive behind it always gets
+ * one - and both break silently, months later, in a Convai rebuild nobody here would see.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMPublishPolicyReusesOnlyAPublishedArchive,
+	"ConvaiPakManager.Publish.Policy.ReusesOnlyAPublishedArchive",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMPublishPolicyReusesOnlyAPublishedArchive::RunTest(const FString&)
+{
+	UCPM_PakManagerSettings* Settings = GetMutableDefault<UCPM_PakManagerSettings>();
+	const bool bRestore = Settings->bReusePublishedRawArchive;
+
+	Settings->bReusePublishedRawArchive = false;
+	TestTrue(TEXT("off, the policy alone decides"), Settings->ShouldArchiveRawProject(true, true, true));
+	TestFalse(TEXT("and a policy asking for no archive gets none"), Settings->ShouldArchiveRawProject(false, true, true));
+
+	Settings->bReusePublishedRawArchive = true;
+	TestFalse(TEXT("on, a published archive is reused"), Settings->ShouldArchiveRawProject(true, true, true));
+	TestTrue(TEXT("but an asset that has never had one is sent one"), Settings->ShouldArchiveRawProject(true, false, true));
+	TestTrue(TEXT("and a publish with no Paks sends it rather than nothing at all"),
+		Settings->ShouldArchiveRawProject(true, true, false));
+	TestFalse(TEXT("it never adds an archive the policy declined"), Settings->ShouldArchiveRawProject(false, true, true));
+	TestFalse(TEXT("whatever else is true"), Settings->ShouldArchiveRawProject(false, false, false));
+
+	Settings->bReusePublishedRawArchive = bRestore;
 	return true;
 }
 

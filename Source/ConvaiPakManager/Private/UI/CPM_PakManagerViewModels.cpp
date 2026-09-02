@@ -28,6 +28,7 @@ void FCPM_AssetViewModel::LoadFrom(UConvaiPakEditorSubsystem& Subsystem)
 	ThumbnailPath = Subsystem.GetThumbnailPath(ChunkId);
 	bThumbnailExists = !ThumbnailPath.IsEmpty() && FPaths::FileExists(ThumbnailPath);
 	PakStatuses = Subsystem.GetPakStatuses(ChunkId);
+	RawArchiveUploadTime = Subsystem.GetRawArchiveUploadTime(ChunkId);
 	Status = Subsystem.GetChunkStatus(ChunkId);
 }
 

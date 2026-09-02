@@ -90,6 +90,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	TArray<FCPM_PakPlatformStatus> GetPakStatuses(int32 ChunkId) const;
 
+	/**
+	 * When this Chunk's Asset last received a Raw Project Archive. MinValue means it never has.
+	 *
+	 * The fact a Publish consults before reusing a published archive rather than sending a new one,
+	 * and the only thing that makes that reuse safe: an Asset with no archive can never be rebuilt
+	 * for a future engine version.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	FDateTime GetRawArchiveUploadTime(int32 ChunkId) const;
+
 	/** Tagged spawn-point actors in the open editor world. Scenes only make sense asking. */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	FCPM_SpawnPointStatus GetSpawnPointStatus() const;
@@ -222,7 +232,8 @@ private:
 		float Progress = 0.0f, const FString& StepName = FString());
 
 	void HandleWorkflowProgress(int32 ChunkId, const FWorkflowStatusInfo& Info);
-	void HandleWorkflowFinished(int32 ChunkId, const FWorkflowStatusInfo& Info, bool bPackageOnly);
+	/** bArchivedRaw is what the queue was built to do, so success can record that the archive landed. */
+	void HandleWorkflowFinished(int32 ChunkId, const FWorkflowStatusInfo& Info, bool bPackageOnly, bool bArchivedRaw);
 
 	/** Latest status per Chunk. Absent means never touched this session. */
 	TMap<int32, FCPM_ChunkStatus> StatusByChunk;
@@ -245,8 +256,12 @@ private:
 	/** The Chunk whose delete is in flight, so its outcome is attributed to the right Chunk. */
 	int32 DeletingChunkId = INDEX_NONE;
 
-	/** Whether that delete names the whole Asset - only then does success clear the local record. */
-	bool bDeletingWholeAsset = false;
+	/**
+	 * Which Version that delete names, empty for the whole Asset. Kept rather than reduced to a
+	 * bool: deleting the `raw` Version alone leaves the Asset, so only the version tells the record
+	 * of the archive from the record of the Asset apart.
+	 */
+	FString DeletingVersion;
 
 	UFUNCTION()
 	void HandleDeleteSucceeded(const FString& ResponseString);

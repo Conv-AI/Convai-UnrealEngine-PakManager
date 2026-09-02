@@ -62,6 +62,40 @@ public:
 		meta = (DisplayName = "Use Existing Pak File"))
 	bool bUseExistingPakFile = false;
 
+	/**
+	 * Publish without archiving and uploading the project again, leaving the Asset the Raw Project
+	 * Archive its last Publish put there.
+	 *
+	 * The other half of an iteration loop: the archive is the whole project, so re-sending it is the
+	 * longest step of a Publish that changed nothing about the project's source.
+	 *
+	 * Honoured only where an archive actually reached Convai for this Chunk's Asset, which is why
+	 * this is phrased as reusing a published archive rather than as disabling an upload - Convai
+	 * rebuilds an Asset for a future engine version from that archive, so an Asset that never
+	 * received one can never be rebuilt, and nothing downstream would notice for months.
+	 */
+	UPROPERTY(config, EditAnywhere, Category = "Publishing",
+		meta = (DisplayName = "Reuse Published Raw Project Archive"))
+	bool bReusePublishedRawArchive = false;
+
+	/**
+	 * Whether a Publish must produce and send the Raw Project Archive.
+	 *
+	 * Subtracts from the Publish Policy and can never add to it: a Policy that asks for no archive
+	 * still gets none whatever the creator set, because which Versions an Asset carries is Convai's
+	 * decision and not a creator's. See CONTEXT.md.
+	 *
+	 * bPublishingPaks is not a detail of the creator's choice but of what is left: a Policy asking
+	 * for the archive alone would, with the archive reused, leave the Publish with nothing to send.
+	 */
+	bool ShouldArchiveRawProject(
+		const bool bPolicyAsksForIt,
+		const bool bHasPublishedArchive,
+		const bool bPublishingPaks) const
+	{
+		return bPolicyAsksForIt && !(bReusePublishedRawArchive && bHasPublishedArchive && bPublishingPaks);
+	}
+
 	/** Repository holding the Publish Policy Convai publishes. */
 	UPROPERTY(config, EditAnywhere, Category = "Publish Policy")
 	FString PolicyRepository = TEXT("Conv-AI/Convai-UnrealEngine-ModdingTool");

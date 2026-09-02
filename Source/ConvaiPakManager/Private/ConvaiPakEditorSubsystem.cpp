@@ -123,6 +123,21 @@ TArray<FCPM_PakPlatformStatus> UConvaiPakEditorSubsystem::GetPakStatuses(const i
 	return Statuses;
 }
 
+FDateTime UConvaiPakEditorSubsystem::GetRawArchiveUploadTime(const int32 ChunkId) const
+{
+	// Gated on the Asset record, so every path that loses it - a delete whose local cleanup the
+	// creator had to finish by hand, a migration that could not attribute the old layout - revokes
+	// the reuse with it. A record that outlived its Asset would let the next Publish create a new
+	// one and skip the archive it has never had.
+	if (GetAssetId(ChunkId).IsEmpty())
+	{
+		return FDateTime::MinValue();
+	}
+
+	// MinValue for a file that is not there, which is the "never" this answers with.
+	return IFileManager::Get().GetTimeStamp(*ConvaiPakManager::Chunk::GetRawArchiveRecordPath(ChunkId));
+}
+
 FCPM_SpawnPointStatus UConvaiPakEditorSubsystem::GetSpawnPointStatus() const
 {
 	FCPM_SpawnPointStatus Status;
@@ -542,6 +557,23 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(const int32 Chun
 		return FWorkflowHandle::Invalid();
 	}
 
+	// Decided here rather than by a Job's Precheck, although ADR-0004 points at one for re-running a
+	// step: a Precheck would satisfy the archive from the zip still sitting in the cache and pay the
+	// upload anyway, and the upload is the half of the cost this exists to avoid.
+	const bool bArchiveRaw = !bPackageOnly && UCPM_PakManagerSettings::Get().ShouldArchiveRawProject(
+		Policy.bUploadRawProject, GetRawArchiveUploadTime(ChunkId) != FDateTime::MinValue(), bHasPaks);
+
+	if (!bPackageOnly && Policy.bUploadRawProject && !bArchiveRaw)
+	{
+		// Warned about rather than merely logged, as with a reused Pak: from here on the archive
+		// Convai holds is the one from an earlier Publish, and nothing downstream can tell it from
+		// one made of the project as it stands now.
+		UCPM_UtilityLibrary::CPM_LogMessage(
+			TEXT("Publishing without the project archive - this asset keeps the one its last publish uploaded, ")
+			TEXT("because Reuse Published Raw Project Archive is on"),
+			ECPM_LogLevel::Warning);
+	}
+
 	FWorkflowRequest Request;
 
 	if (bHasPaks)
@@ -551,7 +583,7 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(const int32 Chun
 
 	if (!bPackageOnly)
 	{
-		if (Policy.bUploadRawProject)
+		if (bArchiveRaw)
 		{
 			Request.Jobs.Add(NewObject<UCPM_ArchiveRawProjectJob>(this));
 		}
@@ -560,8 +592,9 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(const int32 Chun
 
 		UCPM_UploadArtifactsJob* Upload = NewObject<UCPM_UploadArtifactsJob>(this);
 		// Configured before it joins the queue: IDeclareIO is asked once, at queue build, and must
-		// already know whether to require Paks and a raw archive.
-		Upload->Configure(bHasPaks, Policy.bUploadRawProject);
+		// already know whether to require Paks and a raw archive. One bool with the Job above, or the
+		// queue either requires an archive nothing produces or zips a project it never sends.
+		Upload->Configure(bHasPaks, bArchiveRaw);
 		Request.Jobs.Add(Upload);
 
 		Request.Jobs.Add(NewObject<UCPM_PersistChunkStateJob>(this));
@@ -580,11 +613,11 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(const int32 Chun
 			Self->HandleWorkflowProgress(ChunkId, Info);
 		}
 	});
-	Request.OnFinishedNative.BindLambda([WeakThis, ChunkId, bPackageOnly](const FWorkflowStatusInfo& Info, const FWorkflowResult&)
+	Request.OnFinishedNative.BindLambda([WeakThis, ChunkId, bPackageOnly, bArchiveRaw](const FWorkflowStatusInfo& Info, const FWorkflowResult&)
 	{
 		if (UConvaiPakEditorSubsystem* Self = WeakThis.Get())
 		{
-			Self->HandleWorkflowFinished(ChunkId, Info, bPackageOnly);
+			Self->HandleWorkflowFinished(ChunkId, Info, bPackageOnly, bArchiveRaw);
 		}
 	});
 
@@ -643,7 +676,8 @@ void UConvaiPakEditorSubsystem::HandleWorkflowProgress(const int32 ChunkId, cons
 	SetStatus(ChunkId, Phase, FString(), Info.Progress, Info.CurrentJob.ProgressText.ToString());
 }
 
-void UConvaiPakEditorSubsystem::HandleWorkflowFinished(const int32 ChunkId, const FWorkflowStatusInfo& Info, const bool bPackageOnly)
+void UConvaiPakEditorSubsystem::HandleWorkflowFinished(
+	const int32 ChunkId, const FWorkflowStatusInfo& Info, const bool bPackageOnly, const bool bArchivedRaw)
 {
 	ActivePublishes.Remove(ChunkId);
 
@@ -656,6 +690,18 @@ void UConvaiPakEditorSubsystem::HandleWorkflowFinished(const int32 ChunkId, cons
 	switch (Info.Status)
 	{
 	case EWorkflowStatus::Completed:
+		// Recorded from here rather than from the Job that writes the Asset's record, because what
+		// makes it true is the whole queue having finished: the create step writes the AssetID
+		// before a byte of the archive is sent, so a Publish cancelled mid-upload leaves an Asset
+		// that has an ID and no archive, and reusing THAT is the thing this record exists to refuse.
+		if (bArchivedRaw)
+		{
+			FFileHelper::SaveStringToFile(
+				TEXT("This chunk's Convai asset holds a raw project archive uploaded from this project.\r\n")
+				TEXT("Delete this file to make the next publish upload the project again.\r\n"),
+				*ConvaiPakManager::Chunk::GetRawArchiveRecordPath(ChunkId));
+		}
+
 		SetStatus(ChunkId,
 			bPackageOnly ? ECPM_AssetManagerStatus::Packaging_Success : ECPM_AssetManagerStatus::UploadPak_Success,
 			FString(), 1.0f);
@@ -729,7 +775,7 @@ bool UConvaiPakEditorSubsystem::DeleteAsset(const int32 ChunkId, const FString& 
 	}
 
 	DeletingChunkId = ChunkId;
-	bDeletingWholeAsset = Version.IsEmpty();
+	DeletingVersion = Version;
 	SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Begin);
 
 	DeleteProxy->OnSuccess.AddDynamic(this, &UConvaiPakEditorSubsystem::HandleDeleteSucceeded);
@@ -741,14 +787,25 @@ bool UConvaiPakEditorSubsystem::DeleteAsset(const int32 ChunkId, const FString& 
 void UConvaiPakEditorSubsystem::HandleDeleteSucceeded(const FString& ResponseString)
 {
 	const int32 ChunkId = DeletingChunkId;
-	const bool bWholeAsset = bDeletingWholeAsset;
+	const FString Version = DeletingVersion;
+	const bool bWholeAsset = Version.IsEmpty();
 	DeletingChunkId = INDEX_NONE;
-	bDeletingWholeAsset = false;
+	DeletingVersion.Reset();
 	DeleteProxy = nullptr;
 
 	if (ChunkId == INDEX_NONE)
 	{
 		return;
+	}
+
+	// Whichever of the two took the archive with it. Kept up to date because the record is what
+	// lets a Publish reuse the archive: left behind, it would authorise reusing one Convai no
+	// longer has.
+	if (bWholeAsset || Version.Equals(TEXT("raw"), ESearchCase::IgnoreCase))
+	{
+		IFileManager::Get().Delete(
+			*ConvaiPakManager::Chunk::GetRawArchiveRecordPath(ChunkId),
+			/*RequireExists=*/false, /*EvenReadOnly=*/true);
 	}
 
 	if (bWholeAsset)
@@ -785,7 +842,7 @@ void UConvaiPakEditorSubsystem::HandleDeleteFailed(const FString& ResponseString
 {
 	const int32 ChunkId = DeletingChunkId;
 	DeletingChunkId = INDEX_NONE;
-	bDeletingWholeAsset = false;
+	DeletingVersion.Reset();
 	DeleteProxy = nullptr;
 
 	if (ChunkId != INDEX_NONE)

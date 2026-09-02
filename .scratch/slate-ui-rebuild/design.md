@@ -39,6 +39,7 @@ Sources of truth, in priority order:
 | D18 | Auth | Untouched. Proxies already use `UConvaiUtils::GetAuthHeaderAndKey()` from the runtime `Convai` module; the shell's sign-in never fed the pipeline. |
 | D19 | Save copy | Saving a published asset writes the local record only (ADR-0005); the server sees it on the next Publish. UI hints: "Saved locally — uploads on next publish." |
 | D20 | Thumbnail preview | Thumbnail always visible inline (~192×108, 16:9). "Preview thumbnail" opens the exact PNG at full size in a window. Capture = existing `CaptureThumbnail` Command. |
+| D21 | Reuse published archive | The Packaging section gains one **Project archive** row — uploaded-when or never, plus a **Reuse it** checkbox writing the project setting `bReusePublishedRawArchive`. **Amends D5**: that section is no longer read-only. The checkbox is enabled only where a completed Publish actually uploaded the archive (recorded as `ConvaiEssentials/ChunkId_<N>/RawArchive_<N>.txt`), so a first Publish always sends one. Issue ar-convai/ConvaiTask#220. |
 
 ## Architecture
 

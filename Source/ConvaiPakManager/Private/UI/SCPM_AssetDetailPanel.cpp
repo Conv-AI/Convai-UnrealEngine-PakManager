@@ -3,6 +3,7 @@
 #include "UI/SCPM_AssetDetailPanel.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "CPM_PakManagerSettings.h"
 #include "ContentBrowserModule.h"
 #include "Editor.h"
 #include "Framework/Application/SlateApplication.h"
@@ -18,6 +19,7 @@
 #include "UI/CPM_PakManagerStyle.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Layout/SBox.h"
@@ -563,13 +565,95 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPreviewSection()
 
 TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPackagingSection()
 {
+	using FPalette = FCPM_PakManagerStyle::FPalette;
+
 	return SAssignNew(PackagingArea, SExpandableArea)
 		.AreaTitle(LOCTEXT("PackagingSection", "Packaging"))
 		.InitiallyCollapsed(true)
 		.Padding(FMargin(12.0f, 8.0f))
 		.BodyContent()
 		[
-			SAssignNew(PackagingRows, SVerticalBox)
+			SNew(SVerticalBox)
+			// A sibling of the platform rows, never a child: RebuildPackagingRows clears that box.
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SAssignNew(PackagingRows, SVerticalBox)
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[
+					SNew(SBox)
+					// The platform rows' label column, so the archive reads as one more of them.
+					.WidthOverride(90.0f)
+					[
+						SNew(STextBlock).Text(LOCTEXT("RawArchiveLabel", "Project archive"))
+					]
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SNew(SImage)
+					.Image_Lambda([this]
+					{
+						return FAppStyle::Get().GetBrush(
+							Asset.IsValid() && Asset->HasPublishedRawArchive() ? "Icons.Check" : "Icons.Warning");
+					})
+					.ColorAndOpacity_Lambda([this]
+					{
+						return FSlateColor(Asset.IsValid() && Asset->HasPublishedRawArchive()
+							? FPalette::GreenPrimary : FPalette::Warning);
+					})
+				]
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text_Lambda([this]
+					{
+						if (!Asset.IsValid() || !Asset->HasPublishedRawArchive())
+						{
+							return LOCTEXT("RawArchiveMissing", "Not uploaded - sent by the next publish");
+						}
+						return FText::Format(
+							LOCTEXT("RawArchiveUploaded", "Uploaded {0}"), RelativeTimeText(Asset->RawArchiveUploadTime));
+					})
+					.ColorAndOpacity_Lambda([this]
+					{
+						return FSlateColor(Asset.IsValid() && Asset->HasPublishedRawArchive()
+							? FPalette::GreenPrimary : FPalette::Warning);
+					})
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SCheckBox)
+					.IsChecked_Lambda([]
+					{
+						return UCPM_PakManagerSettings::Get().bReusePublishedRawArchive
+							? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+					})
+					.IsEnabled_Lambda([this] { return Asset.IsValid() && Asset->HasPublishedRawArchive(); })
+					.OnCheckStateChanged_Lambda([](ECheckBoxState State)
+					{
+						UCPM_PakManagerSettings* Settings = GetMutableDefault<UCPM_PakManagerSettings>();
+						Settings->bReusePublishedRawArchive = State == ECheckBoxState::Checked;
+						Settings->TryUpdateDefaultConfigFile();
+					})
+					.ToolTipText_Lambda([this]
+					{
+						return Asset.IsValid() && Asset->HasPublishedRawArchive()
+							? LOCTEXT("ReuseArchiveTip",
+								"Publish without archiving and uploading this project again - the asset keeps the "
+								"archive it already has, which Convai rebuilds it from for future engine versions. "
+								"Applies to every asset in this project.")
+							: LOCTEXT("ReuseArchiveTipDisabled",
+								"Available once a publish has uploaded this project. An asset that has never "
+								"received the archive cannot be rebuilt for a future engine version without it.");
+					})
+					[
+						SNew(STextBlock).Text(LOCTEXT("ReuseArchive", "Reuse it"))
+					]
+				]
+			]
 		];
 }
 

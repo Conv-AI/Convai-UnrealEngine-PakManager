@@ -107,6 +107,11 @@ _Avoid_: category, entity type
   A creator has no other way in — no dashboard, no web editor — so what the creator's project says
   is authoritative and the server never disagrees with it on its own
 
+- A creator's project settings may make a **Publish** do LESS than the **Publish Policy** asks —
+  build no **Pak** that is already on disk, send no **Raw Project Archive** the **Asset** already
+  holds — and never more. Which **Versions** an Asset carries stays Convai's decision; the settings
+  only skip work whose result is already there
+
 ## Flagged ambiguities
 
 - **Whether the Pak Manager can mint a Chunk.** Today a Chunk exists only where a Primary Asset
