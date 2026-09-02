@@ -205,4 +205,69 @@ bool FCPMPublishPolicyValidatesATypedOverride::RunTest(const FString&)
 	return true;
 }
 
+/**
+ * What a Platform Selection does to a Policy - the one thing allowed to ADD, not only subtract.
+ *
+ * The row that matters is the forced one: a Windows-only policy asked to publish Linux must produce
+ * a Linux that actually packages AND carries a build configuration, because ParseFromJson leaves
+ * the configuration empty for a platform the policy never named and Validate refuses a platform
+ * that packages without one. Publishing that would fail deep inside the packaging Job with
+ * "no policy for platform Linux", long after the creator chose.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMPublishPolicySelectionAddsAndRemovesPlatforms,
+	"ConvaiPakManager.Publish.Policy.SelectionAddsAndRemovesPlatforms",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMPublishPolicySelectionAddsAndRemovesPlatforms::RunTest(const FString&)
+{
+	// The shape Convai publishes today: Linux named and switched OFF. ReadPlatform clears the
+	// configuration of a platform the JSON names, so this - not an absent platform, which keeps the
+	// struct's default - is the case that would produce an unpackageable forced Linux.
+	FCPM_PublishPolicy WindowsOnly;
+	FString Error;
+	TestTrue(TEXT("reads a policy that switches Linux off"), WindowsOnly.ParseFromJson(
+		TEXT(R"({"unreal-engine":{
+			"windows":{"should-package":true,"configuration":"Shipping"},
+			"linux":{"should-package":false}
+		}})"), Error));
+	TestFalse(TEXT("which does not package Linux"), WindowsOnly.Linux.bShouldPackage);
+	TestTrue(TEXT("and names no Linux configuration"), WindowsOnly.Linux.Configuration.IsEmpty());
+
+	// Adding: the enterprise project Convai agreed to host a Linux build for.
+	const FCPM_PublishPolicy Forced =
+		WindowsOnly.WithPlatforms({ ECPM_Platform::Windows, ECPM_Platform::Linux });
+	TestTrue(TEXT("forcing Linux packages Linux"), Forced.Linux.bShouldPackage);
+	TestEqual(TEXT("at the configuration the policy uses for what it does ask for"),
+		Forced.Linux.Configuration, FString(TEXT("Shipping")));
+	TestTrue(TEXT("and the forced policy is one a publish can run from"), Forced.Validate(Error));
+	TestEqual(TEXT("asking for both platforms"), Forced.PlatformsToPackage().Num(), 2);
+
+	// Removing: once Linux is general, one creator sending Windows alone.
+	const FCPM_PublishPolicy Narrowed =
+		FCPM_PublishPolicy::Defaults().WithPlatforms({ ECPM_Platform::Windows });
+	TestTrue(TEXT("keeps Windows"), Narrowed.Windows.bShouldPackage);
+	TestFalse(TEXT("drops Linux"), Narrowed.Linux.bShouldPackage);
+
+	// The Raw Project Archive is NOT the Selection's to touch - see CONTEXT.md.
+	TestTrue(TEXT("the archive flag survives adding"), Forced.bUploadRawProject == WindowsOnly.bUploadRawProject);
+	TestTrue(TEXT("and survives removing"), Narrowed.bUploadRawProject);
+
+	// Selecting nothing is expressible, and is a policy a publish must refuse to package from.
+	const FCPM_PublishPolicy Nothing = WindowsOnly.WithPlatforms({});
+	TestEqual(TEXT("selecting nothing asks for no platform"), Nothing.PlatformsToPackage().Num(), 0);
+
+	// A platform the JSON never mentions keeps the struct's default configuration, so forcing it
+	// works by a different route than the case above. Both must end up packageable.
+	FCPM_PublishPolicy NoLinuxSection;
+	TestTrue(TEXT("reads a policy with no Linux section at all"), NoLinuxSection.ParseFromJson(
+		TEXT(R"({"unreal-engine":{"windows":{"should-package":true,"configuration":"Test"}}})"), Error));
+	const FCPM_PublishPolicy ForcedFromAbsent =
+		NoLinuxSection.WithPlatforms({ ECPM_Platform::Windows, ECPM_Platform::Linux });
+	TestTrue(TEXT("forcing an unmentioned platform still validates"), ForcedFromAbsent.Validate(Error));
+	TestFalse(TEXT("and it carries some configuration"), ForcedFromAbsent.Linux.Configuration.IsEmpty());
+
+	return true;
+}
+
 #endif  // WITH_AUTOMATION_TESTS

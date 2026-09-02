@@ -180,14 +180,23 @@ void UCPM_PackagePaksJob::PackageNextPlatform()
 	const int32 Total = Done + Remaining.Num();
 	const float Progress = Total > 0 ? static_cast<float>(Done) / static_cast<float>(Total) : 0.0f;
 
-	// Warned about rather than merely logged: from here on nothing distinguishes a Pak built before
-	// the creator's last edit from one built from it, so the only chance to say so is now.
+	// Either route reuses: the per-run choice a creator makes in the panel, or the debug setting
+	// left on for a session. The setting is the one being retired - see the TODO on it.
+	const bool bReuseThisRun = Request.bReuseExistingPaks;
+	const bool bReuse = bReuseThisRun || UCPM_PakManagerSettings::Get().bUseExistingPakFile;
+
 	const FCPM_PakArtifact Existing = ArtifactFor(Platform);
-	if (UCPM_PakManagerSettings::Get().bUseExistingPakFile && UCPM_UtilityLibrary::IsPakUsable(Existing.PakPath))
+	if (bReuse && UCPM_UtilityLibrary::IsPakUsable(Existing.PakPath))
 	{
+		// Warned about rather than merely logged: from here on nothing distinguishes a Pak built
+		// before the creator's last edit from one built from it, so the only chance to say so is
+		// now. Naming the route matters - one is undone by unticking a setting, the other was a
+		// choice made for this run alone.
 		UCPM_UtilityLibrary::CPM_LogMessage(
-			FString::Printf(TEXT("Publishing the existing Pak at %s - packaging %s was skipped because Use Existing Pak File is on"),
-				*Existing.PakPath, *PlatformName(Platform)),
+			FString::Printf(TEXT("Publishing the existing Pak at %s - packaging %s was skipped because %s"),
+				*Existing.PakPath, *PlatformName(Platform),
+				bReuseThisRun ? TEXT("this publish was asked to reuse existing paks")
+							  : TEXT("Use Existing Pak File is on")),
 			ECPM_LogLevel::Warning);
 
 		ReportProgress(FString::Printf(TEXT("Using the existing %s Pak"), *PlatformName(Platform)), Progress);

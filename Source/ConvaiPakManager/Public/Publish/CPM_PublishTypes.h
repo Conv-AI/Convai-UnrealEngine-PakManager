@@ -6,6 +6,27 @@
 #include "Utility/CPM_Utils.h"
 #include "CPM_PublishTypes.generated.h"
 
+/**
+ * How far the session has got with reading the Publish Policy.
+ *
+ * The UI shows platforms per the Policy, so it needs to tell "Convai does not ask for Linux" from
+ * "nobody has asked Convai yet" - the second must never render as the first. Unread and Failed both
+ * mean the UI shows MORE, never less: a platform vanishing because a GET timed out would hide a Pak
+ * the creator has on disk.
+ */
+UENUM(BlueprintType)
+enum class ECPM_PolicyReadState : uint8
+{
+	/** Nobody has asked yet this session. */
+	Unread,
+	/** A read is in flight. */
+	Reading,
+	/** The cached Policy is what Convai last answered. */
+	Read,
+	/** The last read failed. The cached Policy is meaningless; only a Publish's own read decides. */
+	Failed
+};
+
 /** What the Publish Policy says about one platform. */
 USTRUCT(BlueprintType)
 struct CONVAIPAKMANAGER_API FCPM_PlatformPolicy
@@ -82,6 +103,59 @@ struct CONVAIPAKMANAGER_API FCPM_PublishPolicy
 	TArray<ECPM_Platform> PlatformsToPackage() const;
 
 	const FCPM_PlatformPolicy* Find(ECPM_Platform Platform) const;
+
+	/**
+	 * This Policy with its platform flags replaced by an explicit **Platform Selection**.
+	 *
+	 * The one thing allowed to add to a Policy rather than only subtract from it - see CONTEXT.md.
+	 * Applied to the Policy rather than carried alongside it so that everything downstream, from
+	 * PlatformsToPackage to the Version slot each Pak occupies, keeps reading one decision.
+	 *
+	 * A platform the Policy never asked for arrives with no build configuration, because
+	 * ParseFromJson clears it and Validate refuses a platform that packages without one. It
+	 * inherits the configuration of a platform the Policy DID ask for, so a forced Linux Pak is
+	 * built the way production builds, falling back to Shipping only when the Policy asked for
+	 * nothing at all.
+	 */
+	FCPM_PublishPolicy WithPlatforms(const TArray<ECPM_Platform>& Selection) const;
+};
+
+/**
+ * What a caller asked of one Publish beyond what the Policy says, chosen per run.
+ *
+ * Deliberately not project settings. Both of these describe one run - the enterprise project
+ * publishing Linux this once, the creator who knows this Pak is fresh - and an override that
+ * outlives the run that needed it is how a project silently keeps publishing something nobody
+ * remembers agreeing to.
+ */
+USTRUCT(BlueprintType)
+struct CONVAIPAKMANAGER_API FCPM_PublishOptions
+{
+	GENERATED_BODY()
+
+	/** The Platform Selection. Read only when bOverridePlatforms; order does not matter. */
+	UPROPERTY(BlueprintReadWrite, Category = "Convai|PakManager")
+	TArray<ECPM_Platform> Platforms;
+
+	/**
+	 * Whether Platforms replaces what the Policy asks for.
+	 *
+	 * Separate from an empty Platforms so that "this run builds no Pak, send the archive alone" is
+	 * expressible and distinct from "this caller expressed no preference".
+	 */
+	UPROPERTY(BlueprintReadWrite, Category = "Convai|PakManager")
+	bool bOverridePlatforms = false;
+
+	/**
+	 * Publish the Pak already on disk instead of cooking a new one, for this run only.
+	 *
+	 * The per-run form of the bUseExistingPakFile debug setting, and the only form a creator is
+	 * offered: a Pak built before the current edits publishes the content it was built from, and
+	 * nothing downstream can tell that from a fresh one. A platform with no usable Pak on disk is
+	 * packaged normally either way.
+	 */
+	UPROPERTY(BlueprintReadWrite, Category = "Convai|PakManager")
+	bool bReuseExistingPaks = false;
 };
 
 /**
@@ -98,8 +172,13 @@ struct CONVAIPAKMANAGER_API FCPM_PublishRequest
 	UPROPERTY()
 	int32 ChunkId = INDEX_NONE;
 
+	/** The Policy with this run's Platform Selection already applied. What every Job reads. */
 	UPROPERTY()
 	FCPM_PublishPolicy Policy;
+
+	/** See FCPM_PublishOptions::bReuseExistingPaks. Read by the packaging Job, per run. */
+	UPROPERTY()
+	bool bReuseExistingPaks = false;
 };
 
 /** One built Pak: a Chunk on one platform, and the Version slot it publishes into. */

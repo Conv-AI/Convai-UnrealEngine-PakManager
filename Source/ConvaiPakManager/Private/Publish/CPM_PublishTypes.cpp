@@ -112,6 +112,40 @@ TArray<ECPM_Platform> FCPM_PublishPolicy::PlatformsToPackage() const
 	return Platforms;
 }
 
+FCPM_PublishPolicy FCPM_PublishPolicy::WithPlatforms(const TArray<ECPM_Platform>& Selection) const
+{
+	// What the Policy asks for today, so a platform it never named is built the way the ones it did
+	// name are built. Empty only when the Policy asks for no platform at all.
+	FString InheritedConfiguration;
+	for (const ECPM_Platform Asked : PlatformsToPackage())
+	{
+		if (const FCPM_PlatformPolicy* AskedPolicy = Find(Asked))
+		{
+			if (!AskedPolicy->Configuration.IsEmpty())
+			{
+				InheritedConfiguration = AskedPolicy->Configuration;
+				break;
+			}
+		}
+	}
+
+	FCPM_PublishPolicy Selected = *this;
+	for (const ECPM_Platform Platform : { ECPM_Platform::Windows, ECPM_Platform::Linux })
+	{
+		FCPM_PlatformPolicy& Chosen = (Platform == ECPM_Platform::Windows) ? Selected.Windows : Selected.Linux;
+		Chosen.bShouldPackage = Selection.Contains(Platform);
+
+		// Validate refuses a platform that packages without one, and a policy parsed from JSON
+		// leaves it empty for every platform it did not ask for.
+		if (Chosen.bShouldPackage && Chosen.Configuration.IsEmpty())
+		{
+			Chosen.Configuration = InheritedConfiguration.IsEmpty() ? TEXT("Shipping") : InheritedConfiguration;
+		}
+	}
+
+	return Selected;
+}
+
 const FCPM_PlatformPolicy* FCPM_PublishPolicy::Find(const ECPM_Platform Platform) const
 {
 	switch (Platform)

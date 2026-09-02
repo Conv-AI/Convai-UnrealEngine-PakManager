@@ -521,15 +521,71 @@ void UConvaiPakEditorSubsystem::ResolvePolicy(
 
 bool UConvaiPakEditorSubsystem::Publish(const int32 ChunkId)
 {
-	return BeginPolicyRun(ChunkId, /*bPackageOnly=*/false);
+	return BeginPolicyRun(ChunkId, /*bPackageOnly=*/false, FCPM_PublishOptions());
+}
+
+bool UConvaiPakEditorSubsystem::PublishWithOptions(const int32 ChunkId, const FCPM_PublishOptions& Options)
+{
+	return BeginPolicyRun(ChunkId, /*bPackageOnly=*/false, Options);
 }
 
 bool UConvaiPakEditorSubsystem::Package(const int32 ChunkId)
 {
-	return BeginPolicyRun(ChunkId, /*bPackageOnly=*/true);
+	return BeginPolicyRun(ChunkId, /*bPackageOnly=*/true, FCPM_PublishOptions());
 }
 
-bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool bPackageOnly)
+bool UConvaiPakEditorSubsystem::PackageWithOptions(const int32 ChunkId, const FCPM_PublishOptions& Options)
+{
+	return BeginPolicyRun(ChunkId, /*bPackageOnly=*/true, Options);
+}
+
+bool UConvaiPakEditorSubsystem::GetPublishPolicy(
+	FCPM_PublishPolicy& OutPolicy, FDateTime& OutReadAt, ECPM_PolicyReadState& OutState) const
+{
+	OutPolicy = CachedPolicy;
+	OutReadAt = PolicyReadAt;
+	OutState = PolicyState;
+	return PolicyState == ECPM_PolicyReadState::Read;
+}
+
+void UConvaiPakEditorSubsystem::CachePolicy(const bool bSucceeded, const FCPM_PublishPolicy& Policy)
+{
+	// A failed read leaves the last good Policy in place but stops calling it current: callers gate
+	// on the state, and overwriting it with a default-constructed one would make "packages nothing"
+	// indistinguishable from an answer.
+	if (bSucceeded)
+	{
+		CachedPolicy = Policy;
+		PolicyReadAt = FDateTime::UtcNow();
+	}
+
+	PolicyState = bSucceeded ? ECPM_PolicyReadState::Read : ECPM_PolicyReadState::Failed;
+	OnPolicyChanged.Broadcast();
+}
+
+void UConvaiPakEditorSubsystem::RefreshPolicy()
+{
+	if (bPolicyRefreshInFlight)
+	{
+		return;
+	}
+
+	bPolicyRefreshInFlight = true;
+	PolicyState = ECPM_PolicyReadState::Reading;
+	OnPolicyChanged.Broadcast();
+
+	TWeakObjectPtr<UConvaiPakEditorSubsystem> WeakThis(this);
+	ResolvePolicy(INDEX_NONE, [WeakThis](const bool bSucceeded, const FCPM_PublishPolicy& Policy, const FString&)
+	{
+		if (UConvaiPakEditorSubsystem* Self = WeakThis.Get())
+		{
+			Self->bPolicyRefreshInFlight = false;
+			Self->CachePolicy(bSucceeded, Policy);
+		}
+	});
+}
+
+bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool bPackageOnly, const FCPM_PublishOptions& Options)
 {
 	const ECPM_AssetManagerStatus Refusal =
 		bPackageOnly ? ECPM_AssetManagerStatus::Packaging_Failed : ECPM_AssetManagerStatus::Create_Failed;
@@ -575,13 +631,18 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 	// shape may depend only on what the caller knew before building it - so it is resolved first and
 	// the queue is built from the answer. See docs/adr/0004 and the Job System's docs/adr/0009.
 	TWeakObjectPtr<UConvaiPakEditorSubsystem> WeakThis(this);
-	ResolvePolicy(ChunkId, [WeakThis, ChunkId, bPackageOnly](const bool bSucceeded, const FCPM_PublishPolicy& Policy, const FString& Error)
+	ResolvePolicy(ChunkId, [WeakThis, ChunkId, bPackageOnly, Options](const bool bSucceeded, const FCPM_PublishPolicy& Policy, const FString& Error)
 	{
 		UConvaiPakEditorSubsystem* Self = WeakThis.Get();
 		if (!Self)
 		{
 			return;
 		}
+
+		// This run read the Policy for real, so the display cache learns from it for free. Recorded
+		// before the cancel and failure branches: what Convai answered is true regardless of what
+		// this particular run went on to do.
+		Self->CachePolicy(bSucceeded, Policy);
 
 		Self->PendingPolicyRuns.Remove(ChunkId);
 		if (Self->CancelledDuringPolicyRead.Remove(ChunkId) > 0)
@@ -596,14 +657,20 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 			return;
 		}
 
-		Self->StartPublishWorkflow(ChunkId, Policy, bPackageOnly);
+		// The Platform Selection is applied HERE, to the Policy, before the queue is built - so the
+		// queue, the Version slots and every Job downstream keep reading one decision. See CONTEXT.md.
+		const FCPM_PublishPolicy Effective =
+			Options.bOverridePlatforms ? Policy.WithPlatforms(Options.Platforms) : Policy;
+
+		Self->StartPublishWorkflow(ChunkId, Effective, bPackageOnly, Options);
 	});
 
 	// Accepted. Whether it succeeds arrives later, as this Chunk's status.
 	return true;
 }
 
-FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(const int32 ChunkId, const FCPM_PublishPolicy& Policy, const bool bPackageOnly)
+FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(
+	const int32 ChunkId, const FCPM_PublishPolicy& Policy, const bool bPackageOnly, const FCPM_PublishOptions& Options)
 {
 	UWorkflowManagerSubsystem* Manager = UWorkflowManagerSubsystem::Get();
 	if (!Manager)
@@ -616,7 +683,12 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(const int32 Chun
 
 	if (bPackageOnly && !bHasPaks)
 	{
-		SetStatus(ChunkId, ECPM_AssetManagerStatus::Packaging_Failed, TEXT("the publish policy asks for no platforms"));
+		// Named apart, because the fix differs: one is a choice this run made and can unmake, the
+		// other is what Convai asks of the project.
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Packaging_Failed,
+			Options.bOverridePlatforms
+				? TEXT("no platform was selected to package")
+				: TEXT("the publish policy asks for no platforms"));
 		return FWorkflowHandle::Invalid();
 	}
 
@@ -674,6 +746,7 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(const int32 Chun
 	FCPM_PublishRequest PublishRequest;
 	PublishRequest.ChunkId = ChunkId;
 	PublishRequest.Policy = Policy;
+	PublishRequest.bReuseExistingPaks = Options.bReuseExistingPaks;
 	Request.Inputs.Add(FInstancedStruct::Make(PublishRequest));
 
 	TWeakObjectPtr<UConvaiPakEditorSubsystem> WeakThis(this);

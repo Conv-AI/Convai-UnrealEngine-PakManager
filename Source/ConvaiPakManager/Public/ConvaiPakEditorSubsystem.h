@@ -100,6 +100,27 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	FDateTime GetRawArchiveUploadTime(int32 ChunkId) const;
 
+	/**
+	 * The Publish Policy this session last read, and how that read went.
+	 *
+	 * A cache for DISPLAY only - which platforms to offer, what to say about them. A Publish never
+	 * uses it: it resolves the Policy itself, because a stale copy is wrong exactly when it matters
+	 * and publishing from one yields an Asset missing a Version. See docs/adr/0004.
+	 *
+	 * Returns whether OutPolicy is worth reading, which is only true in the Read state.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool GetPublishPolicy(FCPM_PublishPolicy& OutPolicy, FDateTime& OutReadAt, ECPM_PolicyReadState& OutState) const;
+
+	/**
+	 * Re-reads the Publish Policy into that cache, then broadcasts so the UI repaints.
+	 *
+	 * Asynchronous, and never to be called from a paint path. Harmless to call while a read is
+	 * already in flight - it returns without starting a second one.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	void RefreshPolicy();
+
 	/** Tagged spawn-point actors in the open editor world. Scenes only make sense asking. */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	FCPM_SpawnPointStatus GetSpawnPointStatus() const;
@@ -186,6 +207,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool Publish(int32 ChunkId);
 
+	/**
+	 * Publish, with this run's **Platform Selection** and Pak reuse chosen by the caller.
+	 *
+	 * The form the UI calls. Publish(ChunkId) is this with default Options - follow the Policy,
+	 * cook every Pak - so a script that never heard of either keeps working.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool PublishWithOptions(int32 ChunkId, const FCPM_PublishOptions& Options);
+
 	/** Stops a Publish, letting the running step finish reporting first. */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool CancelPublish(int32 ChunkId);
@@ -193,12 +223,14 @@ public:
 	/**
 	 * Builds this Chunk's Paks per the Publish Policy without uploading anything.
 	 *
-	 * Not surfaced in the UI - packaging happens inside a Publish there. Exists so a standalone
-	 * packaging flow can grow later without a new seam. Same acceptance semantics and status
-	 * reporting as Publish.
+	 * Same acceptance semantics and status reporting as Publish.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool Package(int32 ChunkId);
+
+	/** Package, with this run's **Platform Selection** chosen by the caller. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool PackageWithOptions(int32 ChunkId, const FCPM_PublishOptions& Options);
 
 	/**
 	 * Deletes one Version of this Chunk's Asset, or the whole Asset when Version is empty.
@@ -222,15 +254,38 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Convai|PakManager|Commands")
 	FCPM_OnChunkStatusChangedDynamic OnChunkStatusChangedEvent;
 
+	/**
+	 * The cached Publish Policy, or its read state, changed.
+	 *
+	 * Its own delegate rather than a synthetic Chunk status: the Policy belongs to the project, not
+	 * to any one Chunk, and ADR-0008 keeps chunk status meaning what a Chunk is doing.
+	 */
+	DECLARE_MULTICAST_DELEGATE(FCPM_OnPolicyChanged);
+	FCPM_OnPolicyChanged OnPolicyChanged;
+
 private:
 	/** Reads the Publish Policy, from disk when a project overrides it and from the repository otherwise. */
 	void ResolvePolicy(int32 ChunkId, TFunction<void(bool bSucceeded, const FCPM_PublishPolicy&, const FString& Error)> OnResolved);
 
 	/** Shared acceptance for Publish and Package: guards, then the Policy, then the Job Queue. */
-	bool BeginPolicyRun(int32 ChunkId, bool bPackageOnly);
+	bool BeginPolicyRun(int32 ChunkId, bool bPackageOnly, const FCPM_PublishOptions& Options);
 
 	/** Builds the Job Queue this Policy asks for and starts it. A package-only queue stops after the Paks. */
-	FWorkflowHandle StartPublishWorkflow(int32 ChunkId, const FCPM_PublishPolicy& Policy, bool bPackageOnly);
+	FWorkflowHandle StartPublishWorkflow(int32 ChunkId, const FCPM_PublishPolicy& Policy, bool bPackageOnly,
+		const FCPM_PublishOptions& Options);
+
+	/** Records what a Policy read answered, for the display cache, and tells the UI. */
+	void CachePolicy(bool bSucceeded, const FCPM_PublishPolicy& Policy);
+
+	/** The Policy last read this session. Display only - see GetPublishPolicy. */
+	FCPM_PublishPolicy CachedPolicy;
+
+	FDateTime PolicyReadAt = FDateTime::MinValue();
+
+	ECPM_PolicyReadState PolicyState = ECPM_PolicyReadState::Unread;
+
+	/** True while a RefreshPolicy read is in flight, so a second one is not started. */
+	bool bPolicyRefreshInFlight = false;
 
 	void SetStatus(int32 ChunkId, ECPM_AssetManagerStatus Status, const FString& Message = FString(),
 		float Progress = 0.0f, const FString& StepName = FString());
