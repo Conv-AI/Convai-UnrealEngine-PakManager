@@ -37,6 +37,10 @@ public:
 
 private:
 	TSharedRef<SWidget> BuildHeader();
+
+	/** The pre-Chunk-records warning, shown for as long as the condition holds. */
+	TSharedRef<SWidget> BuildLegacyBanner();
+
 	TSharedRef<SWidget> BuildActionBar();
 	TSharedRef<SWidget> BuildMoreMenu();
 
@@ -61,6 +65,9 @@ private:
 
 	void HandleChunkStatusChanged(const FCPM_ChunkStatus& Status);
 
+	/** The Asset Registry finished its scan, so Chunks that were invisible at Construct are findable. */
+	void HandleFilesLoaded();
+
 	FReply HandleSaveClicked();
 	FReply HandlePrimaryClicked();
 	FReply HandleDeleteClicked();
@@ -78,10 +85,18 @@ private:
 
 	FCPM_ProjectViewModel Project;
 
+	/**
+	 * Records from a pre-Chunk layout that migration could not attribute, cached per refresh.
+	 *
+	 * Answering it reads the ConvaiEssentials directory, so it must never be asked from a paint path.
+	 */
+	bool bLegacyLayoutPending = false;
+
 	TSharedPtr<SCPM_AssetListPanel> ListPanel;
 	TSharedPtr<SCPM_AssetDetailPanel> DetailPanel;
 	TSharedPtr<SComboBox<TSharedPtr<FCPM_AssetViewModel>>> ChunkCombo;
 	TSharedPtr<SComboButton> MoreButton;
 
 	FDelegateHandle StatusChangedHandle;
+	FDelegateHandle FilesLoadedHandle;
 };

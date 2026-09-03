@@ -2,16 +2,19 @@
 
 #include "UI/SCPM_PakManagerPanel.h"
 
+#include "AssetRegistry/IAssetRegistry.h"
 #include "ConvaiPakEditorSubsystem.h"
 #include "Editor.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Misc/MessageDialog.h"
+#include "Styling/AppStyle.h"
 #include "UI/CPM_PakManagerStyle.h"
 #include "UI/SCPM_AssetDetailPanel.h"
 #include "UI/SCPM_AssetListPanel.h"
 #include "Utility/CPM_UtilityLibrary.h"
+#include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SComboBox.h"
@@ -148,9 +151,16 @@ void SCPM_PakManagerPanel::Construct(const FArguments& InArgs)
 {
 	if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
 	{
-		Project.Refresh(*Subsystem);
 		StatusChangedHandle = Subsystem->OnChunkStatusChanged.AddSP(
 			this, &SCPM_PakManagerPanel::HandleChunkStatusChanged);
+	}
+
+	// A tab restored by the saved layout constructs while the registry is still scanning, when no
+	// Primary Asset Label is discoverable yet; without this it sits on "no Chunks" until the creator
+	// clicks away and back.
+	if (IAssetRegistry* AssetRegistry = IAssetRegistry::Get(); AssetRegistry && AssetRegistry->IsLoadingAssets())
+	{
+		FilesLoadedHandle = AssetRegistry->OnFilesLoaded().AddSP(this, &SCPM_PakManagerPanel::HandleFilesLoaded);
 	}
 
 	ChildSlot
@@ -163,6 +173,10 @@ void SCPM_PakManagerPanel::Construct(const FArguments& InArgs)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
 				BuildHeader()
+			]
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				BuildLegacyBanner()
 			]
 			+ SVerticalBox::Slot().FillHeight(1.0f)
 			[
@@ -185,6 +199,7 @@ void SCPM_PakManagerPanel::Construct(const FArguments& InArgs)
 				+ SSplitter::Slot()
 				[
 					SAssignNew(DetailPanel, SCPM_AssetDetailPanel)
+					.OnChunkCreated(FSimpleDelegate::CreateSP(this, &SCPM_PakManagerPanel::RefreshProject))
 				]
 			]
 			+ SVerticalBox::Slot().AutoHeight()
@@ -194,7 +209,7 @@ void SCPM_PakManagerPanel::Construct(const FArguments& InArgs)
 		]
 	];
 
-	SyncSelectionWidgets();
+	RefreshProject();
 }
 
 SCPM_PakManagerPanel::~SCPM_PakManagerPanel()
@@ -208,13 +223,34 @@ SCPM_PakManagerPanel::~SCPM_PakManagerPanel()
 			Subsystem->OnChunkStatusChanged.Remove(StatusChangedHandle);
 		}
 	}
+	if (FilesLoadedHandle.IsValid())
+	{
+		if (IAssetRegistry* AssetRegistry = IAssetRegistry::Get())
+		{
+			AssetRegistry->OnFilesLoaded().Remove(FilesLoadedHandle);
+		}
+	}
+}
+
+void SCPM_PakManagerPanel::HandleFilesLoaded()
+{
+	if (IAssetRegistry* AssetRegistry = IAssetRegistry::Get())
+	{
+		AssetRegistry->OnFilesLoaded().Remove(FilesLoadedHandle);
+	}
+	FilesLoadedHandle.Reset();
+	RefreshProject();
 }
 
 void SCPM_PakManagerPanel::RefreshProject()
 {
 	if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
 	{
+		// First, because a Chunk discovered or minted since the last refresh is what lets migration
+		// attribute a pre-Chunk layout at all - and what is left over is the banner's condition.
+		Subsystem->ReconcileChunkState();
 		Project.Refresh(*Subsystem);
+		bLegacyLayoutPending = Subsystem->HasUnmigratedLegacyLayout();
 	}
 	if (ListPanel.IsValid())
 	{
@@ -278,6 +314,47 @@ TSharedRef<SWidget> SCPM_PakManagerPanel::BuildHeader()
 				{
 					return FText::Format(LOCTEXT("ProjectLabel", "Project: {0} - UE {1}"),
 						FText::FromString(Project.ProjectName), FText::FromString(Project.EngineVersion));
+				})
+			]
+		];
+}
+
+TSharedRef<SWidget> SCPM_PakManagerPanel::BuildLegacyBanner()
+{
+	using FPalette = FCPM_PakManagerStyle::FPalette;
+
+	// A banner rather than a toast: the condition outlives any click, and only moving files off disk
+	// clears it.
+	return SNew(SBorder)
+		.BorderImage(FCPM_PakManagerStyle::Get().GetBrush("CPM.Panel"))
+		.Padding(FMargin(12.0f, 8.0f))
+		.Visibility_Lambda([this]
+		{
+			return bLegacyLayoutPending ? EVisibility::Visible : EVisibility::Collapsed;
+		})
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+			[
+				SNew(SImage)
+				.Image(FAppStyle::Get().GetBrush("Icons.Warning"))
+				.ColorAndOpacity(FSlateColor(FPalette::Error))
+			]
+			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock)
+				.AutoWrapText(true)
+				.Text_Lambda([this]
+				{
+					return Project.Assets.IsEmpty()
+						? LOCTEXT("LegacyNoChunk",
+							"This project holds records from an earlier version of this tool, but no Chunk to attach "
+							"them to. Create the Chunk to recover them - if an asset was published, publishing before "
+							"that would create a second one and lose the first.")
+						: LOCTEXT("LegacyUnattributed",
+							"This project holds records from an earlier version of this tool that could not be "
+							"attributed to a Chunk, so nothing was moved. Publishing is disabled until this is "
+							"resolved - see the Output Log for which files.");
 				})
 			]
 		];
@@ -353,7 +430,7 @@ TSharedRef<SWidget> SCPM_PakManagerPanel::BuildMoreMenu()
 			FSlateIcon(),
 			FUIAction(
 				FExecuteAction::CreateSP(this, &SCPM_PakManagerPanel::HandlePackageNow),
-				FCanExecuteAction::CreateLambda([IsBusy] { return !IsBusy(); })));
+				FCanExecuteAction::CreateLambda([this, IsBusy] { return !IsBusy() && !bLegacyLayoutPending; })));
 
 		Menu.AddMenuEntry(
 			LOCTEXT("PublishReusing", "Publish without repackaging"),
@@ -365,7 +442,7 @@ TSharedRef<SWidget> SCPM_PakManagerPanel::BuildMoreMenu()
 				FExecuteAction::CreateSP(this, &SCPM_PakManagerPanel::HandlePublishReusingPaks),
 				FCanExecuteAction::CreateLambda([this, IsBusy]
 				{
-					return !IsBusy() && DetailPanel.IsValid() && DetailPanel->HasAnyBuiltPak();
+					return !IsBusy() && !bLegacyLayoutPending && DetailPanel.IsValid() && DetailPanel->HasAnyBuiltPak();
 				})));
 
 		Menu.AddMenuEntry(
@@ -769,7 +846,8 @@ bool SCPM_PakManagerPanel::CanClickPrimary() const
 {
 	return Project.Active.IsValid()
 		&& Project.Active->CanCreateOrPublish()
-		&& !IsOtherChunkPublishing();
+		&& !IsOtherChunkPublishing()
+		&& !bLegacyLayoutPending;
 }
 
 FText SCPM_PakManagerPanel::GetActionBarSummary() const
@@ -792,6 +870,13 @@ FText SCPM_PakManagerPanel::GetActionBarSummary() const
 			Project.PublishingAssetName());
 	}
 
+	// Before the failure branch: this is why the button is dead, whatever the last command left behind.
+	if (bLegacyLayoutPending)
+	{
+		return LOCTEXT("LegacyBlocksPublish",
+			"Publishing is disabled: records from an earlier version of this tool could not be attributed to a Chunk.");
+	}
+
 	// A failure outlives its toast: the reason stays here until the next command moves the status.
 	if (Active->Badge() == FCPM_AssetViewModel::EBadge::NeedsAttention)
 	{
@@ -812,7 +897,7 @@ FSlateColor SCPM_PakManagerPanel::GetActionBarSummaryColor() const
 	{
 		return FSlateColor(FPalette::TextSecondary);
 	}
-	if (Active->Badge() == FCPM_AssetViewModel::EBadge::NeedsAttention)
+	if (bLegacyLayoutPending || Active->Badge() == FCPM_AssetViewModel::EBadge::NeedsAttention)
 	{
 		return FSlateColor(FPalette::Error);
 	}

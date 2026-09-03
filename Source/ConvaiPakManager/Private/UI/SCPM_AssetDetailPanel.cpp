@@ -183,6 +183,7 @@ namespace
 void SCPM_AssetDetailPanel::Construct(const FArguments& InArgs)
 {
 	LoadShowAllPlatforms();
+	OnChunkCreated = InArgs._OnChunkCreated;
 
 	if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
 	{
@@ -232,11 +233,38 @@ void SCPM_AssetDetailPanel::Construct(const FArguments& InArgs)
 			SNew(SBox)
 			.MaxDesiredWidth(420.0f)
 			[
-				SNew(STextBlock)
-				.TextStyle(&SecondaryTextStyle())
-				.AutoWrapText(true)
-				.Justification(ETextJustify::Center)
-				.Text(LOCTEXT("NoChunks", "This project has no Chunks. Add a Primary Asset Label to the content you want to publish."))
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SNew(STextBlock)
+					.TextStyle(&SecondaryTextStyle())
+					.AutoWrapText(true)
+					.Justification(ETextJustify::Center)
+					.Text_Lambda([this]
+					{
+						return bLegacyLayoutPending
+							? LOCTEXT("NoChunksLegacy",
+								"This project has records from an earlier version of this tool but no Chunk yet. "
+								"Create one to recover them.")
+							: LOCTEXT("NoChunks",
+								"This project has no Chunks yet. Create one to publish this project's content, or "
+								"add a Primary Asset Label to the content yourself.");
+					})
+				]
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 12.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.ButtonStyle(&FCPM_PakManagerStyle::Get().GetWidgetStyle<FButtonStyle>("CPM.Button.Primary"))
+					.Visibility_Lambda([this]
+					{
+						return bCanCreateChunk ? EVisibility::Visible : EVisibility::Collapsed;
+					})
+					.Text(LOCTEXT("CreateChunk", "Create chunk"))
+					.ToolTipText(LOCTEXT("CreateChunkTip",
+						"Creates the Primary Asset Label that gathers this project's modding plugin into one "
+						"publishable Chunk. Nothing is uploaded."))
+					.OnClicked(this, &SCPM_AssetDetailPanel::HandleCreateChunk)
+				]
 			]
 		]
 	];
@@ -312,6 +340,12 @@ void SCPM_AssetDetailPanel::SetAssetViewModel(TSharedPtr<FCPM_AssetViewModel> In
 
 	Asset = InAsset;
 	EntryPointError = FText::GetEmpty();
+
+	if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
+	{
+		bCanCreateChunk = Subsystem->CanAddAnotherChunk();
+		bLegacyLayoutPending = Subsystem->HasUnmigratedLegacyLayout();
+	}
 
 	RebuildStageRow();
 	BuiltRowSignature.Reset();
@@ -841,6 +875,26 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildTechnicalSection()
 UConvaiPakEditorSubsystem* SCPM_AssetDetailPanel::GetSubsystem()
 {
 	return GEditor ? GEditor->GetEditorSubsystem<UConvaiPakEditorSubsystem>() : nullptr;
+}
+
+FReply SCPM_AssetDetailPanel::HandleCreateChunk()
+{
+	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+	if (!Subsystem)
+	{
+		return FReply::Handled();
+	}
+
+	FString Error;
+	if (!Subsystem->CreateChunk(Error))
+	{
+		Notify(FText::FromString(Error), SNotificationItem::CS_Fail);
+		return FReply::Handled();
+	}
+
+	Notify(LOCTEXT("ChunkCreated", "Chunk created."), SNotificationItem::CS_Success);
+	OnChunkCreated.ExecuteIfBound();
+	return FReply::Handled();
 }
 
 FReply SCPM_AssetDetailPanel::HandleUseSelectedAsset()

@@ -26,6 +26,8 @@ class SCPM_AssetDetailPanel : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SCPM_AssetDetailPanel) {}
+		/** The project just gained its first Chunk; the root panel re-reads and repopulates. */
+		SLATE_EVENT(FSimpleDelegate, OnChunkCreated)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
@@ -78,6 +80,7 @@ private:
 
 	static UConvaiPakEditorSubsystem* GetSubsystem();
 
+	FReply HandleCreateChunk();
 	FReply HandleUseSelectedAsset();
 	FReply HandleRevealEntryPoint();
 	FReply HandleCaptureThumbnail();
@@ -109,7 +112,17 @@ private:
 	void LoadShowAllPlatforms();
 	void SetShowAllPlatforms(bool bShow);
 
+	FSimpleDelegate OnChunkCreated;
+
 	TSharedPtr<FCPM_AssetViewModel> Asset;
+
+	/**
+	 * What the empty state offers and why, re-derived whenever the root panel re-points this form.
+	 *
+	 * Cached because both answers read the project's files, and the empty state paints every frame.
+	 */
+	bool bCanCreateChunk = false;
+	bool bLegacyLayoutPending = false;
 
 	/** Scene or Avatar is fixed per project, so the tree shape is decided once at construction. */
 	bool bIsScene = true;
