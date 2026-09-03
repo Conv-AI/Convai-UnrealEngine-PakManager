@@ -5,7 +5,6 @@
 #include "CoreMinimal.h"
 #include "CPM_Utils.h"
 #include "IImageWrapper.h"
-#include "AssetRegistry/AssetData.h"
 #include "Engine/Texture2D.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "CPM_UtilityLibrary.generated.h"
@@ -69,23 +68,8 @@ public:
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "ConvaiPakManagerLog"), Category = "Convai|PakManager")
 	static void CPM_LogMessage(const FString& Message, ECPM_LogLevel Verbosity = ECPM_LogLevel::Log);
 
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static UClass* CPM_LoadClassByPath(const FString& ClassPath);
-
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static UObject* CPM_LoadAssetByPath(const FString& AssetPath);
-
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static FAssetData CPM_LoadAssetDataByPath(const FString& AssetPath);
-
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static bool CPM_DeleteFileByPath(const FString& FilePath);
-
-	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
-	static bool CPM_DeleteDirectory(const FString& DirectoryPath);
-
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static bool CPM_IsThumbnailValid(UTexture2D* Texture, float MinValidRatio = 0.01f, int32 SampleStep = 1);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static UTexture2D* CPM_LoadTexture2DFromDisk(const FString& FilePath, bool bGenerateMips = true);
@@ -98,15 +82,6 @@ public:
 	static TArray<FString> GetProjectFilesToZip();
 	// END Project Zipping utility functions
 
-	UFUNCTION(BlueprintCallable, Category = "Convai|System|Environment")
-	static bool CPM_SetSystemEnvVar(const FString& VarName, const FString& VarValue);
-
-	UFUNCTION(BlueprintCallable, Category = "Convai|System|Environment")
-	static bool CPM_GetSystemEnvVar(const FString& VarName, FString& OutVarValue);
-	
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|System|Environment")
-	static int64 CPM_GetFileSize(const FString& FilePath);
-	
 	static bool Texture2DToPixels(UTexture2D* Texture2D, int32& Width, int32& Height, TArray<FColor>& Pixels);
 	static bool Texture2DToBytes(UTexture2D* Texture2D, const EImageFormat ImageFormat, TArray<uint8>& ByteArray, const int32 CompressionQuality);
 	static bool PixelsToBytes(const int32 Width, const int32 Height, const TArray<FColor>& Pixels, const EImageFormat ImageFormat, TArray<uint8>& ByteArray, const int32 CompressionQuality);
