@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Publish/CPM_Compatibility.h"
 #include "UI/CPM_PakManagerViewModels.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
@@ -41,6 +42,9 @@ private:
 	/** The pre-Chunk-records warning, shown for as long as the condition holds. */
 	TSharedRef<SWidget> BuildLegacyBanner();
 
+	/** The outdated-tool / wrong-engine warning. Says so and gates nothing - see the comment on it. */
+	TSharedRef<SWidget> BuildCompatibilityBanner();
+
 	TSharedRef<SWidget> BuildActionBar();
 	TSharedRef<SWidget> BuildMoreMenu();
 
@@ -68,6 +72,8 @@ private:
 	/** The Asset Registry finished its scan, so Chunks that were invisible at Construct are findable. */
 	void HandleFilesLoaded();
 
+	void HandleCompatibilityChanged();
+
 	FReply HandleSaveClicked();
 	FReply HandlePrimaryClicked();
 	FReply HandleDeleteClicked();
@@ -92,6 +98,9 @@ private:
 	 */
 	bool bLegacyLayoutPending = false;
 
+	/** What the version check last answered, cached because the banner reads it on every paint. */
+	FCPM_CompatibilityStatus Compatibility;
+
 	TSharedPtr<SCPM_AssetListPanel> ListPanel;
 	TSharedPtr<SCPM_AssetDetailPanel> DetailPanel;
 	TSharedPtr<SComboBox<TSharedPtr<FCPM_AssetViewModel>>> ChunkCombo;
@@ -99,4 +108,5 @@ private:
 
 	FDelegateHandle StatusChangedHandle;
 	FDelegateHandle FilesLoadedHandle;
+	FDelegateHandle CompatibilityChangedHandle;
 };

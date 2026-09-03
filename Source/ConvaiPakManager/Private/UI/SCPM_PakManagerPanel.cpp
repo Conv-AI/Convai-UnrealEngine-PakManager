@@ -153,6 +153,9 @@ void SCPM_PakManagerPanel::Construct(const FArguments& InArgs)
 	{
 		StatusChangedHandle = Subsystem->OnChunkStatusChanged.AddSP(
 			this, &SCPM_PakManagerPanel::HandleChunkStatusChanged);
+		CompatibilityChangedHandle = Subsystem->OnCompatibilityChanged.AddSP(
+			this, &SCPM_PakManagerPanel::HandleCompatibilityChanged);
+		Subsystem->RefreshCompatibility();
 	}
 
 	// A tab restored by the saved layout constructs while the registry is still scanning, when no
@@ -177,6 +180,10 @@ void SCPM_PakManagerPanel::Construct(const FArguments& InArgs)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
 				BuildLegacyBanner()
+			]
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				BuildCompatibilityBanner()
 			]
 			+ SVerticalBox::Slot().FillHeight(1.0f)
 			[
@@ -216,11 +223,12 @@ SCPM_PakManagerPanel::~SCPM_PakManagerPanel()
 {
 	// Unsubscribed explicitly: the subsystem outlives this widget, and a delegate left bound to a
 	// destroyed panel is a crash on the next status change.
-	if (StatusChangedHandle.IsValid())
+	if (StatusChangedHandle.IsValid() || CompatibilityChangedHandle.IsValid())
 	{
 		if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
 		{
 			Subsystem->OnChunkStatusChanged.Remove(StatusChangedHandle);
+			Subsystem->OnCompatibilityChanged.Remove(CompatibilityChangedHandle);
 		}
 	}
 	if (FilesLoadedHandle.IsValid())
@@ -240,6 +248,14 @@ void SCPM_PakManagerPanel::HandleFilesLoaded()
 	}
 	FilesLoadedHandle.Reset();
 	RefreshProject();
+}
+
+void SCPM_PakManagerPanel::HandleCompatibilityChanged()
+{
+	if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
+	{
+		Subsystem->GetCompatibility(Compatibility);
+	}
 }
 
 void SCPM_PakManagerPanel::RefreshProject()
@@ -355,6 +371,59 @@ TSharedRef<SWidget> SCPM_PakManagerPanel::BuildLegacyBanner()
 							"This project holds records from an earlier version of this tool that could not be "
 							"attributed to a Chunk, so nothing was moved. Publishing is disabled until this is "
 							"resolved - see the Output Log for which files.");
+				})
+			]
+		];
+}
+
+TSharedRef<SWidget> SCPM_PakManagerPanel::BuildCompatibilityBanner()
+{
+	using FPalette = FCPM_PakManagerStyle::FPalette;
+
+	// Tells, never blocks: the check fails open on a network it could not reach, and a creator held
+	// back by it has no way to update the tool from in here - a dead end with no door out.
+	return SNew(SBorder)
+		.BorderImage(FCPM_PakManagerStyle::Get().GetBrush("CPM.Panel"))
+		.Padding(FMargin(12.0f, 8.0f))
+		.Visibility_Lambda([this]
+		{
+			return Compatibility.bToolOutdated || Compatibility.bEngineMismatch
+				? EVisibility::Visible
+				: EVisibility::Collapsed;
+		})
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+			[
+				SNew(SImage)
+				.Image(FAppStyle::Get().GetBrush("Icons.Warning"))
+				.ColorAndOpacity(FSlateColor(FPalette::Warning))
+			]
+			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock)
+				.AutoWrapText(true)
+				.ColorAndOpacity(FSlateColor(FPalette::Warning))
+				.Text_Lambda([this]
+				{
+					TArray<FText> Sentences;
+					if (Compatibility.bToolOutdated)
+					{
+						Sentences.Add(FText::Format(LOCTEXT("ToolOutdated",
+							"Pak Manager {0} is installed and {1} is available. Update it with the Convai Modding "
+							"Tool before publishing."),
+							FText::FromString(Compatibility.InstalledToolVersion),
+							FText::FromString(Compatibility.LatestToolVersion)));
+					}
+					if (Compatibility.bEngineMismatch)
+					{
+						Sentences.Add(FText::Format(LOCTEXT("EngineMismatch",
+							"This project runs Unreal {0}; Convai targets {1}. Paks built here may not load in "
+							"Convai products."),
+							FText::FromString(Compatibility.EngineVersion),
+							FText::FromString(Compatibility.TargetEngineVersion)));
+					}
+					return FText::Join(FText::FromString(TEXT("\n")), Sentences);
 				})
 			]
 		];
