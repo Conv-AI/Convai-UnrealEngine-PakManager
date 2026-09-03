@@ -177,6 +177,16 @@ struct CONVAIPAKMANAGER_API FCPM_DependencyCopyReport
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Dependency Copy")
 	bool bSuccess = false;
 
+	/**
+	 * Whether the reference fixup pass finished, so the copies are actually pointed at.
+	 *
+	 * Separate from bSuccess, which only counts failed copies: a copy that lands but leaves every
+	 * referencer pointing at the originals has done nothing for the caller, and reporting that as
+	 * success is how a creator publishes a Pak whose Entry Point still reaches outside the plugin.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Dependency Copy")
+	bool bReferencesFixedUp = true;
+
 	/** Detailed information about each item processed */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Dependency Copy")
 	TArray<FCPM_DependencyCopyItem> Items;

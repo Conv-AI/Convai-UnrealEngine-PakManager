@@ -1118,12 +1118,13 @@ bool EnsureConvaiDependency(const FString& PluginName, FString& OutError)
 		return false;
 	}
 
-	// Asked for rather than hardcoded, for the same reason the Avatar module asks: the name in the
-	// `.uplugin` is what FindEnabledPlugin matches when the domain database is rebuilt.
-	const TSharedPtr<IPlugin> Convai = PluginManager.FindPlugin(TEXT("ConvAI"));
+	// Asked for rather than hardcoded, and asked for the way the domain database asks: it resolves a
+	// declared dependency with FindEnabledPlugin, so a name taken from a merely discovered plugin
+	// would be written into the descriptor and grant nothing.
+	const TSharedPtr<IPlugin> Convai = PluginManager.FindEnabledPlugin(TEXT("ConvAI"));
 	if (!Convai)
 	{
-		OutError = TEXT("the Convai plugin is not mounted");
+		OutError = TEXT("the Convai plugin is not enabled in this project");
 		return false;
 	}
 	if (Convai == ModdingPlugin)

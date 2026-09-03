@@ -5,6 +5,7 @@
 #include "AssetToolsModule.h"
 #include "IAssetTools.h"
 #include "Misc/PackageName.h"
+#include "Misc/RedirectCollector.h"
 #include "Misc/ScopedSlowTask.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
@@ -631,6 +632,24 @@ bool FCPM_DependencyCopyAPI::ExecuteAdvancedCopy(
 														LOCTEXT("CopyingEnginePackage", "Copying {0}..."),
 														FText::FromName(Pair.Key)));
 
+			// The same guard the game path applies above: a destination that is already there is left
+			// alone unless the caller asked for an overwrite.
+			if (!Options.bOverwriteExisting && FPackageName::DoesPackageExist(Pair.Value.ToString()))
+			{
+				UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Skipping %s (destination exists, overwrite disabled)"),
+					*Pair.Key.ToString());
+				for (FCPM_DependencyCopyItem &Item : InOutReport.Items)
+				{
+					if (Item.SourcePackage == Pair.Key)
+					{
+						Item.bSkipped = true;
+						InOutReport.SkippedPackages.AddUnique(Pair.Key);
+						break;
+					}
+				}
+				continue;
+			}
+
 			FString Error;
 			bool bDuplicateSuccess = DuplicateAssetManually(Pair.Key, Pair.Value, Error);
 
@@ -667,7 +686,9 @@ bool FCPM_DependencyCopyAPI::ExecuteAdvancedCopy(
 	if (!FixupAllHardReferences(SourceToDest, Options.AdditionalPackagesToFixup, FixupError))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: Reference fixup warning: %s"), *FixupError);
-		// Don't fail the whole operation for fixup issues, but log it
+		// The copies themselves stand, so this is not a copy failure - but a caller that gathered in
+		// order to repoint something has to be able to tell that the repointing did not happen.
+		InOutReport.bReferencesFixedUp = false;
 	}
 
 	return bSuccess;
@@ -734,8 +755,11 @@ bool FCPM_DependencyCopyAPI::DuplicateAssetManually(
 		// Notify asset registry
 		FAssetRegistryModule::AssetCreated(DuplicatedObject);
 
-		// Save the package
-		const FString PackageFilename = FPackageName::LongPackageNameToFilename(DestPackageStr, FPackageName::GetAssetPackageExtension());
+		// Save the package. A map package has to be written as .umap: the loader resolves a package
+		// name by trying .uasset first, so a level saved as .uasset shadows the real .umap and the
+		// two files disagree from the next save on.
+		const FString PackageFilename = FPackageName::LongPackageNameToFilename(DestPackageStr,
+			DestinationPackage->ContainsMap() ? FPackageName::GetMapPackageExtension() : FPackageName::GetAssetPackageExtension());
 
 		// Ensure directory exists
 		IFileManager::Get().MakeDirectory(*FPaths::GetPath(PackageFilename), true);
@@ -937,6 +961,18 @@ bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 	{
 		IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
 		AssetTools.RenameReferencingSoftObjectPaths(DestinationPackages, SoftPathRemap);
+
+		// That call registers every remap with GRedirectCollector for the rest of the session
+		// (AssetRenameManager.cpp:1584), which would then rewrite these paths in ANY package the
+		// creator saves afterwards - an engine asset copied here would silently repoint their whole
+		// project at the copy. The redirects are wanted for the pass above and nothing else.
+		for (const TPair<FSoftObjectPath, FSoftObjectPath>& Pair : SoftPathRemap)
+		{
+			if (Pair.Key.IsAsset())
+			{
+				GRedirectCollector.RemoveAssetPathRedirection(Pair.Key.GetWithoutSubPath());
+			}
+		}
 	}
 
 	// Step 4: Save all modified packages
@@ -958,7 +994,8 @@ bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 		for (UPackage* Package : PackagesToSave)
 		{
 			const FString PackageName = Package->GetName();
-			const FString PackageFilename = FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension());
+			const FString PackageFilename = FPackageName::LongPackageNameToFilename(PackageName,
+				Package->ContainsMap() ? FPackageName::GetMapPackageExtension() : FPackageName::GetAssetPackageExtension());
 
 			// Get the main asset to save
 			TArray<UObject*> ObjectsInPackage;

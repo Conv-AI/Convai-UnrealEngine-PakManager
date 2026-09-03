@@ -58,6 +58,13 @@ creator's project, already carrying a Primary Asset Label at its content root. A
 where a creator puts things, not a part of what a **Chunk** is — projects set up by hand have none.
 _Avoid_: mod folder, content plugin, asset plugin
 
+The mount is also the Pak's boundary. A **Chunk**'s label gathers what lives under its own mount and
+nothing else: verified by listing a built Pak, whose only packages were the plugin's. So a dependency
+in `/Game/` or `/Engine/` is NOT published, and an **Entry Point** that reaches one loads in a Convai
+product with that content missing. Copying such dependencies under the mount, and repointing what
+referenced them, is what the relocate and gather Commands exist for. The Convai SDK's own content is
+the exception that is never copied - every product ships it.
+
 **Pak**:
 The built artefact for one Chunk on one platform. A Chunk yields one Pak per platform, so naming a
 Pak takes a platform as well as a Chunk.

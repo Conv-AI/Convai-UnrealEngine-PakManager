@@ -1152,13 +1152,21 @@ FReply SCPM_AssetDetailPanel::HandleShowDependencies()
 	}
 
 	const int32 NumOutside = Outside.Num();
-	const FText Header = FText::Format(
-		LOCTEXT("DependencyHeader",
-			"{0} packages travel with {1}. {2} are outside /{3}/ and are pulled in by the label's recursive rule."),
-		FText::AsNumber(Items->Num()),
-		FText::FromString(FPaths::GetCleanFilename(Asset->EntryPoint)),
-		FText::AsNumber(NumOutside),
-		FText::FromString(Modding.PluginName));
+	const FText Header = NumOutside > 0
+		? FText::Format(
+			LOCTEXT("DependencyHeaderOutside",
+				"{0} packages are reachable from {1}. {2} of them are outside /{3}/ and will NOT be in the "
+				"Pak - pick the asset again to be offered a copy of them."),
+			FText::AsNumber(Items->Num()),
+			FText::FromString(FPaths::GetCleanFilename(Asset->EntryPoint)),
+			FText::AsNumber(NumOutside),
+			FText::FromString(Modding.PluginName))
+		: FText::Format(
+			LOCTEXT("DependencyHeaderClean",
+				"{0} packages are reachable from {1}, and every one of them is in /{2}/, so the Pak has all of them."),
+			FText::AsNumber(Items->Num()),
+			FText::FromString(FPaths::GetCleanFilename(Asset->EntryPoint)),
+			FText::FromString(Modding.PluginName));
 
 	FSlateApplication::Get().AddWindow(
 		SNew(SWindow)

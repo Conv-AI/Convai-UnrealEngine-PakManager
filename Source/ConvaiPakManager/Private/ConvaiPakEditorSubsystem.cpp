@@ -691,26 +691,62 @@ bool UConvaiPakEditorSubsystem::GatherDependenciesIntoPlugin(
 		return false;
 	}
 
+	if (!FPackageName::DoesPackageExist(PackageName))
+	{
+		OutWhy = FString::Printf(TEXT("nothing exists at %s"), *PackageName);
+		return false;
+	}
+
+	TArray<FString> Inside;
+	TArray<FString> Outside;
+	if (!ListDependencies(ChunkId, PackageName, Inside, Outside))
+	{
+		OutWhy = FString::Printf(TEXT("could not read what %s depends on"), *PackageName);
+		return false;
+	}
+	if (Outside.IsEmpty())
+	{
+		return true;
+	}
+
 	FCPM_DependencyCopyOptions Options = GatherOptions();
-	// The Entry Point already lives under the mount, so the copy skips it - and then nothing would
-	// point its references at the copies it just made. Naming it here is what repoints it.
-	//
-	// ponytail: the Entry Point package alone. A World Partition level keeps its actors in external
-	// packages, whose references this does not reach; add them here if creators publish WP scenes.
-	Options.AdditionalPackagesToFixup = { FName(*PackageName) };
+
+	// Everything already under the mount is rewritten in place rather than copied, and that is more
+	// than the Entry Point: a World Partition level holds its actors in external packages of their
+	// own, and those - not the level - are what reference the creator's meshes. Anything in the
+	// plugin that reaches outside it has to be repointed, or the copies below are dead weight.
+	Options.AdditionalPackagesToFixup.Add(FName(*PackageName));
+	for (const FString& Package : Inside)
+	{
+		Options.AdditionalPackagesToFixup.Add(FName(*Package));
+	}
+
+	TArray<FName> Sources;
+	for (const FString& Package : Outside)
+	{
+		Sources.Add(FName(*Package));
+	}
 
 	const FString DestinationRoot = TEXT("/") + Modding.PluginName + TEXT("/");
 	const FCPM_DependencyCopyReport Report =
-		FCPM_DependencyCopyAPI::CopyPackageWithDependencies(FName(*PackageName), DestinationRoot, Options);
+		FCPM_DependencyCopyAPI::CopyPackagesWithDependencies(Sources, DestinationRoot, Options);
 	if (!Report.bSuccess)
 	{
 		OutWhy = WhyCopyFailed(Report);
 		return false;
 	}
+	if (!Report.bReferencesFixedUp)
+	{
+		OutWhy = FString::Printf(
+			TEXT("%d packages were copied into %s but %s could not be pointed at them; see the Output Log"),
+			Report.CopiedCount, *DestinationRoot, *FPaths::GetCleanFilename(PackageName));
+		return false;
+	}
 
 	OutCopied = Report.CopiedCount;
-	CPM_LOG(Display, TEXT("Gathered %d packages into %s for %s (%d already there)."),
-		Report.CopiedCount, *DestinationRoot, *PackageName, Report.SkippedCount);
+	CPM_LOG(Display, TEXT("Gathered %d packages into %s for %s (%d already there, %d packages repointed)."),
+		Report.CopiedCount, *DestinationRoot, *PackageName, Report.SkippedCount,
+		Options.AdditionalPackagesToFixup.Num());
 	return true;
 }
 
