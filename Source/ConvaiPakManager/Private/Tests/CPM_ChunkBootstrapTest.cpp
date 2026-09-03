@@ -1,0 +1,111 @@
+// Copyright 2025 Convai Inc. All Rights Reserved.
+
+#include "Chunk/CPM_Chunk.h"
+#include "HAL/FileManager.h"
+#include "Misc/AutomationTest.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+
+#if WITH_AUTOMATION_TESTS
+
+using namespace ConvaiPakManager::Chunk;
+
+namespace
+{
+	/**
+	 * A throwaway ConvaiEssentials directory. Its own rather than the migration test's, because a
+	 * unity build puts both files' unnamed namespaces in one translation unit.
+	 */
+	struct FScratchBootstrapEssentials
+	{
+		FString Path;
+
+		explicit FScratchBootstrapEssentials(const TCHAR* TestName)
+		{
+			Path = FPaths::Combine(
+				FPaths::ProjectIntermediateDir(), TEXT("CPM_Tests"), TestName, TEXT("ConvaiEssentials"));
+			IFileManager::Get().DeleteDirectory(*Path, false, true);
+			IFileManager::Get().MakeDirectory(*Path, true);
+		}
+
+		~FScratchBootstrapEssentials()
+		{
+			IFileManager::Get().DeleteDirectory(*Path, false, true);
+		}
+
+		void Write(const FString& RelativePath, const FString& Contents) const
+		{
+			FFileHelper::SaveStringToFile(Contents, *FPaths::Combine(Path, RelativePath));
+		}
+	};
+}
+
+/**
+ * The un-migrated project has no Chunk, so there is no per-Chunk path for it to resolve - and its
+ * plugin_name, which is what minting its Chunk needs, is only in the flat file. Without this the
+ * whole bootstrap resolves `ChunkId_-1/ModdingMetaData_-1.json`, reads nothing, and the project
+ * reports no Asset Type on top of having no Chunk.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMChunkBootstrapReadsTheFlatModdingMetadata,
+	"ConvaiPakManager.Chunk.Bootstrap.ReadsTheFlatModdingMetadata",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMChunkBootstrapReadsTheFlatModdingMetadata::RunTest(const FString&)
+{
+	const FScratchBootstrapEssentials Scratch(TEXT("ReadsTheFlatModdingMetadata"));
+
+	const FString PerChunkPath = FPaths::Combine(Scratch.Path, TEXT("ChunkId_10"), TEXT("ModdingMetaData_10.json"));
+	TestEqual(TEXT("an empty project still resolves the per-Chunk path"),
+		GetModdingMetadataPathIn(Scratch.Path, 10), PerChunkPath);
+
+	const FString FlatPath = FPaths::Combine(Scratch.Path, TEXT("ModdingMetaData.txt"));
+	Scratch.Write(TEXT("ModdingMetaData.txt"), TEXT("{\"plugin_name\":\"A3CLP672QMGL73V5F2KH\"}"));
+
+	TestEqual(TEXT("the flat file answers for a named Chunk"),
+		GetModdingMetadataPathIn(Scratch.Path, 10), FlatPath);
+	// The call an un-migrated project actually makes: it has no Chunk to name.
+	TestEqual(TEXT("and for a project that has no Chunk at all"),
+		GetModdingMetadataPathIn(Scratch.Path, INDEX_NONE), FlatPath);
+
+	// Once migrated, the per-Chunk copy is the live one and the flat file is a leftover.
+	Scratch.Write(FPaths::Combine(TEXT("ChunkId_10"), TEXT("ModdingMetaData_10.json")), TEXT("{}"));
+	TestEqual(TEXT("the per-Chunk copy outranks the flat one"),
+		GetModdingMetadataPathIn(Scratch.Path, 10), PerChunkPath);
+
+	return true;
+}
+
+/**
+ * An Entry Point outside the Modding Plugin is not in what the label gathers, so it cooks into no
+ * Pak and the published Asset opens nothing - and nothing between here and a Convai product would
+ * notice. Contains() rather than StartsWith() is how the legacy check let a creator's own
+ * `/Game/<plugin>_old/` copy through.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMChunkBootstrapEntryPointMustLiveInThePlugin,
+	"ConvaiPakManager.Chunk.Bootstrap.EntryPointMustLiveInThePlugin",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMChunkBootstrapEntryPointMustLiveInThePlugin::RunTest(const FString&)
+{
+	TestTrue(TEXT("a package under the plugin passes"), IsUnderModdingPlugin(TEXT("/P/Maps/A"), TEXT("P")));
+	// Mount points are case-insensitive, and the metadata's spelling need not match the creator's.
+	TestTrue(TEXT("case does not decide it"), IsUnderModdingPlugin(TEXT("/p/maps/a"), TEXT("P")));
+
+	TestFalse(TEXT("a copy kept beside the plugin is refused"),
+		IsUnderModdingPlugin(TEXT("/Game/P_old/A"), TEXT("P")));
+	TestFalse(TEXT("a mount root that merely starts with the name is refused"),
+		IsUnderModdingPlugin(TEXT("/GameP/A"), TEXT("P")));
+	TestFalse(TEXT("the mount root itself is not a package in the plugin"),
+		IsUnderModdingPlugin(TEXT("/P"), TEXT("P")));
+	TestFalse(TEXT("another plugin is refused"), IsUnderModdingPlugin(TEXT("/P/A"), TEXT("Q")));
+
+	// An internal project labels its own /Game content and records no plugin to be inside of.
+	TestTrue(TEXT("a project with no Modding Plugin is not restricted"),
+		IsUnderModdingPlugin(TEXT("/Game/Anything"), FString()));
+
+	return true;
+}
+
+#endif  // WITH_AUTOMATION_TESTS

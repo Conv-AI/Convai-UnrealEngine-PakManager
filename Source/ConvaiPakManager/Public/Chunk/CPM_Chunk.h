@@ -54,6 +54,40 @@ CONVAIPAKMANAGER_API int32 GetSoleChunkId();
 /** Drops the memoised answer. Call after anything that adds or removes a Primary Asset Label. */
 CONVAIPAKMANAGER_API void InvalidateSoleChunkCache();
 
+/**
+ * Mints the Primary Asset Label that makes `<MountRoot>` a Chunk, or gives an existing one that
+ * declares no Chunk the rules it is missing.
+ *
+ * The Modding Tool authors this label, so a generated project needs nothing here. A project that
+ * predates the tool has none, and a creator who hand-authors one gets the `-1` ChunkId that every
+ * new label defaults to - which Discover skips, so the project still has no Chunk and the tool has
+ * nothing to publish. Nothing about the label is the creator's decision, so telling them to author
+ * it was telling them to learn the one concept this tool exists to hide.
+ *
+ * A label that already declares a Chunk is returned untouched: it is one Discover already lists, and
+ * rewriting its ChunkId would move published content into a different Pak.
+ *
+ * @param MountRoot  `/<PluginName>`, no trailing slash. The label is `<MountRoot>/PAL_<PluginName>`.
+ * @param ChunkId    In: the Chunk to mint. Out: the Chunk the label declares, which is the one asked
+ *                   for unless it already declared another.
+ * @param OutError   Why nothing was minted, in words a creator can act on. Empty on success.
+ */
+CONVAIPAKMANAGER_API bool EnsureLabel(const FString& MountRoot, int32& ChunkId, FString& OutError);
+
+/**
+ * Adds MountRoot to the directories the Asset Manager scans for Primary Asset Labels, writing
+ * DefaultGame.ini only when it is not already listed.
+ *
+ * A label in a directory nothing scans is not a Chunk as far as the cooker is concerned: its content
+ * lands in chunk 0, no `pakchunk<N>` is emitted, and the Publish succeeds having shipped nothing.
+ * The Modding Tool wrote this entry itself, which is why a generated project has never needed it and
+ * a hand-made one has always been quietly broken.
+ *
+ * False means the config file could not be written - a project under source control that has not
+ * checked DefaultGame.ini out. The setting still applies for this session.
+ */
+CONVAIPAKMANAGER_API bool EnsureLabelDirectoryScanned(const FString& MountRoot);
+
 /** `<Project>/ConvaiEssentials` - the root of everything the creator's project records about its Assets. */
 CONVAIPAKMANAGER_API FString GetEssentialsDirectory();
 
@@ -121,6 +155,12 @@ CONVAIPAKMANAGER_API bool WritePakMetadata(int32 ChunkId, const FString& Environ
  * `.json`, which is what the contents have always been. The Modding Tool writes this file rather
  * than the Pak Manager, so a `.txt` is still read as a fallback until the tool catches up; the
  * fallback goes once it has.
+ *
+ * A flat `ConvaiEssentials/ModdingMetaData.txt` is read when no per-Chunk copy exists at all. That
+ * is the un-migrated project, which has no Chunk to name a per-Chunk path with - and this file is
+ * where its plugin_name is, which is the one thing EnsureLabel needs to give it a Chunk. Without the
+ * fallback the whole layer resolves `ChunkId_-1/ModdingMetaData_-1.json`, reads nothing, and reports
+ * a project with no Asset Type.
  */
 CONVAIPAKMANAGER_API FString GetModdingMetadataPath(int32 ChunkId);
 
@@ -197,6 +237,20 @@ CONVAIPAKMANAGER_API void FillRequiredMetadataFields(
 	const FString& ProjectName,
 	const FString& PluginName,
 	const FString& AssetType);
+
+/**
+ * Whether a package lives inside the Modding Plugin a Chunk records.
+ *
+ * An Entry Point outside the plugin is not in what the label gathers, so it cooks into no Pak and
+ * the published Asset opens nothing - a failure that surfaces only when a Convai product tries to
+ * load it. StartsWith rather than Contains: a creator's copy kept at `/Game/<PluginName>_old/`
+ * contains the name and is not in the plugin.
+ *
+ * An empty PluginName passes everything. A Modding Plugin is a convention for where a creator puts
+ * things rather than part of what a Chunk is (see CONTEXT.md), and an internal project that labels
+ * its own /Game content records no plugin to be inside.
+ */
+CONVAIPAKMANAGER_API bool IsUnderModdingPlugin(const FString& PackageName, const FString& PluginName);
 
 /**
  * The package path of a level recorded by short name, or the name unchanged if nothing matches.
@@ -302,4 +356,36 @@ CONVAIPAKMANAGER_API EMigrationResult AdoptLooseRecordsIn(
 	int32 ChunkId,
 	const FString& EnvironmentSlug,
 	TArray<FString>& OutMovedFiles);
+
+/**
+ * Whether a pre-Chunk flat layout is still sitting in ConvaiEssentials.
+ *
+ * True means the only copy of this project's AssetID is in a file nothing reads any more, so the
+ * tool would offer Create for a Chunk that already has an Asset - and taking that offer orphans the
+ * Asset permanently. The UI says so and refuses to publish rather than leaving it to the log, which
+ * is where the refusal used to end.
+ */
+CONVAIPAKMANAGER_API bool HasUnmigratedLegacyLayout();
+
+/** Against an explicit root, so tests need no project on disk. */
+CONVAIPAKMANAGER_API bool HasUnmigratedLegacyLayoutIn(const FString& EssentialsDirectory);
+
+/**
+ * Brings this project's ConvaiEssentials up to the layout this version reads, and makes sure every
+ * Chunk's label sits in a directory the Asset Manager scans.
+ *
+ * The pre-Chunk migration then the per-backend adoption, in that order: the second one's input is
+ * what the first one moved. Drops the memoised sole-Chunk answer first, because the reason to run
+ * this again is that the label set may have changed since the last run - a cached "no Chunks" is
+ * exactly what pinned a project at Ambiguous for the rest of the session.
+ *
+ * Safe to call repeatedly, and called from everywhere the Chunk set can have changed: boot, minting
+ * a label, and every panel refresh. A project that gains its first Chunk mid-session used to need an
+ * editor restart before its state was migrated.
+ *
+ * Does nothing while the Asset Registry is still scanning. It moves the only copy of the project's
+ * AssetID, and a partial scan cannot say which Chunk owns it; every caller runs it again once the
+ * scan completes.
+ */
+CONVAIPAKMANAGER_API void ReconcileStateLayout();
 }

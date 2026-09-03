@@ -18,14 +18,15 @@ public:
 
 private:
 	/**
-	 * Brings this project's ConvaiEssentials up to the layout this version reads, once the Asset
-	 * Registry can answer which Chunks it has: a pre-Chunk flat layout moves into its per-Chunk
-	 * directory, then whatever is still loose in each Chunk is adopted into the production backend's
-	 * folder.
+	 * Runs Chunk::ReconcileStateLayout once the Asset Registry can answer which Chunks this project
+	 * has, so that no UI opens against a layout this version cannot read: reading Chunk state
+	 * un-migrated reports a published Asset as absent, and publishing from there creates a duplicate
+	 * and orphans the original permanently.
 	 *
-	 * Runs before any UI opens, because reading Chunk state without both steps reports a published
-	 * Asset as absent - and publishing from there creates a duplicate and orphans the original
-	 * permanently.
+	 * Boot is only the first caller. The subsystem re-runs the reconcile after minting a label and
+	 * the panel on every refresh, because a project can gain its first Chunk mid-session.
+	 *
+	 * Kept as a member for the OnFilesLoaded binding, which needs a raw delegate target.
 	 */
 	void MigrateChunkStateLayout();
 

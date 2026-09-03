@@ -221,4 +221,44 @@ bool FCPMChunkMigrationCompletesAPartialMigration::RunTest(const FString&)
 	return true;
 }
 
+/**
+ * The condition the UI states and gates publishing on. It has to stay true for exactly as long as
+ * the creator's AssetID is somewhere nothing reads - including after a migration that could not move
+ * everything, where a clean "nothing to migrate" would put a Create button in front of a live Asset.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMChunkMigrationReportsWhatIsStillFlat,
+	"ConvaiPakManager.Chunk.Migration.ReportsWhatIsStillFlat",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMChunkMigrationReportsWhatIsStillFlat::RunTest(const FString&)
+{
+	const FScratchEssentials Scratch(TEXT("ReportsWhatIsStillFlat"));
+	TestFalse(TEXT("an empty ConvaiEssentials has nothing flat"), HasUnmigratedLegacyLayoutIn(Scratch.Path));
+
+	Scratch.WriteLegacy(TEXT("PakMetaData.json"), TEXT("{\"asset_name\":\"Dev_CPM_53\"}"));
+	TestTrue(TEXT("a flat PakMetaData is enough"), HasUnmigratedLegacyLayoutIn(Scratch.Path));
+
+	TArray<FString> Moved;
+	MigrateLegacyLayoutIn(Scratch.Path, 10, Moved);
+	TestFalse(TEXT("and is gone once it has moved"), HasUnmigratedLegacyLayoutIn(Scratch.Path));
+
+	// The Modding Tool's own file, which a project that never published still has.
+	Scratch.WriteLegacy(TEXT("ModdingMetaData.txt"), TEXT("{\"plugin_name\":\"A3CLP672QMGL73V5F2KH\"}"));
+	TestTrue(TEXT("a flat ModdingMetaData is enough on its own"), HasUnmigratedLegacyLayoutIn(Scratch.Path));
+
+	// Migration leaves a flat file alone when the per-Chunk copy already exists, and this has to keep
+	// saying so - that leftover is the case a creator most needs told about.
+	Scratch.WritePerChunk(10, TEXT("ModdingMetaData_10.json"), TEXT("{\"plugin_name\":\"A3CLP672QMGL73V5F2KH\"}"));
+	AddExpectedError(TEXT("already exists"), EAutomationExpectedErrorFlags::Contains, 1);
+
+	TArray<FString> MovedAgain;
+	MigrateLegacyLayoutIn(Scratch.Path, 10, MovedAgain);
+
+	TestEqual(TEXT("nothing moves over the existing copy"), MovedAgain.Num(), 0);
+	TestTrue(TEXT("and the leftover is still reported"), HasUnmigratedLegacyLayoutIn(Scratch.Path));
+
+	return true;
+}
+
 #endif  // WITH_AUTOMATION_TESTS

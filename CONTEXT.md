@@ -152,10 +152,10 @@ _Avoid_: category, entity type
 
 ## Flagged ambiguities
 
-- **Whether the Pak Manager can mint a Chunk.** Today a Chunk exists only where a Primary Asset
-  Label exists, and the tool only discovers them. The multi-asset UI sketches a "+ New asset"
-  button, which would mean authoring a label from the tool. Deliberately deferred — the v1 UI lists
-  discovered Chunks only.
+- **~~Whether the Pak Manager can mint a Chunk~~ — resolved: yes, the tool mints and repairs the
+  Chunk's label when the project has none.** A Chunk still exists only where a Primary Asset Label
+  exists; the tool now authors that label rather than only discovering it, because a project without
+  one is otherwise a dead end the creator can only leave by learning what a label is.
 
 - **~~How many Chunks a project holds~~ — resolved: it depends on the project, not on the tool.**
   A Chunk is whatever a Primary Asset Label gathers, so a project has as many as it has labels.

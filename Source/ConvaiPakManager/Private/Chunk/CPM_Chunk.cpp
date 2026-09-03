@@ -4,15 +4,25 @@
 
 #include "AssetRegistry/ARFilter.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "Engine/AssetManager.h"
+#include "Engine/AssetManagerSettings.h"
+#include "Engine/AssetManagerTypes.h"
 #include "Engine/PrimaryAssetLabel.h"
+#include "Factories/DataAssetFactory.h"
 #include "HAL/FileManager.h"
+#include "IAssetTools.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Misc/FileHelper.h"
+#include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "Misc/SecureHash.h"
 #include "RestAPI/ConvaiURL.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "UObject/Package.h"
+#include "UObject/SavePackage.h"
+#include "UObject/SoftObjectPath.h"
 #include "Utility/CPM_Log.h"
 #include "Utility/CPM_UtilityLibrary.h"
 
@@ -53,6 +63,20 @@ namespace
 		{ TEXT("PakMetaData"),     TEXT(".json"), TEXT(".json") },
 		{ TEXT("ModdingMetaData"), TEXT(".txt"),  TEXT(".json") },
 	};
+
+	/** Which of the three are still flat in ConvaiEssentials, by legacy name, in StateFiles order. */
+	TArray<FString> FlatLegacyFilesIn(const FString& EssentialsDirectory)
+	{
+		TArray<FString> Present;
+		for (const FStateFile& StateFile : StateFiles)
+		{
+			if (IFileManager::Get().FileExists(*FPaths::Combine(EssentialsDirectory, StateFile.LegacyName())))
+			{
+				Present.Add(StateFile.LegacyName());
+			}
+		}
+		return Present;
+	}
 
 	/** Memoised GetSoleChunkId. Unset means "not yet resolved from a completed Asset Registry scan". */
 	TOptional<int32> CachedSoleChunkId;
@@ -222,6 +246,139 @@ void InvalidateSoleChunkCache()
 	CachedSoleChunkId.Reset();
 }
 
+bool EnsureLabel(const FString& MountRoot, int32& ChunkId, FString& OutError)
+{
+	// Checked before anything else: CreateAsset on an unmounted root produces a package that cannot
+	// be saved, and the creator would see a save failure rather than the real problem.
+	if (!FPackageName::MountPointExists(MountRoot + TEXT("/")))
+	{
+		OutError = FString::Printf(
+			TEXT("%s is not mounted in this project, so a Primary Asset Label cannot be created in it."),
+			*MountRoot);
+		return false;
+	}
+
+	const FString LabelName = FString::Printf(TEXT("PAL_%s"), *FPaths::GetCleanFilename(MountRoot));
+	const FString PackagePath = MountRoot / LabelName;
+
+	UPrimaryAssetLabel* Label = nullptr;
+	if (FPackageName::DoesPackageExist(PackagePath))
+	{
+		Label = LoadObject<UPrimaryAssetLabel>(nullptr, *(PackagePath + TEXT(".") + LabelName));
+		if (!Label)
+		{
+			OutError = FString::Printf(
+				TEXT("%s exists but is not a Primary Asset Label. Rename or delete it and try again."),
+				*PackagePath);
+			return false;
+		}
+
+		if (Label->Rules.ChunkId != INDEX_NONE)
+		{
+			// It already declares a Chunk, so Discover lists it and there is nothing to mint.
+			// Rewriting its ChunkId here would move published content into a different Pak. The
+			// caller asked for an id it cannot have; hand back the one the project really has.
+			ChunkId = Label->Rules.ChunkId;
+			return true;
+		}
+	}
+	else
+	{
+		UDataAssetFactory* Factory = NewObject<UDataAssetFactory>();
+		Factory->DataAssetClass = UPrimaryAssetLabel::StaticClass();
+
+		Label = Cast<UPrimaryAssetLabel>(IAssetTools::Get().CreateAsset(
+			LabelName, MountRoot, UPrimaryAssetLabel::StaticClass(), Factory));
+		if (!Label)
+		{
+			OutError = FString::Printf(TEXT("Could not create %s."), *PackagePath);
+			return false;
+		}
+	}
+
+	// The rules the Modding Tool has always written. bLabelAssetsInMyDirectory is what makes the
+	// label gather anything at all, and AlwaysCook is what stops the cooker dropping content the
+	// creator's own levels do not reference.
+	Label->bLabelAssetsInMyDirectory = true;
+	Label->bIsRuntimeLabel = true;
+	Label->Rules.Priority = 0;
+	Label->Rules.ChunkId = ChunkId;
+	Label->Rules.bApplyRecursively = true;
+	Label->Rules.CookRule = EPrimaryAssetCookRule::AlwaysCook;
+
+	UPackage* Package = Label->GetOutermost();
+	Package->MarkPackageDirty();
+
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	// No dialog: this runs behind a button the creator pressed to get a Chunk, not to be asked about
+	// package saving.
+	SaveArgs.SaveFlags = SAVE_NoError;
+
+	if (!UPackage::SavePackage(
+		Package, Label,
+		*FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension()),
+		SaveArgs))
+	{
+		OutError = FString::Printf(
+			TEXT("Created %s but could not save it. Check that the file is not read-only."), *PackagePath);
+		return false;
+	}
+
+	CPM_LOG(Display, TEXT("Primary Asset Label %s now declares chunk %d."), *PackagePath, ChunkId);
+	return true;
+}
+
+bool EnsureLabelDirectoryScanned(const FString& MountRoot)
+{
+	UAssetManagerSettings* Settings = GetMutableDefault<UAssetManagerSettings>();
+
+	const FName LabelType = UPrimaryAssetLabel::StaticClass()->GetFName();
+	FPrimaryAssetTypeInfo* TypeInfo = Settings->PrimaryAssetTypesToScan.FindByPredicate(
+		[&LabelType](const FPrimaryAssetTypeInfo& Candidate) { return Candidate.PrimaryAssetType == LabelType; });
+
+	if (!TypeInfo)
+	{
+		TypeInfo = &Settings->PrimaryAssetTypesToScan.Add_GetRef(FPrimaryAssetTypeInfo(
+			LabelType, UPrimaryAssetLabel::StaticClass(),
+			/*bHasBlueprintClasses=*/false, /*bIsEditorOnly=*/false));
+	}
+	else if (TypeInfo->GetDirectories().ContainsByPredicate(
+		[&MountRoot](const FDirectoryPath& Directory) { return Directory.Path.Equals(MountRoot, ESearchCase::IgnoreCase); }))
+	{
+		// Already scanned. Returning here rather than rewriting the same value is what keeps
+		// DefaultGame.ini untouched on every boot of an already-configured project.
+		return true;
+	}
+
+	TypeInfo->GetDirectories().Add(FDirectoryPath{ MountRoot });
+
+	// The whole section, not UpdateSinglePropertyInConfigFile: that one refuses TArray properties
+	// unless ini.UseNewPropertySaving is on - off by default - so nothing would reach disk and the
+	// next editor boot, and every build machine, would cook this label into chunk 0. This is what
+	// Project Settings itself calls, and it answers whether the file was writable.
+	const bool bWritten = Settings->TryUpdateDefaultConfigFile();
+
+	// A label in a directory nothing scans cooks into chunk 0 and emits no pakchunk at all, so this
+	// has to take effect in the session that minted it rather than only after a restart.
+	if (UAssetManager::IsInitialized())
+	{
+		UAssetManager::Get().ReinitializeFromConfig();
+	}
+
+	if (!bWritten)
+	{
+		CPM_LOG(Warning,
+			TEXT("%s is read-only, so %s could not be recorded as a Primary Asset Label scan directory. ")
+			TEXT("Chunks cook correctly for this session only; check the file out and reopen the Pak Manager."),
+			*Settings->GetDefaultConfigFilename(), *MountRoot);
+		return false;
+	}
+
+	CPM_LOG(Display, TEXT("Registered %s as a Primary Asset Label scan directory."), *MountRoot);
+	return true;
+}
+
 FString GetEssentialsDirectory()
 {
 	return FPaths::Combine(FPaths::ProjectDir(), EssentialsFolderName);
@@ -339,7 +496,15 @@ FString GetModdingMetadataPathIn(const FString& EssentialsDirectory, const int32
 
 	// A project generated by a Modding Tool that has not caught up yet still has to open.
 	const FString LegacyPath = FPaths::Combine(Directory, FString::Printf(TEXT("ModdingMetaData_%d.txt"), ChunkId));
-	return IFileManager::Get().FileExists(*LegacyPath) ? LegacyPath : Path;
+	if (IFileManager::Get().FileExists(*LegacyPath))
+	{
+		return LegacyPath;
+	}
+
+	// The un-migrated project, which has no Chunk and therefore no per-Chunk path to resolve. Its
+	// plugin_name is here and nowhere else, and that is what minting its Chunk needs.
+	const FString FlatPath = FPaths::Combine(EssentialsDirectory, StateFiles[2].LegacyName());
+	return IFileManager::Get().FileExists(*FlatPath) ? FlatPath : Path;
 }
 
 FString GetModdingMetadataPath(const int32 ChunkId)
@@ -423,15 +588,7 @@ EMigrationResult MigrateLegacyLayoutIn(
 {
 	IFileManager& FileManager = IFileManager::Get();
 
-	TArray<FString> Present;
-	for (const FStateFile& StateFile : StateFiles)
-	{
-		if (FileManager.FileExists(*FPaths::Combine(EssentialsDirectory, StateFile.LegacyName())))
-		{
-			Present.Add(StateFile.LegacyName());
-		}
-	}
-
+	const TArray<FString> Present = FlatLegacyFilesIn(EssentialsDirectory);
 	if (Present.IsEmpty())
 	{
 		return EMigrationResult::NothingToMigrate;
@@ -505,6 +662,16 @@ EMigrationResult MigrateLegacyLayoutIn(
 EMigrationResult MigrateLegacyLayout(TArray<FString>& OutMovedFiles)
 {
 	return MigrateLegacyLayoutIn(GetEssentialsDirectory(), GetSoleChunkId(), OutMovedFiles);
+}
+
+bool HasUnmigratedLegacyLayoutIn(const FString& EssentialsDirectory)
+{
+	return !FlatLegacyFilesIn(EssentialsDirectory).IsEmpty();
+}
+
+bool HasUnmigratedLegacyLayout()
+{
+	return HasUnmigratedLegacyLayoutIn(GetEssentialsDirectory());
 }
 
 namespace
@@ -688,6 +855,77 @@ EMigrationResult AdoptLooseRecords(
 	return AdoptLooseRecordsIn(GetEssentialsDirectory(), ChunkId, EnvironmentSlug, OutMovedFiles);
 }
 
+void ReconcileStateLayout()
+{
+	// Refuses to run at all against a partial scan. This MOVES the flat CreateAssetData.json - the
+	// only copy of the project's AssetID - under whichever Chunk Discover can see, and mid-scan a
+	// two-label project reads as a one-label one, so the record would be filed under a Chunk it does
+	// not belong to. Every caller runs this again once the registry finishes.
+	if (const IAssetRegistry* AssetRegistry = IAssetRegistry::Get(); AssetRegistry && AssetRegistry->IsLoadingAssets())
+	{
+		return;
+	}
+
+	// The label set may have changed since the last run, and anything cached before now could have
+	// been answered mid-scan or before a label existed at all.
+	InvalidateSoleChunkCache();
+
+	TArray<FString> MovedFiles;
+	switch (MigrateLegacyLayout(MovedFiles))
+	{
+	case EMigrationResult::Migrated:
+		CPM_LOG(Display, TEXT("Moved %d file(s) into this project's per-Chunk state directory."), MovedFiles.Num());
+		break;
+
+	case EMigrationResult::Ambiguous:
+	case EMigrationResult::Failed:
+		// MigrateLegacyLayout has already logged which files and why. Nothing was moved, so the
+		// creator's own copy of their AssetID is still where it was, and HasUnmigratedLegacyLayout
+		// is what puts it in front of them.
+		break;
+
+	case EMigrationResult::NothingToMigrate:
+		break;
+	}
+
+	// Everything still loose is production's by definition - nothing that could reach another
+	// backend has shipped. The URL comes from the SETTINGS rather than UConvaiURL::GetBaseURL,
+	// which honours -ConvaiProdURL= on the command line: one CI launch against staging would file a
+	// production record under staging permanently, where nothing would ever look for it again.
+	//
+	// Read through GConfig because UConvaiSettings lives at the SDK module's root, outside its
+	// Public folder, so its header is not includable from here. The default is the SDK's own, from
+	// UConvaiURL::GetBaseURL.
+	FString ProdUrl;
+	GConfig->GetString(TEXT("/Script/Convai.ConvaiSettings"), TEXT("CustomProdURL"), ProdUrl, GEngineIni);
+	ProdUrl.TrimStartAndEndInline();
+	if (ProdUrl.IsEmpty())
+	{
+		ProdUrl = TEXT("https://api.convai.com");
+	}
+
+	const FString ProductionSlug = EnvironmentSlug(ProdUrl);
+	for (const FCPM_Chunk& Chunk : Discover())
+	{
+		TArray<FString> Adopted;
+		if (AdoptLooseRecords(Chunk.Id, ProductionSlug, Adopted) == EMigrationResult::Migrated)
+		{
+			CPM_LOG(Display, TEXT("Adopted %d loose record(s) of chunk %d into %s: %s"),
+				Adopted.Num(), Chunk.Id, *ProductionSlug, *FString::Join(Adopted, TEXT(", ")));
+		}
+
+		// Not only the labels this tool minted: a Modding Plugin generated before the Modding Tool
+		// wrote the scan entry cooks into chunk 0 and produces no pakchunk, and the creator's only
+		// symptom is a Publish that ships nothing.
+		const FString LabelPackage = Chunk.LabelPackage.ToString();
+		const int32 SecondSlash = LabelPackage.Find(TEXT("/"), ESearchCase::CaseSensitive, ESearchDir::FromStart, 1);
+		if (SecondSlash != INDEX_NONE)
+		{
+			EnsureLabelDirectoryScanned(LabelPackage.Left(SecondSlash));
+		}
+	}
+}
+
 namespace
 {
 	/** The leaf of a package path: "/PLUGIN/Maps/Landing" -> "Landing". Already-short names pass through. */
@@ -795,6 +1033,12 @@ void FillRequiredMetadataFields(
 		}
 	}
 	Root->SetObjectField(TEXT("entity_data"), Entity);
+}
+
+bool IsUnderModdingPlugin(const FString& PackageName, const FString& PluginName)
+{
+	return PluginName.IsEmpty()
+		|| PackageName.StartsWith(TEXT("/") + PluginName + TEXT("/"), ESearchCase::IgnoreCase);
 }
 
 FString ResolveLevelPackage(const FString& LevelName, const FString& RootPath)

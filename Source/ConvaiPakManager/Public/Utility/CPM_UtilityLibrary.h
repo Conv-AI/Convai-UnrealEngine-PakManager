@@ -70,9 +70,6 @@ public:
 	static void CPM_LogMessage(const FString& Message, ECPM_LogLevel Verbosity = ECPM_LogLevel::Log);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static FString GetPythonScriptDirectory();
-
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static UClass* CPM_LoadClassByPath(const FString& ClassPath);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")

@@ -24,7 +24,6 @@
 #include "Dom/JsonValue.h"
 #include "Serialization/JsonWriter.h"
 #include "Utility/CPM_Log.h"
-#include "Interfaces/IPluginManager.h"
 
 #include "Misc/Paths.h"
 #include "HAL/PlatformProcess.h"
@@ -395,19 +394,6 @@ void UCPM_UtilityLibrary::CPM_LogMessage(const FString& Message, const ECPM_LogL
 		CPM_LOG(Log, TEXT("%s"), *Message);
 		break;
 	}
-}
-
-FString UCPM_UtilityLibrary::GetPythonScriptDirectory()
-{
-	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("ConvaiPakManager"));
-        if (Plugin.IsValid())
-        {
-            return FPaths::Combine(Plugin->GetBaseDir(), TEXT("Scripts/"));
-        }
-    
-        // Fallback or error message if plugin is not found
-        UE_LOG(LogTemp, Warning, TEXT("ConvaiPakManager plugin not found!"));
-        return FString();
 }
 
 UClass* UCPM_UtilityLibrary::CPM_LoadClassByPath(const FString& ClassPath)

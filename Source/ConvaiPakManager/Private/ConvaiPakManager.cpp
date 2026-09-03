@@ -6,11 +6,9 @@
 #include "Chunk/CPM_Chunk.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Docking/TabManager.h"
-#include "Misc/ConfigCacheIni.h"
 #include "ToolMenus.h"
 #include "UI/CPM_PakManagerStyle.h"
 #include "UI/SCPM_PakManagerPanel.h"
-#include "Utility/CPM_Log.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "WorkspaceMenuStructure.h"
 #include "WorkspaceMenuStructureModule.h"
@@ -125,55 +123,7 @@ void FConvaiPakManagerModule::OpenPakManager()
 
 void FConvaiPakManagerModule::MigrateChunkStateLayout()
 {
-	using namespace ConvaiPakManager::Chunk;
-
-	// The label set is known for the first time here, and anything cached before now was answered
-	// mid-scan.
-	InvalidateSoleChunkCache();
-
-	TArray<FString> MovedFiles;
-	switch (MigrateLegacyLayout(MovedFiles))
-	{
-	case EMigrationResult::Migrated:
-		CPM_LOG(Display, TEXT("Moved %d file(s) into this project's per-Chunk state directory."), MovedFiles.Num());
-		break;
-
-	case EMigrationResult::Ambiguous:
-	case EMigrationResult::Failed:
-		// MigrateLegacyLayout has already logged which files and why. Nothing was moved, so the
-		// creator's own copy of their AssetID is still where it was.
-		break;
-
-	case EMigrationResult::NothingToMigrate:
-		break;
-	}
-
-	// Everything still loose is production's by definition - nothing that could reach another
-	// backend has shipped. The URL comes from the SETTINGS rather than UConvaiURL::GetBaseURL,
-	// which honours -ConvaiProdURL= on the command line: one CI launch against staging would file a
-	// production record under staging permanently, where nothing would ever look for it again.
-	//
-	// Read through GConfig because UConvaiSettings lives at the SDK module's root, outside its
-	// Public folder, so its header is not includable from here. The default is the SDK's own, from
-	// UConvaiURL::GetBaseURL.
-	FString ProdUrl;
-	GConfig->GetString(TEXT("/Script/Convai.ConvaiSettings"), TEXT("CustomProdURL"), ProdUrl, GEngineIni);
-	ProdUrl.TrimStartAndEndInline();
-	if (ProdUrl.IsEmpty())
-	{
-		ProdUrl = TEXT("https://api.convai.com");
-	}
-
-	const FString ProductionSlug = EnvironmentSlug(ProdUrl);
-	for (const FCPM_Chunk& Chunk : Discover())
-	{
-		TArray<FString> Adopted;
-		if (AdoptLooseRecords(Chunk.Id, ProductionSlug, Adopted) == EMigrationResult::Migrated)
-		{
-			CPM_LOG(Display, TEXT("Adopted %d loose record(s) of chunk %d into %s: %s"),
-				Adopted.Num(), Chunk.Id, *ProductionSlug, *FString::Join(Adopted, TEXT(", ")));
-		}
-	}
+	ConvaiPakManager::Chunk::ReconcileStateLayout();
 }
 
 #undef LOCTEXT_NAMESPACE
