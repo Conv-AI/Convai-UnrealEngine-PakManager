@@ -1,6 +1,8 @@
 # Legacy parity: what the Blueprint uploader did that the Slate tool does not
 
-Status: `ready-for-agent`
+Status: `ready-for-agent` — for **Still unexamined** items 1–3 only. Every numbered gap below is
+closed, declined or registered for later; the Scene-path audit (item 1) is the one still capable of
+producing new register entries.
 
 The Slate rewrite (`3526d98 refactor!: delete the Blueprint tool and collapse to one editor module`)
 dropped the Editor Utility Widget `Content/Editor/AssetUploader.uasset` and, with it, a set of
@@ -15,7 +17,7 @@ adversarial second pass, 2 claims refuted and dropped.
 
 ---
 
-## The boot dead end
+## The boot dead end (as audited)
 
 ```mermaid
 flowchart TD
@@ -24,7 +26,7 @@ flowchart TD
     C --> D["GetSoleChunkId()<br/>CPM_Chunk.cpp:208"]
     D --> E{"Discover() finds<br/>exactly one label<br/>with ChunkId != -1?"}
     E -- no --> F["INDEX_NONE<br/>+ memoised for the session"]
-    F --> G["MigrateLegacyLayoutIn bails Ambiguous<br/>CPM_Chunk.cpp:440<br/>logs an Error, moves nothing"]
+    F --> G["MigrateLegacyLayoutIn bails Ambiguous<br/>CPM_Chunk.cpp:440<br/>logged an Error every refresh, moved nothing<br/>(now: silent seam, wrapper warns once, panel banners it)"]
     G --> H["switch case is a bare break<br/>ConvaiPakManager.cpp:141"]
     H --> I[Panel: 'No assets in this project yet.<br/>Add a Primary Asset Label...']
     I --> J[Creator hand-authors a label]
@@ -168,59 +170,97 @@ Registry.
 
 ## Gap register
 
-29 confirmed. Severity is "does a creator get a broken Asset or a dead tool" (blocker), "the tool is
-materially worse than the one it replaced" (major), or "polish" (minor).
+29 confirmed, plus 30 and 31 which the dead-helper census surfaced afterwards. Severity is "does a
+creator get a broken Asset or a dead tool" (blocker), "the tool is materially worse than the one it
+replaced" (major), or "polish" (minor). **Landed** names the commit on `feat/legacy-parity` that
+closed the gap; `declined` and `registered` rows are explained under **Notes on the closures**.
+
+| Commit | |
+|---|---|
+| `c9a9693` | feat(chunk): mint the Primary Asset Label |
+| `8439065` | feat(avatar): set up Convai components on Avatars |
+| `8bd838f` | feat(publish): re-check the entry point at publish |
+| `e6de8fa` | feat(ui): offer Create chunk on a legacy project |
+| `72636fe` | fix(publish): prove the pak was built by this run |
+| `5929c24` | refactor(chunk): put reconcile on a testable seam |
+| `af86077` | feat(thumbnail): add the Thumbnail module |
+| `410c406` | feat(publish): compare tool and engine versions |
+| `770177a` | feat(subsystem): wire the new editor commands |
+| `403d935` | feat(ui): warn on outdated tool or engine |
 
 ### Bootstrap and migration
 
-| # | Gap | Sev |
-|---|---|---|
-| 1 | Create the Chunk's Primary Asset Label when the project has none | blocker |
-| 2 | Give the creator a way to mint the first Chunk from the panel | blocker |
-| 3 | Register the label's directory in `AssetManagerSettings.PrimaryAssetTypesToScan` | blocker |
-| 4 | Retry the legacy-layout migration when the project gains its first Chunk | blocker |
-| 5 | Re-run migration when the Chunk set changes, not once per editor session | blocker |
-| 6 | Surface the migration outcome — a refused migration is invisible outside the log | blocker |
-| 7 | Re-read Chunks when the Asset Registry finishes its scan | major |
-| 8 | Tell the creator when a legacy layout could not be migrated | major |
-| 9 | Read the flat `ConvaiEssentials/ModdingMetaData.txt` when no per-Chunk copy exists | major |
-| 10 | Give a legacy project with no label a way back (recover, don't reopen "+ New asset") | major |
-| 11 | Carry the legacy raw-archive history across migration instead of re-uploading the project | minor |
+| # | Gap | Sev | Landed |
+|---|---|---|---|
+| 1 | Create the Chunk's Primary Asset Label when the project has none | blocker | `c9a9693` |
+| 2 | Give the creator a way to mint the first Chunk from the panel | blocker | `e6de8fa` |
+| 3 | Register the label's directory in `AssetManagerSettings.PrimaryAssetTypesToScan` | blocker | `c9a9693` |
+| 4 | Retry the legacy-layout migration when the project gains its first Chunk | blocker | `8bd838f` |
+| 5 | Re-run migration when the Chunk set changes, not once per editor session | blocker | `8bd838f` `e6de8fa` |
+| 6 | Surface the migration outcome — a refused migration is invisible outside the log | blocker | `e6de8fa` |
+| 7 | Re-read Chunks when the Asset Registry finishes its scan | major | `e6de8fa` |
+| 8 | Tell the creator when a legacy layout could not be migrated | major | `e6de8fa` `5929c24` |
+| 9 | Read the flat `ConvaiEssentials/ModdingMetaData.txt` when no per-Chunk copy exists | major | `c9a9693` |
+| 10 | Give a legacy project with no label a way back (recover, don't reopen "+ New asset") | major | `e6de8fa` |
+| 11 | Carry the legacy raw-archive history across migration instead of re-uploading the project | minor | **declined** |
 
 ### Avatar correctness
 
-| # | Gap | Sev |
-|---|---|---|
-| 12 | Detect whether an Avatar's Entry Point blueprint is a MetaHuman | blocker |
-| 13 | Assign the Convai body and face animation blueprints to a detected MetaHuman | blocker |
-| 14 | Ensure the Entry Point carries `BP_ConvaiChatbotComponent` and `UConvaiFaceSyncComponent` | blocker |
-| 15 | Refuse an Avatar carrying the raw C++ `UConvaiChatbotComponent` instead of the BP subclass | blocker |
-| 16 | Re-check components when a Publish or Package is accepted, not only at pick time | major |
-| 17 | Tell the creator the anim BPs were wired, or why they were not | minor |
+| # | Gap | Sev | Landed |
+|---|---|---|---|
+| 12 | Detect whether an Avatar's Entry Point blueprint is a MetaHuman | blocker | `8439065` |
+| 13 | Assign the Convai body and face animation blueprints to a detected MetaHuman | blocker | `8439065` |
+| 14 | Ensure the Entry Point carries `BP_ConvaiChatbotComponent` and `UConvaiFaceSyncComponent` | blocker | `8439065` |
+| 15 | Refuse an Avatar carrying the raw C++ `UConvaiChatbotComponent` instead of the BP subclass | blocker | `8439065` |
+| 16 | Re-check components when a Publish or Package is accepted, not only at pick time | major | `8bd838f` |
+| 17 | Tell the creator the anim BPs were wired, or why they were not | minor | `8439065` `770177a` |
 
 ### Entry Point scope
 
-| # | Gap | Sev |
-|---|---|---|
-| 18 | Refuse an Entry Point outside the Modding Plugin's mount root | blocker |
-| 19 | Offer to relocate an out-of-plugin pick — `CPM_DependencyCopyAPI` exists, nothing calls it | major |
-| 20 | Show the Entry Point's dependencies that fall outside the Modding Plugin | major |
+| # | Gap | Sev | Landed |
+|---|---|---|---|
+| 18 | Refuse an Entry Point outside the Modding Plugin's mount root | blocker | `8bd838f` |
+| 19 | Offer to relocate an out-of-plugin pick — `CPM_DependencyCopyAPI` exists, nothing calls it | major | `770177a` |
+| 20 | Show the Entry Point's dependencies that fall outside the Modding Plugin | major | `770177a` |
 
 ### Dropped in the rewrite
 
-| # | Gap | Sev |
-|---|---|---|
-| 21 | Gate publish on thumbnail *content*, not just on the file existing (`CPM_IsThumbnailValid` is orphaned) | major |
-| 22 | Let a creator use a texture they authored as the thumbnail | major |
-| 23 | Capture an Avatar thumbnail by rendering the avatar, not by grabbing the level viewport | major |
-| 24 | Restore the plugin self-update check that can stop an outdated uploader | major |
-| 25 | Warn when the project's engine version is not the one Convai targets | major |
-| 26 | Show the creator what will be dragged into the Pak | major |
-| 27 | Make the post-UAT "a Pak exists" check prove the Pak was built by *this* run | major |
-| 28 | Turn Live Coding off before handing the project to UAT | minor |
-| 29 | Say in the tool that `ConvaiEssentials` must not be moved or deleted | minor |
+| # | Gap | Sev | Landed |
+|---|---|---|---|
+| 21 | Gate publish on thumbnail *content*, not just on the file existing (`CPM_IsThumbnailValid` is orphaned) | major | `af86077` `770177a` |
+| 22 | Let a creator use a texture they authored as the thumbnail | major | `af86077` `770177a` |
+| 23 | Capture an Avatar thumbnail by rendering the avatar, not by grabbing the level viewport | major | `af86077` `770177a` |
+| 24 | Restore the plugin self-update check that can stop an outdated uploader | major | `410c406` `403d935` |
+| 25 | Warn when the project's engine version is not the one Convai targets | major | `410c406` `403d935` |
+| 26 | Show the creator what will be dragged into the Pak | major | `770177a` |
+| 27 | Make the post-UAT "a Pak exists" check prove the Pak was built by *this* run | major | `72636fe` |
+| 28 | Turn Live Coding off before handing the project to UAT | minor | `72636fe` |
+| 29 | Say in the tool that `ConvaiEssentials` must not be moved or deleted | minor | `770177a` |
+| 30 | Capture the thumbnail at a forced quality instead of whatever scalability the editor happens to be on — legacy set Epic/Cinematic and captured in PIE (`CPM_SetPlayMode` / `CPM_SetEngineScalability` were its fingerprint) | minor | **registered** |
+| 31 | Show the upload size before a Publish (`CPM_GetFileSize` was its fingerprint) | minor | **registered** |
 
-### Refuted — do not re-raise
+### Notes on the closures
+
+- **11 declined** (`wontfix`). The only history legacy carried is the create response's `versions`
+  list, and that names what the create call *asked for*, not what was uploaded. Honouring it would
+  mark an archive as already sent that the Asset may never have received — an Asset silently missing
+  content, unnoticed until a Convai product fails to load it. The cost of not honouring it is one
+  re-upload, so the register keeps the re-upload.
+- **20 and 26 closed as one feature.** Both ask what comes with the Entry Point, so they are one
+  on-demand dependency window: `ListDependencies` partitions the package's recursive closure by
+  `IsUnderModdingPlugin`, minus `/Script`, `/Engine` and the Convai SDK mount, and the detail panel's
+  `Dependencies…` button opens it. On demand rather than on every refresh, because the walk
+  force-loads packages and the panel already refreshes on every tab activation.
+- **23 renders through the engine.** `ThumbnailTools::RenderThumbnail` — the renderer the Content
+  Browser already draws a blueprint with — rather than a bespoke preview scene, so the thumbnail is
+  the picture the creator recognises. It needs an RHI, so that path has no headless coverage.
+- **24 warns, it does not block.** Legacy could stop an outdated uploader; this banners it. The check
+  fails open on a network error, as the policy display does, and a blocked creator has no in-tool
+  update path — blocking would rebuild the dead end this register exists to remove. Its limitation is
+  recorded at the constant: the pin is `ConvaiPakManager.uplugin` on `main`, not the latest release,
+  so a creator on the newest release can be told about a version the Modding Tool cannot install yet.
+
+### Refuted or decided — do not re-raise
 
 - **Linux cross-compile toolchain provisioning.** Wrong layer, and already stronger elsewhere. The
   Modding Tool's Python installer reads `toolchain_versions` / `toolchain_download_urls` /
@@ -234,6 +274,10 @@ materially worse than the one it replaced" (major), or "polish" (minor).
   is false: UE 5.8 ships `DisplayPluginFolders=True` in `BaseEditorSettings.ini`, and
   `SContentBrowser::CreateEditorConfigIfRequired` seeds each browser instance from that global. There
   is nothing to turn on.
+- **Which backend a loose record files under.** Decided, not deferred: a record with no Chunk to hang
+  it on keeps filing under the slug derived from `UConvaiSettings.CustomProdURL`. The legacy tool
+  resolved its own endpoint through that same setting, so a project pointed at staging published to
+  staging and its records belong under the staging slug — which is what ADR-0010 already says.
 
 ---
 
@@ -249,12 +293,31 @@ Named here so the next pass does not have to rediscover them:
    (`CPM_Chunk.cpp:700-895`). A silent mismatch here corrupts every published record.
 3. **`assets/get` is dead.** `UCPM_GetAssetMetaDataProxy::GetAssetProxy` (`CPM_Proxy.cpp:303`) has no
    caller; legacy refreshed the local echo after every create/update/raw upload. What goes stale?
-4. **Dead-helper census.** `CPM_LoadAssetByPath`, `CPM_LoadClassByPath`, `CPM_LoadAssetDataByPath`,
-   `CPM_IsThumbnailValid`, `CPM_GetFileSize`, `GetPackageDependencies`, `AnalyzePackageDependencies`
-   all have zero callers. That set is the fingerprint of the dropped legacy validation graphs — walking
-   it is a mechanical way to finish this register rather than guessing.
-5. **`PickedAssetIsValid` (38 nodes) is only half mined** — the asset-is-actor branch, the subobject
-   count check and two path-split checks were never enumerated, so "what makes a pick valid" is still
-   partly unknown.
-6. **`CPM_ChunkMigrationTest.cpp` passes** next to a migration that demonstrably does not run. Which
-   precondition does the test fake? Cheapest read left.
+4. **Dead-helper census — done.** The set was the fingerprint it looked like, and walking it finished
+   the register. *Wired up:* `OpenFileDialog` (gap 22), `GetPackageDependencies` (gaps 20/26).
+   *Replaced:* `CPM_IsThumbnailValid` by `Thumbnail::HasContent` — it read `Texture->Source`, which a
+   texture loaded from disk never has, so it answered false for every thumbnail this tool ever made;
+   `CPM_DeleteDirectory` by the targeted stale-Pak delete (gap 27); `CPM_ToggleLiveCoding` by a
+   session-scoped park (gap 28) — the helper wrote the creator's *persistent* setting and opened a
+   modal. *Deleted as refuted:* `CPM_Set/GetSystemEnvVar` and `CPM_ShowPluginContent`, both above.
+   *Deleted as superseded:* `CPM_MarkAssetDirty`, `AnalyzePackageDependencies`,
+   `GetDestinationPackagePath` and the `CopyPackage*` Blueprint wrappers — the subsystem calls
+   `FCPM_DependencyCopyAPI` directly — and the three `Load*ByPath` helpers (item 5). Two helpers
+   answered to nothing in the register and became gaps 30 and 31.
+5. **`PickedAssetIsValid` (38 nodes) is half closed.** Its Avatar half is covered: the asset-is-actor
+   branch is `PrepareAvatarBlueprint` refusing anything that is not an Actor blueprint (`8439065`),
+   and `CPM_LoadClassByPath` / `CPM_LoadAssetByPath` / `CPM_LoadAssetDataByPath` were the fingerprint
+   of the graph that called it — deleted with the census. The subobject count check and the two
+   path-split checks are Scene-side and belong to item 1's audit.
+6. **`CPM_ChunkMigrationTest.cpp` passed because it never reached the decision.** Every case called
+   `MigrateLegacyLayoutIn(Path, ChunkId, …)` with the Chunk ID *supplied by the test* — including the
+   `INDEX_NONE` case, which asserts the refusal. Nothing under `Tests/` referenced `GetSoleChunkId`,
+   `Discover()`, `MigrateLegacyLayout()` or `ReconcileStateLayout`, so the suite proved the file moves
+   and never the attribution that gates them: honest about the half it covered, silent about the half
+   that failed. The legacy label is not the culprit either — `PAL_A3CLP672QMGL73V5F2KH.uasset` carries
+   `ChunkId` in its name table while `Priority`, left at its default, is absent, and UE serialises
+   only a tagged property that differs from the archetype, so that label declares a real Chunk ID.
+   The runtime failure was resolution, timing or the session memo, never a `-1` label. Closed by
+   `5929c24`: `ReconcileStateLayoutIn` is a pure seam over the sole-Chunk collapse, and two tests now
+   cover the decision. Read-verified only, for want of a real Asset Registry: the wrapper's scan guard
+   and its memo invalidation.
