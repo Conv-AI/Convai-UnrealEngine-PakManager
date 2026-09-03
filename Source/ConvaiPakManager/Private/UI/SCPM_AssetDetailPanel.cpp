@@ -983,6 +983,7 @@ FReply SCPM_AssetDetailPanel::HandleUseSelectedAsset()
 		EntryPointError = FText::GetEmpty();
 		SetupNotes = FText::FromString(Notes);
 		Asset->LoadFrom(*Subsystem);
+		OfferToGatherDependencies(Asset->EntryPoint);
 	}
 	else
 	{
@@ -1054,6 +1055,66 @@ FReply SCPM_AssetDetailPanel::HandleRelocateEntryPoint()
 	Notify(FText::Format(LOCTEXT("RelocateDone", "Copied into the plugin as {0}, and picked it."),
 		FText::FromString(NewPackage)), SNotificationItem::CS_Success);
 	return FReply::Handled();
+}
+
+void SCPM_AssetDetailPanel::OfferToGatherDependencies(const FString& EntryPoint)
+{
+	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+	if (!Subsystem || !Asset.IsValid() || EntryPoint.IsEmpty())
+	{
+		return;
+	}
+
+	TArray<FString> Inside;
+	TArray<FString> Outside;
+	if (!Subsystem->ListDependencies(Asset->ChunkId, EntryPoint, Inside, Outside) || Outside.IsEmpty())
+	{
+		return;
+	}
+
+	FCPM_ModdingMetadata Modding;
+	UCPM_UtilityLibrary::GetModdingMetadataForChunk(Asset->ChunkId, Modding);
+
+	// Named, not just counted: "8 assets" tells a creator nothing about whether the copy is the
+	// right answer, and the first few paths tell them exactly which folder they built out of.
+	const int32 NumListed = FMath::Min(Outside.Num(), 8);
+	TArray<FString> Listed;
+	for (int32 Index = 0; Index < NumListed; ++Index)
+	{
+		Listed.Add(Outside[Index]);
+	}
+	if (Outside.Num() > NumListed)
+	{
+		Listed.Add(FString::Printf(TEXT("...and %d more"), Outside.Num() - NumListed));
+	}
+
+	const FText Question = FText::Format(
+		LOCTEXT("GatherQuestion",
+			"{0} uses {1} assets that are not in /{2}/:\n\n{3}\n\n"
+			"Only what is in the plugin is published. Copy them in and point {0} at the copies?\n\n"
+			"Your originals stay where they are."),
+		FText::FromString(FPaths::GetCleanFilename(EntryPoint)),
+		FText::AsNumber(Outside.Num()),
+		FText::FromString(Modding.PluginName),
+		FText::FromString(FString::Join(Listed, TEXT("\n"))));
+	if (FMessageDialog::Open(EAppMsgType::YesNo, Question) != EAppReturnType::Yes)
+	{
+		return;
+	}
+
+	int32 Copied = 0;
+	FString Why;
+	if (!Subsystem->GatherDependenciesIntoPlugin(Asset->ChunkId, EntryPoint, Copied, Why))
+	{
+		Notify(FText::FromString(Why), SNotificationItem::CS_Fail);
+		return;
+	}
+
+	Asset->LoadFrom(*Subsystem);
+	Notify(FText::Format(LOCTEXT("GatherDone", "Copied {0} packages into /{1}/ and repointed {2}."),
+		FText::AsNumber(Copied),
+		FText::FromString(Modding.PluginName),
+		FText::FromString(FPaths::GetCleanFilename(EntryPoint))), SNotificationItem::CS_Success);
 }
 
 FReply SCPM_AssetDetailPanel::HandleShowDependencies()

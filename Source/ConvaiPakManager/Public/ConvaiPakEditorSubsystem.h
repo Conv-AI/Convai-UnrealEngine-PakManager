@@ -248,12 +248,31 @@ public:
 	bool RelocateEntryPointIntoPlugin(int32 ChunkId, const FString& PackageName, FString& OutNewPackage, FString& OutWhy);
 
 	/**
+	 * Copies everything an Entry Point inside the Modding Plugin needs from outside it in, and
+	 * repoints the Entry Point at the copies.
+	 *
+	 * The other half of the same problem: a creator whose level is in the plugin but whose meshes,
+	 * materials and engine shapes are not publishes a Pak that opens missing everything it draws.
+	 * The Entry Point itself is not copied - it is already where it belongs - so only its references
+	 * move.
+	 *
+	 * The originals stay put. A creator keeps working in /Game if that is where they work.
+	 *
+	 * @param OutCopied  How many packages were copied in. Zero is a success: nothing was outside.
+	 * @param OutWhy     Why nothing was copied, phrased for the creator. Untouched on success.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool GatherDependenciesIntoPlugin(int32 ChunkId, const FString& PackageName, int32& OutCopied, FString& OutWhy);
+
+	/**
 	 * The Source Packages this Entry Point drags into the Pak, split by whether they are in the
 	 * Modding Plugin.
 	 *
-	 * A label gathers recursively, so a dependency outside the plugin is cooked in wherever it
-	 * lives - which is how a Pak quietly grows by a folder of test content. Engine and Convai SDK
-	 * content is left out of both lists: every product already ships it.
+	 * The Pak holds what the label gathers, which is the plugin's own content: a dependency outside
+	 * it is not in the Pak, and the product loads an Asset missing whatever that dependency drew.
+	 * Verified by listing a built Pak - only the plugin's packages are in it, despite the label's
+	 * recursive rule. Engine content counts as outside; only the Convai SDK's own content is left
+	 * out of both lists, because every product ships it.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool ListDependencies(int32 ChunkId, const FString& PackageName, TArray<FString>& OutInsidePlugin,

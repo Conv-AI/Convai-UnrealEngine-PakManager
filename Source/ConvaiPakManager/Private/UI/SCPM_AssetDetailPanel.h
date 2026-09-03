@@ -84,6 +84,14 @@ private:
 	FReply HandleUseSelectedAsset();
 	FReply HandleRelocateEntryPoint();
 	FReply HandleShowDependencies();
+
+	/**
+	 * Offers to copy in whatever an Entry Point inside the plugin still reaches outside it.
+	 *
+	 * Asked at the pick, not left for the creator to find: the Pak is built from what the plugin
+	 * holds, and a level whose meshes live in /Game looks perfectly fine right up to the publish.
+	 */
+	void OfferToGatherDependencies(const FString& EntryPoint);
 	FReply HandleRevealEntryPoint();
 	FReply HandleCaptureThumbnail();
 	FReply HandleChooseThumbnailImage();

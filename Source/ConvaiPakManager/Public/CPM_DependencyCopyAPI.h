@@ -115,6 +115,17 @@ struct CONVAIPAKMANAGER_API FCPM_DependencyCopyOptions
 	/** Skip these exact packages (exact match). Example: "/Game/UI/WBP_Debug" */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy|Exclusions")
 	TArray<FName> ExcludedPackages;
+
+	/**
+	 * Packages that reference the copies but are not themselves copied, rewritten to point at them.
+	 *
+	 * The reference fixup only reaches packages it copied, which leaves out the one case where the
+	 * asset being gathered for already lives at the destination: an Entry Point inside the Modding
+	 * Plugin whose meshes and materials are outside it. Copying its dependencies in and leaving the
+	 * Entry Point pointing at the originals gathers nothing into the Pak.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
+	TArray<FName> AdditionalPackagesToFixup;
 };
 
 /**
@@ -334,10 +345,12 @@ private:
 	 * FArchiveReplaceObjectRef to replace all references in copied packages.
 	 * 
 	 * @param SourceToDest  Map of source package names to destination package names
+	 * @param AdditionalPackagesToFixup  Packages to rewrite that were not themselves copied
 	 * @param OutError      Error message if operation fails
 	 * @return              True if successful
 	 */
 	static bool FixupAllHardReferences(
 		const TMap<FName, FName>& SourceToDest,
+		const TArray<FName>& AdditionalPackagesToFixup,
 		FString& OutError);
 };

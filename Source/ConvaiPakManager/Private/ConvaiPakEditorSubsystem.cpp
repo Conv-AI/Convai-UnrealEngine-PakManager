@@ -274,6 +274,56 @@ namespace
 		return TEXT("/ConvAI/");
 	}
 
+	/**
+	 * The content no Pak has to carry, because every Convai product already ships it.
+	 *
+	 * Engine content is deliberately NOT here. A product cooks only the engine assets its own
+	 * content references, so a creator's level built from engine shapes and materials opens with
+	 * those references dangling; engine dependencies are copied into the plugin like any other.
+	 */
+	TArray<FString> ContentEveryProductShips()
+	{
+		return { ConvaiSdkMountRoot(), TEXT("/ConvaiHTTP/") };
+	}
+
+	/** Why a gather copied nothing, phrased for the creator. */
+	FString WhyCopyFailed(const FCPM_DependencyCopyReport& Report)
+	{
+		if (!Report.ErrorMessage.IsEmpty())
+		{
+			return Report.ErrorMessage;
+		}
+
+		TArray<FString> Failed;
+		for (const FName& Package : Report.FailedPackages)
+		{
+			Failed.Add(Package.ToString());
+		}
+		if (!Failed.IsEmpty())
+		{
+			return FString::Printf(TEXT("could not copy %s"), *FString::Join(Failed, TEXT(", ")));
+		}
+		return TEXT("the copy failed; see the Output Log");
+	}
+
+	/** How every gather into the Modding Plugin is done, wherever the Entry Point is picked from. */
+	FCPM_DependencyCopyOptions GatherOptions()
+	{
+		FCPM_DependencyCopyOptions Options;
+		// Copy, never move: the creator picked an asset that lives somewhere for a reason, and a copy
+		// that goes wrong costs them nothing but the copies.
+		Options.Operation = ECPM_DependencyCopyOp::Copy;
+		// Engine content is copied in rather than left where it is: what a Convai product cooked of
+		// /Engine/ is whatever its own content needed, which is not what a creator's level needs.
+		Options.EnginePolicy = ECPM_EngineDependencyPolicy::CopyIntoDestination;
+		Options.bOverwriteExisting = false;
+		Options.bSaveAfterCopy = true;
+		Options.bSuppressUI = true;
+		Options.bFixupRedirectors = true;
+		Options.ExcludedPaths = ContentEveryProductShips();
+		return Options;
+	}
+
 	/** Field names as the Convai asset metadata document spells them; the Draft keeps them. */
 	const TCHAR* AssetNameField = TEXT("asset_name");
 	const TCHAR* AssetDescriptionField = TEXT("asset_description");
@@ -427,6 +477,17 @@ bool UConvaiPakEditorSubsystem::PrepareEntryPoint(
 		return false;
 	}
 
+	// An Entry Point references Convai's content - the BP chatbot component added below, a Convai
+	// character placed in a Scene - and a plugin may only reference the plugins its descriptor names.
+	// Warned about rather than refused: the reference is legal content, and a creator whose `.uplugin`
+	// is read-only should still be able to publish.
+	if (FString Why; !ConvaiPakManager::Chunk::EnsureConvaiDependency(Modding.PluginName, Why))
+	{
+		CPM_LOG(Warning, TEXT("Could not declare Convai as a dependency of the %s plugin (%s). Asset ")
+			TEXT("validation will report %s as illegally referencing Convai's content."),
+			*Modding.PluginName, *Why, *PackageName);
+	}
+
 	const bool bWantsLevel = Modding.AssetType.Equals(TEXT("Scene"), ESearchCase::IgnoreCase);
 	if (!bWantsLevel)
 	{
@@ -576,16 +637,7 @@ bool UConvaiPakEditorSubsystem::RelocateEntryPointIntoPlugin(
 		return false;
 	}
 
-	FCPM_DependencyCopyOptions Options;
-	// Copy, never move: the creator picked an asset that lives somewhere for a reason, and a copy
-	// that goes wrong costs them nothing but the copies.
-	Options.Operation = ECPM_DependencyCopyOp::Copy;
-	Options.EnginePolicy = ECPM_EngineDependencyPolicy::Skip;
-	Options.bOverwriteExisting = false;
-	Options.bSaveAfterCopy = true;
-	Options.bSuppressUI = true;
-	Options.bFixupRedirectors = true;
-	Options.ExcludedPaths = { TEXT("/Engine/"), ConvaiSdkMountRoot(), TEXT("/ConvaiHTTP/") };
+	const FCPM_DependencyCopyOptions Options = GatherOptions();
 
 	const FString DestinationRoot = TEXT("/") + Modding.PluginName + TEXT("/");
 	const FName Source(*PackageName);
@@ -593,24 +645,7 @@ bool UConvaiPakEditorSubsystem::RelocateEntryPointIntoPlugin(
 		FCPM_DependencyCopyAPI::CopyPackageWithDependencies(Source, DestinationRoot, Options);
 	if (!Report.bSuccess)
 	{
-		TArray<FString> Failed;
-		for (const FName& Package : Report.FailedPackages)
-		{
-			Failed.Add(Package.ToString());
-		}
-
-		if (!Report.ErrorMessage.IsEmpty())
-		{
-			OutWhy = Report.ErrorMessage;
-		}
-		else if (!Failed.IsEmpty())
-		{
-			OutWhy = FString::Printf(TEXT("could not copy %s"), *FString::Join(Failed, TEXT(", ")));
-		}
-		else
-		{
-			OutWhy = TEXT("the copy failed; see the Output Log");
-		}
+		OutWhy = WhyCopyFailed(Report);
 		return false;
 	}
 
@@ -630,6 +665,52 @@ bool UConvaiPakEditorSubsystem::RelocateEntryPointIntoPlugin(
 		OutWhy = GetChunkStatus(ChunkId).Message;
 		return false;
 	}
+	return true;
+}
+
+bool UConvaiPakEditorSubsystem::GatherDependenciesIntoPlugin(
+	const int32 ChunkId, const FString& PackageName, int32& OutCopied, FString& OutWhy)
+{
+	OutCopied = 0;
+
+	FCPM_ModdingMetadata Modding;
+	UCPM_UtilityLibrary::GetModdingMetadataForChunk(ChunkId, Modding);
+	if (Modding.PluginName.IsEmpty())
+	{
+		OutWhy = TEXT("this project records no modding plugin to copy into");
+		return false;
+	}
+
+	// The other command is for the other case, and running this one there would copy the
+	// dependencies while leaving the Entry Point itself outside the Pak.
+	if (!ConvaiPakManager::Chunk::IsUnderModdingPlugin(PackageName, Modding.PluginName))
+	{
+		OutWhy = FString::Printf(
+			TEXT("%s is outside the %s plugin, so it has to be copied in rather than gathered for"),
+			*PackageName, *Modding.PluginName);
+		return false;
+	}
+
+	FCPM_DependencyCopyOptions Options = GatherOptions();
+	// The Entry Point already lives under the mount, so the copy skips it - and then nothing would
+	// point its references at the copies it just made. Naming it here is what repoints it.
+	//
+	// ponytail: the Entry Point package alone. A World Partition level keeps its actors in external
+	// packages, whose references this does not reach; add them here if creators publish WP scenes.
+	Options.AdditionalPackagesToFixup = { FName(*PackageName) };
+
+	const FString DestinationRoot = TEXT("/") + Modding.PluginName + TEXT("/");
+	const FCPM_DependencyCopyReport Report =
+		FCPM_DependencyCopyAPI::CopyPackageWithDependencies(FName(*PackageName), DestinationRoot, Options);
+	if (!Report.bSuccess)
+	{
+		OutWhy = WhyCopyFailed(Report);
+		return false;
+	}
+
+	OutCopied = Report.CopiedCount;
+	CPM_LOG(Display, TEXT("Gathered %d packages into %s for %s (%d already there)."),
+		Report.CopiedCount, *DestinationRoot, *PackageName, Report.SkippedCount);
 	return true;
 }
 
@@ -654,7 +735,7 @@ bool UConvaiPakEditorSubsystem::ListDependencies(const int32 ChunkId, const FStr
 	// what is wanted here is the walk, stopped at the content every product already has.
 	UConvaiPakManagerEditorUtils::GetPackageDependencies(
 		FName(*PackageName),
-		{ TEXT("/Engine/"), ConvaiSdkMountRoot(), TEXT("/ConvaiHTTP/") },
+		ContentEveryProductShips(),
 		AllDependencies, ExternalObjectsPaths, Excluded);
 
 	for (const FName& Dependency : AllDependencies)

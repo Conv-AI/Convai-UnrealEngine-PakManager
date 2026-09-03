@@ -664,7 +664,7 @@ bool FCPM_DependencyCopyAPI::ExecuteAdvancedCopy(
 	UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Performing comprehensive reference fixup for all copied packages..."));
 	
 	FString FixupError;
-	if (!FixupAllHardReferences(SourceToDest, FixupError))
+	if (!FixupAllHardReferences(SourceToDest, Options.AdditionalPackagesToFixup, FixupError))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: Reference fixup warning: %s"), *FixupError);
 		// Don't fail the whole operation for fixup issues, but log it
@@ -766,6 +766,7 @@ bool FCPM_DependencyCopyAPI::DuplicateAssetManually(
 
 bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 	const TMap<FName, FName>& SourceToDest,
+	const TArray<FName>& AdditionalPackagesToFixup,
 	FString& OutError)
 {
 	if (SourceToDest.Num() == 0)
@@ -863,6 +864,21 @@ bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 					break;
 				}
 			}
+		}
+	}
+
+	// Rewritten alongside the copies, never as a copy: these packages keep their own path and only
+	// their references move, which is what repoints an Entry Point at the dependencies just gathered.
+	for (const FName& PackageName : AdditionalPackagesToFixup)
+	{
+		if (UPackage* Package = LoadPackage(nullptr, *PackageName.ToString(), LOAD_None))
+		{
+			DestinationPackages.AddUnique(Package);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: Could not load %s to fix up its references"),
+				*PackageName.ToString());
 		}
 	}
 
