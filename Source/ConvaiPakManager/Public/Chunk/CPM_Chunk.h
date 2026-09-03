@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "UObject/TopLevelAssetPath.h"
 
+struct FPluginDescriptor;
+
 /**
  * A Chunk: the Source Packages gathered into one publishable unit by one Primary Asset Label.
  * See CONTEXT.md. One Chunk is one Asset on Convai, never a part of one.
@@ -252,6 +254,35 @@ CONVAIPAKMANAGER_API void FillRequiredMetadataFields(
  * its own /Game content records no plugin to be inside.
  */
 CONVAIPAKMANAGER_API bool IsUnderModdingPlugin(const FString& PackageName, const FString& PluginName);
+
+/**
+ * Declares the Convai SDK as a dependency of the Modding Plugin, so its content may reference it.
+ *
+ * A plugin's content may only reference the engine, the project, and the plugins its `.uplugin`
+ * names (AssetValidator_AssetReferenceRestrictions). An Entry Point always ends up referencing
+ * Convai's content - the BP chatbot component an Avatar is given, a Convai character placed in a
+ * Scene - and the Modding Tool generates a descriptor that declares nothing, so every such project
+ * fails validation on a reference the Pak Manager itself put there.
+ *
+ * Writing the descriptor broadcasts OnPluginEdited, which is what rebuilds the editor's domain
+ * database; no restart is needed for the error to stop.
+ *
+ * An empty PluginName passes: a project that labels its own /Game content has no descriptor to
+ * amend and needs none, project content already seeing every project plugin.
+ *
+ * @param OutError  Why the descriptor could not be written. Untouched when there was nothing to do.
+ */
+CONVAIPAKMANAGER_API bool EnsureConvaiDependency(const FString& PluginName, FString& OutError);
+
+/**
+ * Adds Convai to a descriptor's dependencies, or enables the entry that is already there.
+ *
+ * Separated from the file it lives in so the rule can be exercised without a plugin on disk.
+ *
+ * @return Whether the descriptor changed.
+ */
+CONVAIPAKMANAGER_API bool DeclareConvaiDependency(FPluginDescriptor& Descriptor,
+	const FString& ConvaiPluginName);
 
 /**
  * Whether an asset is the kind a Chunk's Asset Type can publish.

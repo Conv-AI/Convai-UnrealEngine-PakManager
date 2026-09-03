@@ -7,6 +7,7 @@
 #include "Misc/AutomationTest.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "PluginDescriptor.h"
 
 #if WITH_AUTOMATION_TESTS
 
@@ -146,6 +147,46 @@ bool FCPMChunkBootstrapEntryPointMustMatchTheAssetType::RunTest(const FString&)
 	// which is what a Chunk is when nothing says otherwise.
 	TestFalse(TEXT("an unrecognised asset type is read as an avatar"),
 		EntryPointSuitsAssetType(Level, TEXT("/P/Maps/A"), FString(), Why));
+
+	return true;
+}
+
+/**
+ * The Modding Tool generates a descriptor that declares no dependencies, so content under the
+ * plugin may not reference Convai's - which every Entry Point ends up doing.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMChunkBootstrapDeclaresConvaiOnce,
+	"ConvaiPakManager.Chunk.Bootstrap.DeclaresConvaiOnce",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMChunkBootstrapDeclaresConvaiOnce::RunTest(const FString&)
+{
+	FPluginDescriptor Generated;
+	TestTrue(TEXT("a generated descriptor gains the dependency"), DeclareConvaiDependency(Generated, TEXT("Convai")));
+	if (!TestEqual(TEXT("exactly one"), Generated.Plugins.Num(), 1))
+	{
+		return false;
+	}
+	TestEqual(TEXT("named Convai"), Generated.Plugins[0].Name, FString(TEXT("Convai")));
+	TestTrue(TEXT("and enabled, which is what the domain database reads"), Generated.Plugins[0].bEnabled);
+
+	TestFalse(TEXT("a second pass changes nothing"), DeclareConvaiDependency(Generated, TEXT("Convai")));
+	TestEqual(TEXT("and adds no duplicate"), Generated.Plugins.Num(), 1);
+
+	// The `.uplugin` the SDK ships spells its own name "ConvAI" while its content root reads
+	// "/Convai/"; a descriptor naming either already declares the dependency.
+	FPluginDescriptor OtherCase;
+	OtherCase.Plugins.Emplace(TEXT("ConvAI"), true);
+	TestFalse(TEXT("case does not make a second entry"), DeclareConvaiDependency(OtherCase, TEXT("Convai")));
+	TestEqual(TEXT("so the descriptor still holds one"), OtherCase.Plugins.Num(), 1);
+
+	FPluginDescriptor Disabled;
+	Disabled.Plugins.Emplace(TEXT("Convai"), false);
+	TestTrue(TEXT("a disabled entry is enabled rather than duplicated"),
+		DeclareConvaiDependency(Disabled, TEXT("Convai")));
+	TestEqual(TEXT("still one entry"), Disabled.Plugins.Num(), 1);
+	TestTrue(TEXT("now enabled"), Disabled.Plugins[0].bEnabled);
 
 	return true;
 }

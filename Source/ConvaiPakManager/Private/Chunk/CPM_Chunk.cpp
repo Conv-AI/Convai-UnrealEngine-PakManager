@@ -12,11 +12,13 @@
 #include "Factories/DataAssetFactory.h"
 #include "HAL/FileManager.h"
 #include "IAssetTools.h"
+#include "Interfaces/IPluginManager.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "Misc/SecureHash.h"
+#include "PluginDescriptor.h"
 #include "RestAPI/ConvaiURL.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -1076,6 +1078,76 @@ bool IsUnderModdingPlugin(const FString& PackageName, const FString& PluginName)
 {
 	return PluginName.IsEmpty()
 		|| PackageName.StartsWith(TEXT("/") + PluginName + TEXT("/"), ESearchCase::IgnoreCase);
+}
+
+bool DeclareConvaiDependency(FPluginDescriptor& Descriptor, const FString& ConvaiPluginName)
+{
+	FPluginReferenceDescriptor* Existing = Descriptor.Plugins.FindByPredicate(
+		[&ConvaiPluginName](const FPluginReferenceDescriptor& Reference)
+		{
+			return Reference.Name.Equals(ConvaiPluginName, ESearchCase::IgnoreCase);
+		});
+
+	if (Existing)
+	{
+		// A disabled entry is still an entry, and the domain database reads bEnabled, not presence.
+		if (Existing->bEnabled)
+		{
+			return false;
+		}
+		Existing->bEnabled = true;
+		return true;
+	}
+
+	Descriptor.Plugins.Emplace(ConvaiPluginName, true);
+	return true;
+}
+
+bool EnsureConvaiDependency(const FString& PluginName, FString& OutError)
+{
+	if (PluginName.IsEmpty())
+	{
+		return true;
+	}
+
+	IPluginManager& PluginManager = IPluginManager::Get();
+	const TSharedPtr<IPlugin> ModdingPlugin = PluginManager.FindPlugin(PluginName);
+	if (!ModdingPlugin)
+	{
+		OutError = FString::Printf(TEXT("no plugin named %s is mounted"), *PluginName);
+		return false;
+	}
+
+	// Asked for rather than hardcoded, for the same reason the Avatar module asks: the name in the
+	// `.uplugin` is what FindEnabledPlugin matches when the domain database is rebuilt.
+	const TSharedPtr<IPlugin> Convai = PluginManager.FindPlugin(TEXT("ConvAI"));
+	if (!Convai)
+	{
+		OutError = TEXT("the Convai plugin is not mounted");
+		return false;
+	}
+	if (Convai == ModdingPlugin)
+	{
+		return true;
+	}
+
+	FPluginDescriptor Descriptor = ModdingPlugin->GetDescriptor();
+	if (!DeclareConvaiDependency(Descriptor, Convai->GetName()))
+	{
+		return true;
+	}
+
+	FText FailReason;
+	if (!ModdingPlugin->UpdateDescriptor(Descriptor, FailReason))
+	{
+		OutError = FString::Printf(TEXT("%s could not be written: %s"),
+			*ModdingPlugin->GetDescriptorFileName(), *FailReason.ToString());
+		return false;
+	}
+
+	CPM_LOG(Display, TEXT("Declared %s as a dependency of the %s plugin, so its content may reference Convai's."),
+		*Convai->GetName(), *PluginName);
+	return true;
 }
 
 bool EntryPointSuitsAssetType(const FTopLevelAssetPath& AssetClass, const FString& PackageName,
