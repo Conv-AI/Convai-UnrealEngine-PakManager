@@ -64,13 +64,32 @@ publishes broken with no warning. `PrepareEntryPoint` is the shared seam — it 
 publish and package, and it is where `EnsureConvaiDependency` was put for exactly that reason.
 Whether the publish path should refuse, warn, or gather silently is a product decision.
 
-Also live: `.scratch/overnight-fixes/`, opened separately against the same code. Its issue 01 now
-reads the other way round: a creator hit the MetaHuman validation error **with `71aa9b4` in the
-branch**, so the `.uplugin` declaration is landing and not taking effect. The leading hypothesis
-there is that nothing rebuilds the asset-referencing domain database after `UpdateDescriptor`, so
-the validator keeps its startup table until the editor restarts. The runtime half of the exclusion
-is untouched and still open. Read that brief before editing `ContentEveryProductShips()` — both
-pieces of work move the same list.
+Also live: `.scratch/overnight-fixes/`, opened separately against the same code. Its issue 01 asks
+why a creator hit the MetaHuman validation error **with `71aa9b4` in the branch**. Measured since:
+the commit was in the branch but not in the editor that was running, so the fix never executed
+there.
+
+- The Modding Plugin's `.uplugin` on disk carries `"Name": "ConvAI", "Enabled": true`, so
+  `EnsureConvaiDependency` does land.
+- A `-run=DataValidation` pass over the whole project in a **fresh process** produced **no**
+  `AssetReferenceRestrictions` reference errors at all. `/JBILN5CDNI4TRYELD6CS/BP_Hana` came back
+  "contains valid data, but has warnings" — the warnings being a deprecation notice from Convai's
+  own `ConvaiBaseCharacter`, nothing to do with references.
+- The failing session's log carries **no** `Declared ConvAI as a dependency` line and no domain-DB
+  rebuild, while the session after the build carries both and zero reference errors. That editor was
+  started before the build: the commit was in the branch, not in the running binary.
+
+So there is no bug here to fix, and the "stale domain database" hypothesis is dead on its own terms
+too — the validate-on-save path force-refreshes that database three times before it checks. Issue 01
+now scopes what is actually left, which is that a *failed* declaration still reaches nobody but the
+Output Log. The runtime half of the `/ConvAI/` exclusion question is untouched and still open — read that
+brief before editing `ContentEveryProductShips()`, because both pieces of work move the same list.
+
+That same run turned up the project's only validation error, which is a copy artefact and belongs to
+the "ControlRig assets are not getting copied" report:
+`/JBILN5CDNI4TRYELD6CS/MetaHumans/.../mh_ShoeTongue_CtrlRig` soft-references a missing package under
+`/CharacterParts/`, a mount this project does not have. Nothing can copy what is not there, so the
+gather cannot fix that one — it needs a decision, not a bug fix.
 
 ## Working notes
 
