@@ -103,4 +103,71 @@ bool FCPMAssetRecordCleanupADeleteOnOneEnvironmentLeavesTheOtherAlone::RunTest(c
 	return true;
 }
 
+/**
+ * The other half: once the last backend lets go, the inputs go with it. Kept, they would refill the
+ * form for an Asset that no longer exists anywhere, under a Publish that can only mint a new one.
+ *
+ * ModdingMetaData still stays - it describes the project, not anything published from it.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMAssetRecordCleanupTheLastDeleteTakesTheDraftAndThumbnail,
+	"ConvaiPakManager.Chunk.Cleanup.TheLastDeleteTakesTheDraftAndThumbnail",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMAssetRecordCleanupTheLastDeleteTakesTheDraftAndThumbnail::RunTest(const FString&)
+{
+	const int32 ChunkId = 7;
+	const FString Essentials = FPaths::Combine(
+		FPaths::ProjectIntermediateDir(), TEXT("CPM_Tests"), TEXT("TheLastDelete"), TEXT("ConvaiEssentials"));
+
+	IFileManager::Get().DeleteDirectory(*Essentials, false, true);
+
+	const FString Chunk = FPaths::Combine(Essentials, TEXT("ChunkId_7"));
+	auto Write = [&Chunk](const FString& RelativePath, const FString& Contents)
+	{
+		const FString Path = FPaths::Combine(Chunk, RelativePath);
+		IFileManager::Get().MakeDirectory(*FPaths::GetPath(Path), true);
+		FFileHelper::SaveStringToFile(Contents, *Path);
+	};
+	auto Exists = [&Chunk](const FString& RelativePath)
+	{
+		return IFileManager::Get().FileExists(*FPaths::Combine(Chunk, RelativePath));
+	};
+
+	Write(TEXT("Draft_7.json"), TEXT("{\"asset_name\":\"Landing\"}"));
+	Write(TEXT("Thumbnail_7.png"), TEXT("not really a png"));
+	Write(TEXT("ModdingMetaData_7.json"), TEXT("{\"asset_type\":\"Scene\"}"));
+
+	for (const TCHAR* Slug : { ProductionSlug, StagingSlug })
+	{
+		Write(FString(Slug) / TEXT("CreateAssetData_7.json"), TEXT("{}"));
+		Write(FString(Slug) / TEXT("PakMetaData_7.json"), TEXT("{}"));
+		Write(FString(Slug) / TEXT("RawArchive_7.txt"), TEXT("x"));
+	}
+
+	TArray<FString> Undeleted;
+	ClearAssetRecordsIn(Essentials, ChunkId, StagingSlug, Undeleted);
+
+	TestTrue(TEXT("production still holds, so the Draft stays"), Exists(TEXT("Draft_7.json")));
+	TestTrue(TEXT("and the thumbnail with it"), Exists(TEXT("Thumbnail_7.png")));
+
+	// Staging's folder is still on disk with its records gone. Nothing may read that as a backend
+	// that still holds this Chunk.
+	Undeleted.Reset();
+	ClearAssetRecordsIn(Essentials, ChunkId, ProductionSlug, Undeleted);
+
+	TestTrue(TEXT("nothing was left behind"), Undeleted.IsEmpty());
+	TestFalse(TEXT("the last delete takes the Draft"), Exists(TEXT("Draft_7.json")));
+	TestFalse(TEXT("and the creator's thumbnail"), Exists(TEXT("Thumbnail_7.png")));
+	TestTrue(TEXT("what the Modding Tool decided about the project stays"), Exists(TEXT("ModdingMetaData_7.json")));
+
+	// Deleting again finds nothing at all, and that is not a failure.
+	Undeleted.Reset();
+	ClearAssetRecordsIn(Essentials, ChunkId, ProductionSlug, Undeleted);
+	TestTrue(TEXT("a repeated delete reports nothing"), Undeleted.IsEmpty());
+
+	IFileManager::Get().DeleteDirectory(*Essentials, false, true);
+	return true;
+}
+
 #endif

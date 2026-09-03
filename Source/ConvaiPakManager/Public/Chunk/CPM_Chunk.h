@@ -158,9 +158,11 @@ CONVAIPAKMANAGER_API FString GetDraftPath(int32 ChunkId);
  * nothing or reuse an archive that went with the Asset. Another backend's three files are left
  * exactly as they are: deleting on staging says nothing about what production holds.
  *
- * The Draft and the thumbnail survive, and that is the point of them being a level up. They are
- * INPUTS to every backend rather than records of this one, so a delete here must leave what the
- * next Update to production still needs - and what the creator would otherwise re-type.
+ * The Draft and the thumbnail survive for as long as any OTHER backend still holds an Asset for
+ * this Chunk. They are INPUTS to every backend rather than records of one, so a staging delete must
+ * leave what the next Update to production still needs - and what the creator would otherwise
+ * re-type. Once the last backend lets go they are deleted too: kept with nothing published, they
+ * read as an Asset that still exists, and the creator gets a pre-filled form for one that does not.
  *
  * ModdingMetaData is untouched for the same reason it always was: it says what the Modding Tool
  * decided about this project - its plugin and Asset Type - which is true of the project whether or

@@ -62,6 +62,32 @@ namespace
 		return FPaths::Combine(EssentialsDirectory, FString::Printf(TEXT("ChunkId_%d"), ChunkId));
 	}
 
+	/**
+	 * Whether some OTHER backend still holds an Asset for this Chunk.
+	 *
+	 * An Asset record is the only proof: an environment folder can outlive its records (a delete
+	 * leaves the directory), so its existence says nothing.
+	 */
+	bool PublishedToAnyEnvironmentExcept(
+		const FString& EssentialsDirectory, const int32 ChunkId, const FString& EnvironmentSlug)
+	{
+		const FString StateDirectory = StateDirectoryIn(EssentialsDirectory, ChunkId);
+
+		TArray<FString> Environments;
+		IFileManager::Get().FindFiles(
+			Environments, *FPaths::Combine(StateDirectory, TEXT("Env_*")),
+			/*Files=*/false, /*Directories=*/true);
+
+		const FString Record = FString::Printf(TEXT("CreateAssetData_%d.json"), ChunkId);
+		return Environments.ContainsByPredicate(
+			[&](const FString& Candidate)
+			{
+				return !Candidate.Equals(EnvironmentSlug, ESearchCase::IgnoreCase)
+					&& IFileManager::Get().FileExists(
+						*FPaths::Combine(StateDirectory, Candidate, Record));
+			});
+	}
+
 	/** A URL reduced to one spelling per backend, plus the part of it a human can read. */
 	struct FCanonicalUrl
 	{
@@ -339,8 +365,8 @@ void ClearAssetRecordsIn(
 	const FString& EnvironmentSlug,
 	TArray<FString>& OutUndeleted)
 {
-	const FString Directory =
-		FPaths::Combine(StateDirectoryIn(EssentialsDirectory, ChunkId), EnvironmentSlug);
+	const FString StateDirectory = StateDirectoryIn(EssentialsDirectory, ChunkId);
+	const FString Directory = FPaths::Combine(StateDirectory, EnvironmentSlug);
 
 	const TArray<FString> Records = {
 		FPaths::Combine(Directory, FString::Printf(TEXT("CreateAssetData_%d.json"), ChunkId)),
@@ -355,6 +381,27 @@ void ClearAssetRecordsIn(
 		if (!IFileManager::Get().Delete(*Record, /*RequireExists=*/false, /*EvenReadOnly=*/true))
 		{
 			OutUndeleted.Add(Record);
+		}
+	}
+
+	if (PublishedToAnyEnvironmentExcept(EssentialsDirectory, ChunkId, EnvironmentSlug))
+	{
+		return;
+	}
+
+	// Nothing is published anywhere any more, so the inputs have nobody left to be inputs for. Left
+	// behind they read as an Asset that still exists: the form comes back filled and the creator's
+	// own thumbnail sits under a Publish that would mint a new Asset.
+	const TArray<FString> Inputs = {
+		FPaths::Combine(StateDirectory, FString::Printf(TEXT("Draft_%d.json"), ChunkId)),
+		FPaths::Combine(StateDirectory, FString::Printf(TEXT("Thumbnail_%d.png"), ChunkId)),
+	};
+
+	for (const FString& Input : Inputs)
+	{
+		if (!IFileManager::Get().Delete(*Input, /*RequireExists=*/false, /*EvenReadOnly=*/true))
+		{
+			OutUndeleted.Add(Input);
 		}
 	}
 }
