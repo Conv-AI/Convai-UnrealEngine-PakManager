@@ -303,16 +303,6 @@ enum class ECPM_AssetType : uint8
 };
 
 UENUM(BlueprintType)
-enum class ECPM_CustomScalabilityLevel : uint8
-{
-	Low         UMETA(DisplayName = "Low"),
-	Medium      UMETA(DisplayName = "Medium"),
-	High        UMETA(DisplayName = "High"),
-	Epic        UMETA(DisplayName = "Epic"),
-	Cinematic   UMETA(DisplayName = "Cinematic")
-};
-
-UENUM(BlueprintType)
 enum class ECPM_Platform : uint8
 {
 	Windows         UMETA(DisplayName = "Windows"),

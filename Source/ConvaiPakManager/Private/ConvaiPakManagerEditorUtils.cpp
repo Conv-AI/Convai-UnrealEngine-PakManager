@@ -8,16 +8,12 @@
 #include "Misc/PackageName.h"
 #include "UObject/Package.h"
 #include "Editor.h"                  
-#include "ILiveCodingModule.h"
-#include "LevelEditor.h"              
 #include "Modules/ModuleManager.h"
 #include "Framework/Application/SlateApplication.h"
-#include "PlayInEditorDataTypes.h"    
 #include "IUATHelperModule.h"
 #include "Async/Async.h"
 #include "Misc/Paths.h"
 #include "Logging/LogMacros.h"
-#include "Settings/ContentBrowserSettings.h"
 #include "EditorViewportClient.h"               
 #include "ImageUtils.h"
 #include "Slate/SceneViewport.h"
@@ -34,77 +30,6 @@
 #include "AssetRegistry/IAssetRegistry.h"
 #include "EditorAssetLibrary.h"
 #include "Utility/CPM_Log.h"
-
-void UConvaiPakManagerEditorUtils::CPM_MarkAssetDirty(UObject* Asset)
-{
-	if (!Asset)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("MarkAssetDirty: Asset is null."));
-		return;
-	}
-
-	UPackage* Package = Asset->GetOutermost();
-	if (Package)
-	{
-		Package->SetDirtyFlag(true);
-		FAssetRegistryModule::AssetCreated(Asset);
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("MarkAssetDirty: Could not get package for asset '%s'."), *Asset->GetName());
-	}
-}
-
-#if WITH_EDITOR
-static TSharedPtr<IAssetViewport> GetActiveAssetViewport()
-{
-	if (FModuleManager::Get().IsModuleLoaded("LevelEditor"))
-	{
-		FLevelEditorModule& LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>("LevelEditor");
-		return LevelEditorModule.GetFirstActiveViewport();
-	}
-	return nullptr;
-}
-#endif
-
-void UConvaiPakManagerEditorUtils::CPM_SetPlayMode(const bool bPlay)
-{
-#if WITH_EDITOR
-	if (!GEditor)
-	{
-		return;
-	}
-
-	const bool bIsPlaying = (GEditor->PlayWorld != nullptr);
-
-	// If we're already in the requested state, do nothing.
-	if (bPlay == bIsPlaying)
-	{
-		return;
-	}
-
-	if (bPlay)
-	{
-		FRequestPlaySessionParams PlayParams;
-
-		if (const TSharedPtr<IAssetViewport> ActiveViewport = GetActiveAssetViewport(); ActiveViewport.IsValid())
-		{
-			PlayParams.DestinationSlateViewport = TWeakPtr<IAssetViewport>(ActiveViewport);
-		}
-		else
-		{
-			UE_LOG(LogTemp, Warning, TEXT("No valid active viewport found. Launching PIE in a new editor window."));
-		}
-
-		GEditor->RequestPlaySession(PlayParams);
-	}
-	else
-	{
-		GEditor->RequestEndPlayMap();
-	}
-#endif
-}
-
 
 namespace
 {
@@ -217,70 +142,6 @@ void UConvaiPakManagerEditorUtils::CPM_PackageProject(const FCPM_PackageParam& P
         },
         FString()                                                   // ResultLocation
     );
-}
-
-void UConvaiPakManagerEditorUtils::CPM_ToggleLiveCoding(const bool Enable)
-{
-	if (ILiveCodingModule* LiveCoding = FModuleManager::GetModulePtr<ILiveCodingModule>(LIVE_CODING_MODULE_NAME))
-	{
-		LiveCoding->EnableByDefault(Enable);
-
-		if (LiveCoding->IsEnabledByDefault() && !LiveCoding->IsEnabledForSession())
-		{
-			FMessageDialog::Open(EAppMsgType::Ok,
-				FText::FromString(TEXT("NoEnableLiveCodingAfterHotReloadLive Coding cannot be enabled while hot-reloaded modules are active. Please close the editor and build from your IDE before restarting.")));
-		}
-	}
-}
-
-void UConvaiPakManagerEditorUtils::CPM_ShowPluginContent(const bool bEnable)
-{
-	GetMutableDefault<UContentBrowserSettings>()->SetDisplayPluginFolders(bEnable);
-	GetMutableDefault<UContentBrowserSettings>()->SetDisplayPluginFolders(bEnable);
-	
-	GetMutableDefault<UContentBrowserSettings>()->PostEditChange();
-	GetMutableDefault<UContentBrowserSettings>()->SaveConfig();
-}
-
-void UConvaiPakManagerEditorUtils::CPM_SetEngineScalability(const ECPM_CustomScalabilityLevel Level)
-{
-	using namespace Scalability;
-
-	FQualityLevels NewLevels;
-
-	switch (Level)
-	{
-	case ECPM_CustomScalabilityLevel::Low:
-		// Low maps to absolute index 0 :contentReference[oaicite:2]{index=2}&#8203;:contentReference[oaicite:3]{index=3}
-		NewLevels.SetFromSingleQualityLevel(0);
-		break;
-
-	case ECPM_CustomScalabilityLevel::Medium:
-		// Medium maps to relative index 3 (i.e. Max–3 => 1) :contentReference[oaicite:4]{index=4}&#8203;:contentReference[oaicite:5]{index=5}
-		NewLevels.SetFromSingleQualityLevelRelativeToMax(3);
-		break;
-
-	case ECPM_CustomScalabilityLevel::High:
-		NewLevels.SetFromSingleQualityLevelRelativeToMax(2);
-		break;
-
-	case ECPM_CustomScalabilityLevel::Epic:
-		NewLevels.SetFromSingleQualityLevelRelativeToMax(1);
-		break;
-
-	case ECPM_CustomScalabilityLevel::Cinematic:
-		NewLevels.SetFromSingleQualityLevelRelativeToMax(0);
-		break;
-	default:
-		return;
-	}
-
-	SetQualityLevels(NewLevels);
-	SaveState(GEditorSettingsIni);
-	if (GEditor)
-	{
-		GEditor->RedrawAllViewports();
-	}
 }
 
 bool UConvaiPakManagerEditorUtils::CPM_TakeViewportScreenshot(const FString& FilePath)
@@ -720,137 +581,4 @@ void UConvaiPakManagerEditorUtils::RecursiveGetDependencies(const FName& Package
 			}
 		}
 	}
-}
-
-bool UConvaiPakManagerEditorUtils::CopyPackageWithDependencies(
-	const FName& SourcePackage,
-	const FString& DestinationRoot,
-	const FCPM_DependencyCopyOptions& Options,
-	FCPM_DependencyCopyReport& OutReport)
-{
-	OutReport = FCPM_DependencyCopyAPI::CopyPackageWithDependencies(SourcePackage, DestinationRoot, Options);
-	return OutReport.bSuccess;
-}
-
-bool UConvaiPakManagerEditorUtils::CopyPackagesWithDependencies(
-	const TArray<FName>& SourcePackages,
-	const FString& DestinationRoot,
-	const FCPM_DependencyCopyOptions& Options,
-	FCPM_DependencyCopyReport& OutReport)
-{
-	OutReport = FCPM_DependencyCopyAPI::CopyPackagesWithDependencies(SourcePackages, DestinationRoot, Options);
-	return OutReport.bSuccess;
-}
-
-FName UConvaiPakManagerEditorUtils::GetDestinationPackagePath(
-	const FName& SourcePackage,
-	const FString& DestinationRoot,
-	const FString& DestinationSubdir)
-{
-	return FCPM_DependencyCopyAPI::MakeDestinationPackage(SourcePackage, DestinationRoot, DestinationSubdir);
-}
-
-void UConvaiPakManagerEditorUtils::AnalyzePackageDependencies(
-	const FName& PackageName,
-	const FCPM_DependencyCopyOptions& Options,
-	int32& OutTotalDependencies,
-	int32& OutEngineDependencies,
-	int32& OutGameDependencies,
-	TArray<FName>& OutDependencyList)
-{
-	OutTotalDependencies = 0;
-	OutEngineDependencies = 0;
-	OutGameDependencies = 0;
-	OutDependencyList.Reset();
-
-	if (PackageName.IsNone())
-	{
-		return;
-	}
-
-	// Use a local implementation to gather dependencies without copying
-	const FAssetRegistryModule& AssetRegistryModule = FModuleManager::Get().LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
-	const IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
-
-	TSet<FName> VisitedPackages;
-	TArray<FName> PackagesToProcess;
-	PackagesToProcess.Add(PackageName);
-	VisitedPackages.Add(PackageName);
-
-	// Build dependency query
-	UE::AssetRegistry::FDependencyQuery DependencyQuery;
-	UE::AssetRegistry::EDependencyCategory Category = UE::AssetRegistry::EDependencyCategory::None;
-
-	if (Options.bIncludeHardDependencies)
-	{
-		Category |= UE::AssetRegistry::EDependencyCategory::Package;
-	}
-
-	if (!Options.bIncludeSoftDependencies)
-	{
-		DependencyQuery.Required = UE::AssetRegistry::EDependencyProperty::Hard;
-	}
-
-	if (Options.bIncludeSearchableNameDependencies)
-	{
-		Category |= UE::AssetRegistry::EDependencyCategory::SearchableName;
-	}
-
-	while (PackagesToProcess.Num() > 0)
-	{
-		FName CurrentPackage = PackagesToProcess.Pop();
-
-		TArray<FName> Dependencies;
-		AssetRegistry.GetDependencies(CurrentPackage, Dependencies, Category, DependencyQuery);
-
-		for (const FName& Dependency : Dependencies)
-		{
-			const FString DependencyStr = Dependency.ToString();
-
-			// Skip script packages
-			if (DependencyStr.StartsWith(TEXT("/Script/")))
-			{
-				continue;
-			}
-
-			// Skip already visited
-			if (VisitedPackages.Contains(Dependency))
-			{
-				continue;
-			}
-
-			// Check if package exists
-			const bool bPackageExists = AssetRegistry.GetAssetPackageDataCopy(Dependency).IsSet();
-			if (!bPackageExists)
-			{
-				continue;
-			}
-
-			// Check if it should be excluded
-			if (FCPM_DependencyCopyAPI::ShouldExcludePackage(Dependency, Options))
-			{
-				continue;
-			}
-
-			VisitedPackages.Add(Dependency);
-			PackagesToProcess.Add(Dependency);
-		}
-	}
-
-	// Classify results
-	for (const FName& Package : VisitedPackages)
-	{
-		OutDependencyList.Add(Package);
-		
-		if (FCPM_DependencyCopyAPI::IsEnginePackage(Package))
-		{
-			OutEngineDependencies++;
-		}
-		else
-		{
-			OutGameDependencies++;
-		}
-	}
-
-	OutTotalDependencies = OutDependencyList.Num();
 }

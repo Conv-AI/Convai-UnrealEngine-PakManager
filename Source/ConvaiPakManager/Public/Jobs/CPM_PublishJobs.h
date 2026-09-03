@@ -72,6 +72,7 @@ public:
 	virtual ECPM_AssetManagerStatus GetPhaseStatus() const override { return ECPM_AssetManagerStatus::Packaging_Begin; }
 
 	virtual void IExecute_Implementation() override;
+	virtual void ICancel_Implementation(bool bForce) override;
 	virtual FJobConfig IGetJobConfig_Implementation() const override;
 	virtual FJobIOSpec IDeclareIO_Implementation() const override;
 
@@ -81,12 +82,20 @@ private:
 	/** Where this platform's Pak belongs, whether it was cooked this run or found already there. */
 	FCPM_PakArtifact ArtifactFor(ECPM_Platform Platform) const;
 
+	/** Report, with Live Coding put back first. Every terminal path of this Job goes through it. */
+	void ReportAndRestore(EJobResult Result, const FString& Error, TArray<FInstancedStruct>&& Outputs = {});
+
+	void RestoreLiveCoding();
+
 	UFUNCTION()
 	void HandlePackageFinished(const FString& Result, double Runtime);
 
 	TArray<ECPM_Platform> Remaining;
 	TArray<FCPM_PakArtifact> Built;
 	FCPM_PublishRequest Request;
+
+	/** Set only when this Job was the one that turned Live Coding off, so it restores nothing else. */
+	bool bParkedLiveCoding = false;
 };
 
 /** Archives the creator's project for the `raw` Version. Constructed only when the Policy asks for it. */

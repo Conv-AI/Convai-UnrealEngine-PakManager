@@ -7,6 +7,8 @@
 #include "Chunk/CPM_Chunk.h"
 #include "ConvaiPakManagerEditorUtils.h"
 #include "Core/WorkflowContext.h"
+#include "HAL/FileManager.h"
+#include "ILiveCodingModule.h"
 #include "Interface/WorkflowInterface.h"
 #include "Misc/EngineVersion.h"
 #include "Misc/FileHelper.h"
@@ -125,15 +127,24 @@ void UCPM_PackagePaksJob::IExecute_Implementation()
 {
 	if (!TryGetRequest(Request))
 	{
-		Report(EJobResult::Failed, TEXT("no publish request in the workflow context"));
+		ReportAndRestore(EJobResult::Failed, TEXT("no publish request in the workflow context"));
 		return;
 	}
 
 	Remaining = Request.Policy.PlatformsToPackage();
 	if (Remaining.IsEmpty())
 	{
-		Report(EJobResult::Failed, TEXT("the publish policy asks for no platforms"));
+		ReportAndRestore(EJobResult::Failed, TEXT("the publish policy asks for no platforms"));
 		return;
+	}
+
+	// Legacy turned Live Coding off before every cook. Kept session-scoped rather than written to the
+	// creator's Live Coding preference, which is theirs and not this Job's to change.
+	if (ILiveCodingModule* LiveCoding = FModuleManager::GetModulePtr<ILiveCodingModule>(LIVE_CODING_MODULE_NAME);
+		LiveCoding && LiveCoding->IsEnabledForSession())
+	{
+		LiveCoding->EnableForSession(false);
+		bParkedLiveCoding = true;
 	}
 
 	PackageNextPlatform();
@@ -154,7 +165,7 @@ void UCPM_PackagePaksJob::PackageNextPlatform()
 		{
 			Outputs.Add(FInstancedStruct::Make(Artifact));
 		}
-		Report(EJobResult::Success, FString(), MoveTemp(Outputs));
+		ReportAndRestore(EJobResult::Success, FString(), MoveTemp(Outputs));
 		return;
 	}
 
@@ -189,7 +200,18 @@ void UCPM_PackagePaksJob::PackageNextPlatform()
 	const FCPM_PlatformPolicy* Policy = Request.Policy.Find(Platform);
 	if (!Policy)
 	{
-		Report(EJobResult::Failed, FString::Printf(TEXT("no policy for platform %s"), *PlatformName(Platform)));
+		ReportAndRestore(EJobResult::Failed,
+			FString::Printf(TEXT("no policy for platform %s"), *PlatformName(Platform)));
+		return;
+	}
+
+	// The post-UAT existence check below only proves this run built the Pak if nothing was there when
+	// it started: a stale Pak surviving a cook that produced nothing is the very case it exists for.
+	if (!IFileManager::Get().Delete(*Existing.PakPath, /*RequireExists=*/false, /*EvenReadOnly=*/true))
+	{
+		ReportAndRestore(EJobResult::Failed,
+			FString::Printf(TEXT("could not remove the previous %s Pak at %s before packaging; it may be open ")
+				TEXT("in another program"), *PlatformName(Platform), *Existing.PakPath));
 		return;
 	}
 
@@ -233,13 +255,13 @@ void UCPM_PackagePaksJob::HandlePackageFinished(const FString& Result, double Ru
 
 	if (Result == UatCanceled || bCancelled)
 	{
-		Report(EJobResult::Cancelled, TEXT("packaging was cancelled"));
+		ReportAndRestore(EJobResult::Cancelled, TEXT("packaging was cancelled"));
 		return;
 	}
 
 	if (Result != UatCompleted)
 	{
-		Report(EJobResult::Failed,
+		ReportAndRestore(EJobResult::Failed,
 			FString::Printf(TEXT("packaging %s reported '%s' after %.0fs"), *PlatformName(Platform), *Result, Runtime));
 		return;
 	}
@@ -250,7 +272,7 @@ void UCPM_PackagePaksJob::HandlePackageFinished(const FString& Result, double Ru
 	// Chunk means the label did not take, and saying so now names the step that actually went wrong.
 	if (!FPaths::FileExists(Artifact.PakPath))
 	{
-		Report(EJobResult::Failed,
+		ReportAndRestore(EJobResult::Failed,
 			FString::Printf(TEXT("packaging %s completed but no Pak exists at %s"),
 				*PlatformName(Platform), *Artifact.PakPath));
 		return;
@@ -258,6 +280,32 @@ void UCPM_PackagePaksJob::HandlePackageFinished(const FString& Result, double Ru
 
 	Built.Add(Artifact);
 	PackageNextPlatform();
+}
+
+void UCPM_PackagePaksJob::ICancel_Implementation(const bool bForce)
+{
+	RestoreLiveCoding();
+	Super::ICancel_Implementation(bForce);
+}
+
+void UCPM_PackagePaksJob::ReportAndRestore(const EJobResult Result, const FString& Error, TArray<FInstancedStruct>&& Outputs)
+{
+	RestoreLiveCoding();
+	Report(Result, Error, MoveTemp(Outputs));
+}
+
+void UCPM_PackagePaksJob::RestoreLiveCoding()
+{
+	if (!bParkedLiveCoding)
+	{
+		return;
+	}
+	bParkedLiveCoding = false;
+
+	if (ILiveCodingModule* LiveCoding = FModuleManager::GetModulePtr<ILiveCodingModule>(LIVE_CODING_MODULE_NAME))
+	{
+		LiveCoding->EnableForSession(true);
+	}
 }
 
 // ---------------------------------------------------------------------------------------------
