@@ -354,15 +354,20 @@ void UCPM_CreateAssetJob::IExecute_Implementation()
 	}
 
 	FCPM_ModdingMetadata Modding;
-	UCPM_UtilityLibrary::GetModdingMetadata(Modding);
+	UCPM_UtilityLibrary::GetModdingMetadataForChunk(Request.ChunkId, Modding);
 
-	// Filled in first, and read back by Chunk rather than through the sole-Chunk helper: what goes
-	// on the wire has to be this Chunk's document, complete, whatever version of the Pak Manager
-	// last wrote it.
-	ConvaiPakManager::Chunk::NormalizePakMetadata(Request.ChunkId);
+	// Composed first: what goes on the wire is this Chunk's Draft laid over what this backend last
+	// echoed back, complete, whatever version of the Pak Manager last wrote either. Failed on rather
+	// than logged, here where nothing has been sent yet and so nothing can be orphaned.
+	if (!ConvaiPakManager::Chunk::ComposePakMetadata(Request.ChunkId, Request.EnvironmentSlug))
+	{
+		Report(EJobResult::Failed, TEXT("this Chunk's asset metadata could not be composed; see the log for which file"));
+		return;
+	}
 
 	FCPM_CreatePakAssetParams Params;
-	FFileHelper::LoadFileToString(Params.MetaData, *ConvaiPakManager::Chunk::GetPakMetadataPath(Request.ChunkId));
+	FFileHelper::LoadFileToString(Params.MetaData,
+		*ConvaiPakManager::Chunk::GetPakMetadataPath(Request.ChunkId, Request.EnvironmentSlug));
 	if (Params.MetaData.IsEmpty())
 	{
 		Report(EJobResult::Failed, TEXT("this Chunk has no asset metadata to publish"));
@@ -379,13 +384,14 @@ void UCPM_CreateAssetJob::IExecute_Implementation()
 	Params.Thumbnail = UCPM_UtilityLibrary::CPM_LoadTexture2DFromDisk(
 		ConvaiPakManager::Chunk::GetThumbnailPath(Request.ChunkId));
 
-	UCPM_UtilityLibrary::GetAssetID(ExistingAssetId);
+	ExistingAssetId = ConvaiPakManager::Chunk::ReadAssetId(Request.ChunkId, Request.EnvironmentSlug);
 
 	ReportProgress(ExistingAssetId.IsEmpty() ? TEXT("Creating asset") : TEXT("Updating asset"), 0.0f);
 
 	if (ExistingAssetId.IsEmpty())
 	{
-		CreateProxy = UCPM_CreatePakAssetProxy::CreatePakAssetProxy(Params);
+		CreateProxy = UCPM_CreatePakAssetProxy::CreatePakAssetProxy(
+			Params, Request.ChunkId, Request.EnvironmentSlug);
 		if (!CreateProxy)
 		{
 			Report(EJobResult::Failed, TEXT("could not build the create-asset request"));
@@ -750,10 +756,9 @@ void UCPM_PersistChunkStateJob::IExecute_Implementation()
 		return;
 	}
 
-	if (!UCPM_UtilityLibrary::SaveConvaiCreateAssetData(Published.RawResponse))
+	if (!ConvaiPakManager::Chunk::WriteCreateAssetData(
+		Request.ChunkId, Request.EnvironmentSlug, Published.RawResponse))
 	{
-		// Loud, because this is the failure that orphans an Asset: it exists on Convai and the
-		// creator's project has no record of its id.
 		CPM_LOG(Error, TEXT("Published asset %s but could not record it in the project. ")
 			TEXT("Without that record the asset cannot be updated or deleted."), *Published.AssetId);
 		Report(EJobResult::Failed, TEXT("could not record the published asset in this project"));

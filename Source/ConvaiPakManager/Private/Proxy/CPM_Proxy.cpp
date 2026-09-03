@@ -2,6 +2,7 @@
 
 
 #include "Proxy/CPM_Proxy.h"
+#include "Chunk/CPM_Chunk.h"
 #include "HAL/PlatformFileManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -11,10 +12,10 @@
 
 namespace
 {
-    static FString CreatePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/upload"), true); }
-    static FString UpdatePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/update"), true); }
-    static FString GetPakAssetURL()    { return UConvaiURL::GetFullURL(TEXT("assets/get"), true); }
-    static FString DeletePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/delete"), true); }
+    static FString CreatePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/upload"), false); }
+    static FString UpdatePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/update"), false); }
+    static FString GetPakAssetURL()    { return UConvaiURL::GetFullURL(TEXT("assets/get"), false); }
+    static FString DeletePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/delete"), false); }
 }
 
 
@@ -118,11 +119,14 @@ bool UCPM_CreateUpdatePakAssetBaseProxy::AddContentToRequest(CONVAI_HTTP_PAYLOAD
 }
 
 
-UCPM_CreatePakAssetProxy* UCPM_CreatePakAssetProxy::CreatePakAssetProxy(const FCPM_CreatePakAssetParams& Params)
+UCPM_CreatePakAssetProxy* UCPM_CreatePakAssetProxy::CreatePakAssetProxy(
+	const FCPM_CreatePakAssetParams& Params, const int32 ChunkId, const FString& EnvironmentSlug)
 {
 	UCPM_CreatePakAssetProxy* Proxy = NewObject<UCPM_CreatePakAssetProxy>();
 	Proxy->M_Params = Params;
 	Proxy->URL = CreatePakAssetURL();
+	Proxy->RecordChunkId = ChunkId;
+	Proxy->RecordEnvironmentSlug = EnvironmentSlug;
 	return Proxy;
 }
 
@@ -130,19 +134,27 @@ void UCPM_CreatePakAssetProxy::HandleSuccess()
 {
 	Super::HandleSuccess();
 	FCPM_CreatedAssets CreatedAssets;
-	
+
 	if (UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(ResponseString, CreatedAssets))
 	{
+		// Recorded HERE rather than by the last Job of the publish, which is what holds the window
+		// in which the Asset exists on Convai and nothing here names it to well under a second
+		// instead of a whole multi-gigabyte upload.
 		const FString PakMetaData = CreatedAssets.Assets.IsValidIndex(0) ? CreatedAssets.Assets[0].Asset.MetadataString : FString();
-		UCPM_UtilityLibrary::SaveConvaiAssetMetadata(PakMetaData);
-		
-		if (UCPM_UtilityLibrary::SaveConvaiCreateAssetData(ResponseString))
+		if (!PakMetaData.IsEmpty())
+		{
+			// An empty echo used to be written anyway, leaving a zero-byte document that every later
+			// compose refuses to parse.
+			ConvaiPakManager::Chunk::WritePakMetadata(RecordChunkId, RecordEnvironmentSlug, PakMetaData);
+		}
+
+		if (ConvaiPakManager::Chunk::WriteCreateAssetData(RecordChunkId, RecordEnvironmentSlug, ResponseString))
 		{
 			OnSuccess.Broadcast(CreatedAssets);
 			return;
 		}
 	}
-	
+
 	OnFailure.Broadcast(CreatedAssets);
 }
 

@@ -12,64 +12,91 @@ using namespace ConvaiPakManager::Chunk;
 
 namespace
 {
-	FString ScratchChunkDirectory(const TCHAR* TestName, const int32 ChunkId)
-	{
-		return FPaths::Combine(
-			FPaths::ProjectIntermediateDir(), TEXT("CPM_Tests"), TestName, TEXT("ConvaiEssentials"),
-			FString::Printf(TEXT("ChunkId_%d"), ChunkId));
-	}
+	/** The two pinned slugs, spelled out so a test cannot agree with a broken slug. */
+	const TCHAR* ProductionSlug = TEXT("Env_api.convai.com_29e2cb96");
+	const TCHAR* StagingSlug = TEXT("Env_api-stg.convai.com_64b86207");
 }
 
 /**
- * What a deleted Asset takes with it, and the one file it must not.
+ * A delete says something about ONE backend. Clearing staging's records must leave production's
+ * AssetID alone - it still names a live Asset - and must leave the Draft and the thumbnail alone
+ * too, because those are the inputs production's next Update is built from rather than records of
+ * the Asset just destroyed.
  *
  * Tested against a real filesystem because what it has to get right IS filesystem behaviour: that
- * the four records are gone, that ModdingMetaData - which describes the project rather than the
- * Asset, and which nothing regenerates - is still there, and that a record already missing is not
- * reported as a failure.
+ * one environment's three files went, that the neighbouring folder was not touched, and that a
+ * record already missing is not reported as a failure.
  */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FCPMAssetRecordCleanupClearsTheAssetAndKeepsTheProject,
-	"ConvaiPakManager.Chunk.Cleanup.ClearsTheAssetAndKeepsTheProject",
+	FCPMAssetRecordCleanupADeleteOnOneEnvironmentLeavesTheOtherAlone,
+	"ConvaiPakManager.Chunk.Cleanup.ADeleteOnOneEnvironmentLeavesTheOtherAlone",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
 
-bool FCPMAssetRecordCleanupClearsTheAssetAndKeepsTheProject::RunTest(const FString&)
+bool FCPMAssetRecordCleanupADeleteOnOneEnvironmentLeavesTheOtherAlone::RunTest(const FString&)
 {
 	const int32 ChunkId = 7;
-	const FString Directory = ScratchChunkDirectory(TEXT("ClearsTheAssetRecords"), ChunkId);
-	const FString Essentials = FPaths::GetPath(Directory);
+	const FString Essentials = FPaths::Combine(
+		FPaths::ProjectIntermediateDir(), TEXT("CPM_Tests"), TEXT("ADeleteOnOneEnvironment"), TEXT("ConvaiEssentials"));
 
 	IFileManager::Get().DeleteDirectory(*Essentials, false, true);
-	IFileManager::Get().MakeDirectory(*Directory, true);
 
-	auto Write = [&Directory](const TCHAR* FileName)
+	const FString Chunk = FPaths::Combine(Essentials, TEXT("ChunkId_7"));
+	auto Write = [&Chunk](const FString& RelativePath, const FString& Contents)
 	{
-		FFileHelper::SaveStringToFile(TEXT("x"), *FPaths::Combine(Directory, FileName));
+		const FString Path = FPaths::Combine(Chunk, RelativePath);
+		IFileManager::Get().MakeDirectory(*FPaths::GetPath(Path), true);
+		FFileHelper::SaveStringToFile(Contents, *Path);
 	};
-	auto Exists = [&Directory](const TCHAR* FileName)
+	auto Exists = [&Chunk](const FString& RelativePath)
 	{
-		return IFileManager::Get().FileExists(*FPaths::Combine(Directory, FileName));
+		return IFileManager::Get().FileExists(*FPaths::Combine(Chunk, RelativePath));
+	};
+	auto Read = [&Chunk](const FString& RelativePath)
+	{
+		FString Contents;
+		FFileHelper::LoadFileToString(Contents, *FPaths::Combine(Chunk, RelativePath));
+		return Contents;
 	};
 
-	Write(TEXT("CreateAssetData_7.json"));
-	Write(TEXT("PakMetaData_7.json"));
-	Write(TEXT("Thumbnail_7.png"));
-	Write(TEXT("RawArchive_7.txt"));
-	Write(TEXT("ModdingMetaData_7.txt"));
+	Write(TEXT("Draft_7.json"), TEXT("{\"asset_name\":\"Landing\"}"));
+	Write(TEXT("Thumbnail_7.png"), TEXT("not really a png"));
+	Write(TEXT("ModdingMetaData_7.json"), TEXT("{\"asset_type\":\"Scene\"}"));
+
+	for (const TCHAR* Slug : { ProductionSlug, StagingSlug })
+	{
+		Write(FString(Slug) / TEXT("CreateAssetData_7.json"), FString::Printf(TEXT("{\"minted_by\":\"%s\"}"), Slug));
+		Write(FString(Slug) / TEXT("PakMetaData_7.json"), FString::Printf(TEXT("{\"echoed_by\":\"%s\"}"), Slug));
+		Write(FString(Slug) / TEXT("RawArchive_7.txt"), TEXT("x"));
+	}
 
 	TArray<FString> Undeleted;
-	ClearAssetRecordsIn(Essentials, ChunkId, Undeleted);
+	ClearAssetRecordsIn(Essentials, ChunkId, StagingSlug, Undeleted);
 
 	TestTrue(TEXT("nothing was left behind"), Undeleted.IsEmpty());
-	TestFalse(TEXT("the asset record is gone"), Exists(TEXT("CreateAssetData_7.json")));
-	TestFalse(TEXT("the metadata document is gone"), Exists(TEXT("PakMetaData_7.json")));
-	TestFalse(TEXT("the thumbnail is gone"), Exists(TEXT("Thumbnail_7.png")));
-	TestFalse(TEXT("the archive record is gone"), Exists(TEXT("RawArchive_7.txt")));
-	TestTrue(TEXT("what the Modding Tool decided about the project stays"), Exists(TEXT("ModdingMetaData_7.txt")));
 
-	// A Chunk deleted before it ever published has none of these, and that is not a failure.
+	const FString Staging = FString(StagingSlug) + TEXT("/");
+	TestFalse(TEXT("staging's asset record is gone"), Exists(Staging + TEXT("CreateAssetData_7.json")));
+	TestFalse(TEXT("staging's metadata cache is gone"), Exists(Staging + TEXT("PakMetaData_7.json")));
+	TestFalse(TEXT("staging's archive marker is gone"), Exists(Staging + TEXT("RawArchive_7.txt")));
+
+	const FString Production = FString(ProductionSlug) + TEXT("/");
+	TestEqual(TEXT("production's AssetID is untouched"),
+		Read(Production + TEXT("CreateAssetData_7.json")),
+		FString::Printf(TEXT("{\"minted_by\":\"%s\"}"), ProductionSlug));
+	TestEqual(TEXT("so is its metadata cache"),
+		Read(Production + TEXT("PakMetaData_7.json")),
+		FString::Printf(TEXT("{\"echoed_by\":\"%s\"}"), ProductionSlug));
+	TestTrue(TEXT("and its archive marker"), Exists(Production + TEXT("RawArchive_7.txt")));
+
+	TestEqual(TEXT("what the creator typed survives a delete on one backend"),
+		Read(TEXT("Draft_7.json")), FString(TEXT("{\"asset_name\":\"Landing\"}")));
+	TestTrue(TEXT("and so does their thumbnail"), Exists(TEXT("Thumbnail_7.png")));
+	TestTrue(TEXT("what the Modding Tool decided about the project stays"), Exists(TEXT("ModdingMetaData_7.json")));
+
+	// A Chunk deleted before it ever published on this backend has none of these, and that is not a
+	// failure.
 	Undeleted.Reset();
-	ClearAssetRecordsIn(Essentials, ChunkId, Undeleted);
+	ClearAssetRecordsIn(Essentials, ChunkId, StagingSlug, Undeleted);
 	TestTrue(TEXT("clearing records that are already gone reports nothing"), Undeleted.IsEmpty());
 
 	IFileManager::Get().DeleteDirectory(*Essentials, false, true);

@@ -2,7 +2,10 @@
 
 #include "Chunk/CPM_Chunk.h"
 #include "Dom/JsonObject.h"
+#include "HAL/FileManager.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 
@@ -175,6 +178,62 @@ bool FCPMAssetMetadataKeepsWhatItDoesNotOwn::RunTest(const FString&)
 		Entity && (*Entity)->TryGetObjectField(TEXT("avatar_config"), Config) && Config
 			&& (*Config)->HasField(TEXT("voice")));
 
+	return true;
+}
+
+/**
+ * Compose refuses on a document it cannot read, and a refusal leaves the cache exactly as the server
+ * last echoed it. Both halves matter together: the publish job fails on the false, and there is no
+ * half-written document for a later run to send in place of what the creator typed.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMAssetMetadataRefusesADocumentItCannotRead,
+	"ConvaiPakManager.Publish.Metadata.RefusesADocumentItCannotRead",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMAssetMetadataRefusesADocumentItCannotRead::RunTest(const FString&)
+{
+	const FString Directory = FPaths::Combine(
+		FPaths::ProjectIntermediateDir(), TEXT("CPM_Tests"), TEXT("RefusesADocumentItCannotRead"));
+	IFileManager::Get().DeleteDirectory(*Directory, false, true);
+	IFileManager::Get().MakeDirectory(*Directory, true);
+
+	const FString MetadataPath = FPaths::Combine(Directory, TEXT("PakMetaData_3.json"));
+	const FString DraftPath = FPaths::Combine(Directory, TEXT("Draft_3.json"));
+	const FString Echo = TEXT("{\"asset_name\":\"what the server last heard\"}");
+
+	auto Compose = [&MetadataPath, &DraftPath]
+	{
+		return ConvaiPakManager::Chunk::ComposePakMetadataAt(
+			MetadataPath, DraftPath, TEXT("Proj"), TEXT("PLUGIN"), TEXT("avatar"));
+	};
+	auto ReadMetadata = [&MetadataPath]
+	{
+		FString Contents;
+		FFileHelper::LoadFileToString(Contents, *MetadataPath);
+		return Contents;
+	};
+
+	AddExpectedError(TEXT("is not valid JSON"), EAutomationExpectedErrorFlags::Contains, 2);
+
+	FFileHelper::SaveStringToFile(Echo, *MetadataPath);
+	FFileHelper::SaveStringToFile(TEXT("{ not json"), *DraftPath);
+	TestFalse(TEXT("a Draft that will not parse refuses"), Compose());
+	TestEqual(TEXT("and the server's echo is left byte for byte"), ReadMetadata(), Echo);
+
+	FFileHelper::SaveStringToFile(TEXT("} not json either"), *MetadataPath);
+	FFileHelper::SaveStringToFile(TEXT("{\"asset_name\":\"Nova\"}"), *DraftPath);
+	TestFalse(TEXT("so does a cache that will not parse"), Compose());
+	TestEqual(TEXT("and it is left alone too"), ReadMetadata(), FString(TEXT("} not json either")));
+
+	// With both readable it composes - so the two refusals above are refusals, not a function that
+	// cannot succeed.
+	FFileHelper::SaveStringToFile(Echo, *MetadataPath);
+	TestTrue(TEXT("two readable documents compose"), Compose());
+	TestEqual(TEXT("and what the creator typed wins the name"),
+		Field(Parse(*ReadMetadata()), TEXT("asset_name")), FString(TEXT("Nova")));
+
+	IFileManager::Get().DeleteDirectory(*Directory, false, true);
 	return true;
 }
 

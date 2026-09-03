@@ -235,9 +235,10 @@ public:
 	/**
 	 * Deletes one Version of this Chunk's Asset, or the whole Asset when Version is empty.
 	 *
-	 * A whole-asset delete also clears everything this Chunk recorded about that Asset - its id,
-	 * metadata document, thumbnail and archive record - so the Chunk returns to Draft with an empty
-	 * form. What Convai holds is gone; a kept copy would describe nothing.
+	 * A whole-asset delete also clears what THIS ENVIRONMENT recorded about that Asset - its id,
+	 * metadata cache and archive marker - so the Chunk returns to Draft, keeping its name,
+	 * description, Entry Point and thumbnail: those are inputs to every backend rather than records
+	 * of the one just deleted from. Another backend's records are untouched.
 	 *
 	 * bAlsoDeletePluginContent additionally deletes the Source Packages in this Chunk's Modding
 	 * Plugin, keeping the Primary Asset Label so the Chunk itself survives and can be filled again.
@@ -318,8 +319,12 @@ private:
 		float Progress = 0.0f, const FString& StepName = FString());
 
 	void HandleWorkflowProgress(int32 ChunkId, const FWorkflowStatusInfo& Info);
-	/** bArchivedRaw is what the queue was built to do, so success can record that the archive landed. */
-	void HandleWorkflowFinished(int32 ChunkId, const FWorkflowStatusInfo& Info, bool bPackageOnly, bool bArchivedRaw);
+	/**
+	 * bArchivedRaw is what the queue was built to do, so success can record that the archive landed.
+	 * EnvironmentSlug is the one the run started under, so that marker lands where the run published.
+	 */
+	void HandleWorkflowFinished(int32 ChunkId, const FWorkflowStatusInfo& Info, bool bPackageOnly, bool bArchivedRaw,
+		const FString& EnvironmentSlug);
 
 	/** Latest status per Chunk. Absent means never touched this session. */
 	TMap<int32, FCPM_ChunkStatus> StatusByChunk;
@@ -362,6 +367,12 @@ private:
 	 * of the archive from the record of the Asset apart.
 	 */
 	FString DeletingVersion;
+
+	/**
+	 * Which backend that delete is aimed at, captured when the request was built rather than read
+	 * when the response lands - a URL changed in between would clear another backend's records.
+	 */
+	FString DeletingEnvironmentSlug;
 
 	/** Whether that delete was asked to take the Chunk's authored content with it. */
 	bool bDeletingPluginContent = false;

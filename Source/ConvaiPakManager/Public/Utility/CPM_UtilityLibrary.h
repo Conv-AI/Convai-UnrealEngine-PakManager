@@ -32,32 +32,7 @@ public:
 	static bool IsPakUsable(const FString& PakFilePath);
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static void GetAssetID(FString& AssetID);
-
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static ECPM_AssetType GetAssetType();
-	
-	// Create asset utility functions
-	UFUNCTION(BlueprintCallable, Category="Convai|PakManager")
-	static bool SaveConvaiCreateAssetData(const FString& ResponseString);
-
-	UFUNCTION(BlueprintCallable, Category="Convai|PakManager")
-	static bool LoadConvaiCreateAssetData(FCPM_CreatedAssets& OutData);
-
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static FString GetCreateAssetDataFilePath();
-	// END Create asset utility functions
-
-	// Asset metadata utility functions
-	UFUNCTION(BlueprintCallable, Category="Convai|PakManager")
-	static bool SaveConvaiAssetMetadata(const FString& ResponseString);
-	
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category="Convai|PakManager")
-	static void GetAssetMetaDataString(FString& MetaData);
-
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static FString GetPakMetadataFilePath();
-	// END Asset metadata utility functions
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
 	static FString CPM_GetCacheDirectory();
@@ -90,9 +65,6 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static bool GetMintedUploadUrl(const FString& ResponseString, FString& OutUrl);
-		
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Convai|PakManager")
-	static bool ShouldCreateAsset();
 
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "ConvaiPakManagerLog"), Category = "Convai|PakManager")
 	static void CPM_LogMessage(const FString& Message, ECPM_LogLevel Verbosity = ECPM_LogLevel::Log);

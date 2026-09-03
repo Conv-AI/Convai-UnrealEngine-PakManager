@@ -139,15 +139,6 @@ bool UCPM_UtilityLibrary::IsPakUsable(const FString& PakFilePath)
 	return IFileManager::Get().FileSize(*PakFilePath) > 0 && ValidatePakFile(PakFilePath);
 }
 
-void UCPM_UtilityLibrary::GetAssetID(FString& AssetID)
-{
-	FCPM_CreatedAssets OutData;
-	if(LoadConvaiCreateAssetData(OutData))
-	{
-		AssetID = OutData.Assets.Num() > 0 ? OutData.Assets[0].Asset.AssetId : TEXT(""); 
-	}
-}
-
 ECPM_AssetType UCPM_UtilityLibrary::GetAssetType()
 {
 	static const TMap<FString, ECPM_AssetType> StringToAssetTypeMap = {
@@ -159,46 +150,6 @@ ECPM_AssetType UCPM_UtilityLibrary::GetAssetType()
 	GetModdingMetadata(OutData);	
 	const ECPM_AssetType* FoundType = StringToAssetTypeMap.Find(OutData.AssetType);
 	return FoundType ? *FoundType : ECPM_AssetType::Max;
-}
-
-bool UCPM_UtilityLibrary::SaveConvaiCreateAssetData(const FString& ResponseString)
-{
-	FString FilePath = GetCreateAssetDataFilePath();
-	
-	if (FFileHelper::SaveStringToFile(ResponseString, *FilePath))
-	{
-		return true;
-	}
-	
-	CPM_LogMessage(FString::Printf(TEXT("Failed to save asset data to %s"), *FilePath), ECPM_LogLevel::Error);
-	return false;
-}
-
-bool UCPM_UtilityLibrary::LoadConvaiCreateAssetData(FCPM_CreatedAssets& OutData)
-{
-	const FString FilePath = GetCreateAssetDataFilePath();
-	FString FileContent;
-
-	if (!FFileHelper::LoadFileToString(FileContent, *FilePath))
-	{
-		//CPM_LogMessage(TEXT("Failed to read PakMetaData.txt"), ECPM_LogLevel::Error);
-		return false;
-	}
-
-	return GetCreatedAssetsFromJSON(FileContent, OutData);
-}
-
-bool UCPM_UtilityLibrary::SaveConvaiAssetMetadata(const FString& ResponseString)
-{
-	FString FilePath = GetPakMetadataFilePath();
-	
-	if (FFileHelper::SaveStringToFile(ResponseString, *FilePath))
-	{
-		return true;
-	}
-	
-	CPM_LogMessage(FString::Printf(TEXT("Failed to save asset data to %s"), *FilePath), ECPM_LogLevel::Error);
-	return false;
 }
 
 bool UCPM_UtilityLibrary::GetMintedUploadUrl(const FString& ResponseString, FString& OutUrl)
@@ -232,16 +183,6 @@ bool UCPM_UtilityLibrary::GetMintedUploadUrl(const FString& ResponseString, FStr
 		}
 	}
 	return false;
-}
-
-void UCPM_UtilityLibrary::GetAssetMetaDataString(FString& MetaData)
-{
-	FFileHelper::LoadFileToString(MetaData, *GetPakMetadataFilePath());
-}
-
-FString UCPM_UtilityLibrary::GetPakMetadataFilePath()
-{
-	return ConvaiPakManager::Chunk::GetPakMetadataPath(ConvaiPakManager::Chunk::GetSoleChunkId());
 }
 
 FString UCPM_UtilityLibrary::CPM_GetCacheDirectory()
@@ -298,7 +239,7 @@ void UCPM_UtilityLibrary::GetModdingMetadataForChunk(const int32 ChunkId, FCPM_M
 
 	if (!FFileHelper::LoadFileToString(FileContent, *FilePath))
 	{
-		CPM_LogMessage(TEXT("Failed to read ModdingMetaData.txt"), ECPM_LogLevel::Error);
+		CPM_LogMessage(FString::Printf(TEXT("Failed to read %s"), *FilePath), ECPM_LogLevel::Error);
 		return;
 	}
 
@@ -435,18 +376,6 @@ bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FC
 	}
 	
 	return true;
-}
-
-FString UCPM_UtilityLibrary::GetCreateAssetDataFilePath()
-{
-	return ConvaiPakManager::Chunk::GetCreateAssetDataPath(ConvaiPakManager::Chunk::GetSoleChunkId());
-}
-
-bool UCPM_UtilityLibrary::ShouldCreateAsset()
-{
-	FString AssetID;
-	GetAssetID(AssetID);
-	return AssetID.IsEmpty();
 }
 
 void UCPM_UtilityLibrary::CPM_LogMessage(const FString& Message, const ECPM_LogLevel Verbosity)
@@ -964,11 +893,18 @@ TArray<FString> UCPM_UtilityLibrary::GetProjectFilesToZip()
         
         for (const FString& EssentialFile : ConvaiEssentialsFiles)
         {
-            // Skip .zip files
-            if (!EssentialFile.EndsWith(TEXT(".zip"), ESearchCase::IgnoreCase))
+            // The environment folders travel with their AssetIDs, so Convai can repackage this same
+            // project to more than one backend later. The thumbnail and the archive marker do not:
+            // one is a picture the Asset already holds, the other says nothing about the project.
+            const FString FileName = FPaths::GetCleanFilename(EssentialFile);
+            if (EssentialFile.EndsWith(TEXT(".zip"), ESearchCase::IgnoreCase)
+                || FileName.MatchesWildcard(TEXT("Thumbnail_*.png"))
+                || FileName.MatchesWildcard(TEXT("RawArchive_*.txt")))
             {
-                FilesToZip.Add(EssentialFile);
+                continue;
             }
+
+            FilesToZip.Add(EssentialFile);
         }
     }
     

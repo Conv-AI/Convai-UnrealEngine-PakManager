@@ -187,6 +187,17 @@ struct CONVAIPAKMANAGER_API FCPM_PublishRequest
 	UPROPERTY()
 	int32 ChunkId = INDEX_NONE;
 
+	/**
+	 * The backend this run records under, captured when the request was built and passed down.
+	 *
+	 * A creator who changes the URL mid-publish changes where the NEXT run records, never this one:
+	 * these bytes are reaching the backend that was resolved at the start. Deliberately not a guard
+	 * that fails the run - refusing after the create call would leave an Asset on the server with no
+	 * local record at all, which is worse than the mis-file it would be preventing.
+	 */
+	UPROPERTY()
+	FString EnvironmentSlug;
+
 	/** The Policy with this run's Platform Selection already applied. What every Job reads. */
 	UPROPERTY()
 	FCPM_PublishPolicy Policy;

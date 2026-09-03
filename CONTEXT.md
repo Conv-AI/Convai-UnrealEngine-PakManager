@@ -68,6 +68,18 @@ The record on Convai's servers that a Chunk is published as, and the thing Conva
 Carries the name, description, thumbnail, type and version the creator supplies.
 _Avoid_: entity, upload, scene — the last is a *kind* of Asset, not a synonym for one
 
+**Environment**:
+The Convai backend a **Publish** reaches, identified by the base URL its requests resolve to.
+Derived from that URL at the moment a request is built, never chosen — a setting that disagreed with
+the URL would name a backend the bytes never reached. Custom URLs are Environments like any other.
+_Avoid_: backend, server, stage, target — the first two name machines, the last two imply a chosen
+slot
+
+**Draft**:
+What the creator has authored about a Chunk's **Asset** — name, description, **Entry Point** — kept
+at chunk level because it is the same for every **Environment**. Distinct from the per-Environment
+metadata cache the server echoes back.
+
 **Raw Project Archive**:
 The creator's project source, archived and published alongside the Paks so the Chunk can be rebuilt
 later from what made it. Not a build artefact — the inputs, not the output.
@@ -114,7 +126,9 @@ _Avoid_: category, entity type
 - A **Command** that needs no asynchronous work starts no **Workflow** and answers immediately
 - A **Modding Plugin** holds many **Source Packages** and exactly one Primary Asset Label
 - That label gathers every **Source Package** in the plugin into one **Chunk**
-- A **Chunk** builds to one **Pak** per platform, and publishes as exactly one **Asset**
+- A **Chunk** builds to one **Pak** per platform
+- A **Chunk** publishes as at most one **Asset** per **Environment**
+- A **Draft** belongs to a **Chunk**, not to an **Environment**
 - An **Asset** has exactly one **Asset Type**, decided before the creator ever opens the Pak Manager
 
 - The Pak Manager is the ONLY thing that edits an **Asset**'s name, description, type or thumbnail.
@@ -150,7 +164,7 @@ _Avoid_: category, entity type
   policy the tool applies, not a fact about what a Chunk is.
 
 - **Losing a creator's on-disk state is unrecoverable, and the documentation knows it.** The
-  identity linking a Chunk to its published Asset exists only in the creator's project, so deleting
-  it orphans the Asset — no update, no delete, ever. The Modding Tool documentation warns creators
-  never to touch that folder, which is a warning standing in for a recovery path that does not
-  exist. Whether one should exist is unresolved.
+  identity linking a Chunk to its published Asset exists only in the creator's project, and now
+  once per **Environment**, so deleting it orphans that Environment's Asset — no update, no delete,
+  ever. The Modding Tool documentation warns creators never to touch that folder, which is a warning
+  standing in for a recovery path that does not exist. Whether one should exist is unresolved.

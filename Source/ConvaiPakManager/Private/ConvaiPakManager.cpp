@@ -6,6 +6,7 @@
 #include "Chunk/CPM_Chunk.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Docking/TabManager.h"
+#include "Misc/ConfigCacheIni.h"
 #include "ToolMenus.h"
 #include "UI/CPM_PakManagerStyle.h"
 #include "UI/SCPM_PakManagerPanel.h"
@@ -145,6 +146,33 @@ void FConvaiPakManagerModule::MigrateChunkStateLayout()
 
 	case EMigrationResult::NothingToMigrate:
 		break;
+	}
+
+	// Everything still loose is production's by definition - nothing that could reach another
+	// backend has shipped. The URL comes from the SETTINGS rather than UConvaiURL::GetBaseURL,
+	// which honours -ConvaiProdURL= on the command line: one CI launch against staging would file a
+	// production record under staging permanently, where nothing would ever look for it again.
+	//
+	// Read through GConfig because UConvaiSettings lives at the SDK module's root, outside its
+	// Public folder, so its header is not includable from here. The default is the SDK's own, from
+	// UConvaiURL::GetBaseURL.
+	FString ProdUrl;
+	GConfig->GetString(TEXT("/Script/Convai.ConvaiSettings"), TEXT("CustomProdURL"), ProdUrl, GEngineIni);
+	ProdUrl.TrimStartAndEndInline();
+	if (ProdUrl.IsEmpty())
+	{
+		ProdUrl = TEXT("https://api.convai.com");
+	}
+
+	const FString ProductionSlug = EnvironmentSlug(ProdUrl);
+	for (const FCPM_Chunk& Chunk : Discover())
+	{
+		TArray<FString> Adopted;
+		if (AdoptLooseRecords(Chunk.Id, ProductionSlug, Adopted) == EMigrationResult::Migrated)
+		{
+			CPM_LOG(Display, TEXT("Adopted %d loose record(s) of chunk %d into %s: %s"),
+				Adopted.Num(), Chunk.Id, *ProductionSlug, *FString::Join(Adopted, TEXT(", ")));
+		}
 	}
 }
 

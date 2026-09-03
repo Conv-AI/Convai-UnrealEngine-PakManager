@@ -84,19 +84,7 @@ FCPM_ChunkStatus UConvaiPakEditorSubsystem::GetChunkStatus(const int32 ChunkId) 
 
 FString UConvaiPakEditorSubsystem::GetAssetId(const int32 ChunkId) const
 {
-	FString AssetId;
-	FString Contents;
-	if (!FFileHelper::LoadFileToString(Contents, *ConvaiPakManager::Chunk::GetCreateAssetDataPath(ChunkId)))
-	{
-		return AssetId;
-	}
-
-	FCPM_CreatedAssets Created;
-	if (UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(Contents, Created) && !Created.Assets.IsEmpty())
-	{
-		AssetId = Created.Assets[0].Asset.AssetId;
-	}
-	return AssetId;
+	return ConvaiPakManager::Chunk::ReadAssetId(ChunkId, ConvaiPakManager::Chunk::CurrentEnvironmentSlug());
 }
 
 bool UConvaiPakEditorSubsystem::CanAddAnotherChunk() const
@@ -133,25 +121,14 @@ FDateTime UConvaiPakEditorSubsystem::GetRawArchiveUploadTime(const int32 ChunkId
 	// creator had to finish by hand, a migration that could not attribute the old layout - revokes
 	// the reuse with it. A record that outlived its Asset would let the next Publish create a new
 	// one and skip the archive it has never had.
-	const FString RecordedAssetId = GetAssetId(ChunkId);
-	if (RecordedAssetId.IsEmpty())
-	{
-		return FDateTime::MinValue();
-	}
-
-	// And gated on the two ways this project can name that Asset agreeing. The create step asks the
-	// sole-Chunk helper rather than this Chunk, so a project that has gained a Primary Asset Label
-	// since it published reads no Asset there and creates a second one - which has no archive, and
-	// must not inherit the authority of the first one's.
-	FString PublishWillUpdateAssetId;
-	UCPM_UtilityLibrary::GetAssetID(PublishWillUpdateAssetId);
-	if (PublishWillUpdateAssetId != RecordedAssetId)
+	if (GetAssetId(ChunkId).IsEmpty())
 	{
 		return FDateTime::MinValue();
 	}
 
 	// MinValue for a file that is not there, which is the "never" this answers with.
-	return IFileManager::Get().GetTimeStamp(*ConvaiPakManager::Chunk::GetRawArchiveRecordPath(ChunkId));
+	return IFileManager::Get().GetTimeStamp(*ConvaiPakManager::Chunk::GetRawArchiveRecordPath(
+		ChunkId, ConvaiPakManager::Chunk::CurrentEnvironmentSlug()));
 }
 
 FCPM_SpawnPointStatus UConvaiPakEditorSubsystem::GetSpawnPointStatus() const
@@ -187,14 +164,14 @@ FCPM_SpawnPointStatus UConvaiPakEditorSubsystem::GetSpawnPointStatus() const
 
 namespace
 {
-	/** Field names as the Convai asset metadata document spells them. */
+	/** Field names as the Convai asset metadata document spells them; the Draft keeps them. */
 	const TCHAR* AssetNameField = TEXT("asset_name");
 	const TCHAR* AssetDescriptionField = TEXT("asset_description");
 
-	FString ReadMetadataField(const int32 ChunkId, const TCHAR* Field)
+	FString ReadDraftField(const int32 ChunkId, const TCHAR* Field)
 	{
 		FString Contents;
-		if (!FFileHelper::LoadFileToString(Contents, *ConvaiPakManager::Chunk::GetPakMetadataPath(ChunkId)))
+		if (!FFileHelper::LoadFileToString(Contents, *ConvaiPakManager::Chunk::GetDraftPath(ChunkId)))
 		{
 			return FString();
 		}
@@ -212,16 +189,16 @@ namespace
 	}
 
 	/**
-	 * Sets fields and writes the document back.
+	 * Sets fields and writes the Draft back.
 	 *
-	 * Read-modify-write over the parsed document rather than serialising a struct: this metadata is
-	 * the server's schema, not ours, and carries fields the Pak Manager has no type for -
-	 * avatar_config, entity_data, gender. Rebuilding it from what we happen to model would silently
-	 * drop whatever we do not.
+	 * The Draft is the Pak Manager's own document, but still read-modify-write rather than
+	 * serialised from a struct: a project moving between plugin versions has a Draft written by one
+	 * field set and read by another, and rebuilding it from what this version happens to model
+	 * would drop whatever the other one knew about.
 	 */
-	bool WriteMetadataFields(const int32 ChunkId, const TMap<FString, FString>& Fields)
+	bool WriteDraftFields(const int32 ChunkId, const TMap<FString, FString>& Fields)
 	{
-		const FString Path = ConvaiPakManager::Chunk::GetPakMetadataPath(ChunkId);
+		const FString Path = ConvaiPakManager::Chunk::GetDraftPath(ChunkId);
 
 		TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 		FString Contents;
@@ -235,8 +212,8 @@ namespace
 			}
 			else
 			{
-				// Refused rather than started fresh: overwriting a metadata document we could not
-				// parse would discard whatever it held, and it holds things nothing else has a copy of.
+				// Refused rather than started fresh: overwriting a Draft we could not parse would
+				// discard whatever the creator had typed into it.
 				CPM_LOG(Error, TEXT("Refusing to edit %s: it is not valid JSON."), *Path);
 				return false;
 			}
@@ -261,36 +238,36 @@ namespace
 
 FString UConvaiPakEditorSubsystem::GetAssetName(const int32 ChunkId) const
 {
-	return ReadMetadataField(ChunkId, AssetNameField);
+	return ReadDraftField(ChunkId, AssetNameField);
 }
 
 bool UConvaiPakEditorSubsystem::SetAssetName(const int32 ChunkId, const FString& Name)
 {
-	return WriteMetadataFields(ChunkId, { { AssetNameField, Name } });
+	return WriteDraftFields(ChunkId, { { AssetNameField, Name } });
 }
 
 FString UConvaiPakEditorSubsystem::GetAssetDescription(const int32 ChunkId) const
 {
-	return ReadMetadataField(ChunkId, AssetDescriptionField);
+	return ReadDraftField(ChunkId, AssetDescriptionField);
 }
 
 bool UConvaiPakEditorSubsystem::SetAssetDescription(const int32 ChunkId, const FString& Description)
 {
-	return WriteMetadataFields(ChunkId, { { AssetDescriptionField, Description } });
+	return WriteDraftFields(ChunkId, { { AssetDescriptionField, Description } });
 }
 
 FString UConvaiPakEditorSubsystem::GetEntryPoint(const int32 ChunkId) const
 {
 	// An Avatar records a blueprint, a Scene records a level; whichever is set is the Entry Point.
-	const FString BlueprintPath = ReadMetadataField(ChunkId, TEXT("blueprint_class_path"));
+	const FString BlueprintPath = ReadDraftField(ChunkId, TEXT("blueprint_class_path"));
 	if (!BlueprintPath.IsEmpty())
 	{
 		return BlueprintPath;
 	}
 
 	return ConvaiPakManager::Chunk::ResolveLevelPackage(
-		ReadMetadataField(ChunkId, TEXT("level_name")),
-		ReadMetadataField(ChunkId, TEXT("root_path")));
+		ReadDraftField(ChunkId, TEXT("level_name")),
+		ReadDraftField(ChunkId, TEXT("root_path")));
 }
 
 bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString& PackageName)
@@ -321,7 +298,7 @@ bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString
 	const bool bIsBlueprint = Asset.AssetClassPath == UBlueprint::StaticClass()->GetClassPathName();
 
 	FCPM_ModdingMetadata Modding;
-	UCPM_UtilityLibrary::GetModdingMetadata(Modding);
+	UCPM_UtilityLibrary::GetModdingMetadataForChunk(ChunkId, Modding);
 	const bool bWantsLevel = Modding.AssetType.Equals(TEXT("Scene"), ESearchCase::IgnoreCase);
 
 	// Checked here rather than discovered on the server: an Avatar whose entry point is a level, or a
@@ -372,14 +349,7 @@ bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString
 		Fields.Add(TEXT("blueprint_class_path"), PackageName);
 	}
 
-	if (!WriteMetadataFields(ChunkId, Fields))
-	{
-		return false;
-	}
-
-	// The rest of the document - project_name, plugin_name, asset_type, content_path, entity_data -
-	// follows from these and from the project, and entity_data names the Entry Point just set.
-	return ConvaiPakManager::Chunk::NormalizePakMetadata(ChunkId);
+	return WriteDraftFields(ChunkId, Fields);
 }
 
 bool UConvaiPakEditorSubsystem::PickEntryPointFromSelection(const int32 ChunkId)
@@ -745,6 +715,9 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(
 
 	FCPM_PublishRequest PublishRequest;
 	PublishRequest.ChunkId = ChunkId;
+	// Resolved once, here, and read by every Job and by the archive marker below. Asking again later
+	// would file this run under whichever backend the creator had switched to by then.
+	PublishRequest.EnvironmentSlug = ConvaiPakManager::Chunk::CurrentEnvironmentSlug();
 	PublishRequest.Policy = Policy;
 	// Decided HERE, not by the Job: a package-only run must cook whatever the debug setting says,
 	// or "Package now" finishes instantly having built nothing.
@@ -760,11 +733,11 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(
 			Self->HandleWorkflowProgress(ChunkId, Info);
 		}
 	});
-	Request.OnFinishedNative.BindLambda([WeakThis, ChunkId, bPackageOnly, bArchiveRaw](const FWorkflowStatusInfo& Info, const FWorkflowResult&)
+	Request.OnFinishedNative.BindLambda([WeakThis, ChunkId, bPackageOnly, bArchiveRaw, EnvironmentSlug = PublishRequest.EnvironmentSlug](const FWorkflowStatusInfo& Info, const FWorkflowResult&)
 	{
 		if (UConvaiPakEditorSubsystem* Self = WeakThis.Get())
 		{
-			Self->HandleWorkflowFinished(ChunkId, Info, bPackageOnly, bArchiveRaw);
+			Self->HandleWorkflowFinished(ChunkId, Info, bPackageOnly, bArchiveRaw, EnvironmentSlug);
 		}
 	});
 
@@ -840,7 +813,8 @@ void UConvaiPakEditorSubsystem::HandleWorkflowProgress(const int32 ChunkId, cons
 }
 
 void UConvaiPakEditorSubsystem::HandleWorkflowFinished(
-	const int32 ChunkId, const FWorkflowStatusInfo& Info, const bool bPackageOnly, const bool bArchivedRaw)
+	const int32 ChunkId, const FWorkflowStatusInfo& Info, const bool bPackageOnly, const bool bArchivedRaw,
+	const FString& EnvironmentSlug)
 {
 	// Reported from inside ICreateWorkflow, before the handle exists to be registered. The Remove
 	// below is a no-op in that case; this is what stops the caller registering it afterwards.
@@ -869,7 +843,7 @@ void UConvaiPakEditorSubsystem::HandleWorkflowFinished(
 			FFileHelper::SaveStringToFile(
 				TEXT("This chunk's Convai asset holds a raw project archive uploaded from this project.\r\n")
 				TEXT("Delete this file to make the next publish upload the project again.\r\n"),
-				*ConvaiPakManager::Chunk::GetRawArchiveRecordPath(ChunkId));
+				*ConvaiPakManager::Chunk::GetRawArchiveRecordPath(ChunkId, EnvironmentSlug));
 		}
 
 		SetStatus(ChunkId,
@@ -918,7 +892,10 @@ bool UConvaiPakEditorSubsystem::CancelPublish(const int32 ChunkId)
 
 bool UConvaiPakEditorSubsystem::DeleteAsset(const int32 ChunkId, const FString& Version, const bool bAlsoDeletePluginContent)
 {
-	const FString AssetId = GetAssetId(ChunkId);
+	// Captured at request time, like a Publish's: the delete is aimed at the backend resolved now,
+	// and reading the slug again when the response lands could clear another backend's records.
+	const FString EnvironmentSlug = ConvaiPakManager::Chunk::CurrentEnvironmentSlug();
+	const FString AssetId = ConvaiPakManager::Chunk::ReadAssetId(ChunkId, EnvironmentSlug);
 	if (AssetId.IsEmpty())
 	{
 		SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed, TEXT("this chunk has no published asset"));
@@ -955,6 +932,7 @@ bool UConvaiPakEditorSubsystem::DeleteAsset(const int32 ChunkId, const FString& 
 
 	DeletingChunkId = ChunkId;
 	DeletingVersion = Version;
+	DeletingEnvironmentSlug = EnvironmentSlug;
 
 	// Only a whole-asset delete takes the content: deleting one Version leaves the Asset, and the
 	// content is what every remaining Version was built from.
@@ -1031,10 +1009,12 @@ void UConvaiPakEditorSubsystem::HandleDeleteSucceeded(const FString& ResponseStr
 {
 	const int32 ChunkId = DeletingChunkId;
 	const FString Version = DeletingVersion;
+	const FString EnvironmentSlug = DeletingEnvironmentSlug;
 	const bool bWholeAsset = Version.IsEmpty();
 	const bool bDeleteContent = bDeletingPluginContent;
 	DeletingChunkId = INDEX_NONE;
 	DeletingVersion.Reset();
+	DeletingEnvironmentSlug.Reset();
 	bDeletingPluginContent = false;
 	DeleteProxy = nullptr;
 
@@ -1047,16 +1027,17 @@ void UConvaiPakEditorSubsystem::HandleDeleteSucceeded(const FString& ResponseStr
 
 	if (bWholeAsset)
 	{
-		// Everything this Chunk said about the Asset goes with the Asset. Nothing here describes
-		// anything any more: the id would offer Update against nothing, and the draft it used to be
-		// worth keeping described an Asset the creator has just destroyed.
-		ConvaiPakManager::Chunk::ClearAssetRecords(ChunkId, Undeleted);
+		// Everything this backend minted goes with the Asset it described - the id would offer
+		// Update against nothing. What the creator typed and captured stays: it is the input to
+		// every backend, including the one they publish to next.
+		ConvaiPakManager::Chunk::ClearAssetRecords(ChunkId, EnvironmentSlug, Undeleted);
 	}
 	else if (Version.Equals(TEXT("raw"), ESearchCase::IgnoreCase))
 	{
 		// Only the archive record, because only the archive is gone. The Asset survives a Version
 		// delete, so this file is the one thing that would otherwise keep authorising a reuse.
-		const FString ArchiveRecordPath = ConvaiPakManager::Chunk::GetRawArchiveRecordPath(ChunkId);
+		const FString ArchiveRecordPath =
+			ConvaiPakManager::Chunk::GetRawArchiveRecordPath(ChunkId, EnvironmentSlug);
 		if (!IFileManager::Get().Delete(*ArchiveRecordPath, /*RequireExists=*/false, /*EvenReadOnly=*/true))
 		{
 			Undeleted.Add(ArchiveRecordPath);
@@ -1198,6 +1179,7 @@ void UConvaiPakEditorSubsystem::HandleDeleteFailed(const FString& ResponseString
 	const int32 ChunkId = DeletingChunkId;
 	DeletingChunkId = INDEX_NONE;
 	DeletingVersion.Reset();
+	DeletingEnvironmentSlug.Reset();
 	bDeletingPluginContent = false;
 	DeleteProxy = nullptr;
 

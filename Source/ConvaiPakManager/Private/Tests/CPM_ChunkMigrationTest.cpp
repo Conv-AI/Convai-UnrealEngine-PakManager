@@ -55,6 +55,12 @@ namespace
 			return Contents;
 		}
 
+		bool PerChunkExists(const int32 ChunkId, const FString& FileName) const
+		{
+			return IFileManager::Get().FileExists(
+				*FPaths::Combine(Path, FString::Printf(TEXT("ChunkId_%d"), ChunkId), FileName));
+		}
+
 		void WritePerChunk(const int32 ChunkId, const FString& FileName, const FString& Contents) const
 		{
 			const FString Directory = FPaths::Combine(Path, FString::Printf(TEXT("ChunkId_%d"), ChunkId));
@@ -95,8 +101,11 @@ bool FCPMChunkMigrationPreservesTheAssetId::RunTest(const FString&)
 		Scratch.ReadPerChunk(10, TEXT("CreateAssetData_10.json")), FString(PublishedAssetJson));
 	TestEqual(TEXT("the pak metadata survives the move"),
 		Scratch.ReadPerChunk(10, TEXT("PakMetaData_10.json")), FString(TEXT("{\"asset_name\":\"Dev_CPM_53\"}")));
+	// Renamed as it moves: the Modding Tool has always written JSON into that .txt.
 	TestEqual(TEXT("the modding metadata survives the move"),
-		Scratch.ReadPerChunk(10, TEXT("ModdingMetaData_10.txt")), FString(TEXT("{\"asset_type\":\"Scene\"}")));
+		Scratch.ReadPerChunk(10, TEXT("ModdingMetaData_10.json")), FString(TEXT("{\"asset_type\":\"Scene\"}")));
+	TestFalse(TEXT("and no longer claims to be text"),
+		Scratch.PerChunkExists(10, TEXT("ModdingMetaData_10.txt")));
 
 	TestFalse(TEXT("the flat CreateAssetData is gone"), Scratch.LegacyExists(TEXT("CreateAssetData.json")));
 	TestFalse(TEXT("the flat PakMetaData is gone"), Scratch.LegacyExists(TEXT("PakMetaData.json")));

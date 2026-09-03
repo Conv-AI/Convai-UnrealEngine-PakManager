@@ -18,12 +18,14 @@ public:
 
 private:
 	/**
-	 * Moves a pre-Chunk ConvaiEssentials layout into its per-Chunk directory, once the Asset
-	 * Registry can answer which Chunk this project has.
+	 * Brings this project's ConvaiEssentials up to the layout this version reads, once the Asset
+	 * Registry can answer which Chunks it has: a pre-Chunk flat layout moves into its per-Chunk
+	 * directory, then whatever is still loose in each Chunk is adopted into the production backend's
+	 * folder.
 	 *
-	 * Runs before any UI opens, because reading Chunk state without migrating first reports a
-	 * published Asset as absent - and publishing from there creates a duplicate and orphans the
-	 * original permanently.
+	 * Runs before any UI opens, because reading Chunk state without both steps reports a published
+	 * Asset as absent - and publishing from there creates a duplicate and orphans the original
+	 * permanently.
 	 */
 	void MigrateChunkStateLayout();
 

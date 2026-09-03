@@ -44,8 +44,13 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FCPM_AssetCreateDelegate OnFailure;
 	
+	/**
+	 * @param ChunkId          Which Chunk this Asset belongs to.
+	 * @param EnvironmentSlug  The backend the request is going to, resolved now rather than when
+	 *                         the response lands - by then the creator may have changed the URL.
+	 */
 	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", DisplayName = "Convai Create Pak Asset"), Category = "Convai|PakManager")
-	static UCPM_CreatePakAssetProxy* CreatePakAssetProxy(const FCPM_CreatePakAssetParams& Params);
+	static UCPM_CreatePakAssetProxy* CreatePakAssetProxy(const FCPM_CreatePakAssetParams& Params, int32 ChunkId, const FString& EnvironmentSlug);
 
 	/**
 	 * The server's answer, verbatim.
@@ -59,6 +64,11 @@ public:
 protected:
 	virtual void HandleSuccess() override;
 	virtual void HandleFailure() override;
+
+private:
+	/** Where the AssetID is recorded the instant the create returns. See HandleSuccess. */
+	int32 RecordChunkId = INDEX_NONE;
+	FString RecordEnvironmentSlug;
 };
 
 /* Update Proxy */

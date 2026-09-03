@@ -8,6 +8,8 @@
 #include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Misc/SecureHash.h"
+#include "RestAPI/ConvaiURL.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
@@ -23,16 +25,20 @@ namespace
 	/**
 	 * One state file, named by its stem so the flat and per-Chunk names cannot drift apart:
 	 * `CreateAssetData.json` flat becomes `CreateAssetData_10.json` under a Chunk.
+	 *
+	 * The two extensions differ only for ModdingMetaData: the Modding Tool has always written JSON
+	 * into a `.txt`, and the per-Chunk name says what the contents are.
 	 */
 	struct FStateFile
 	{
 		const TCHAR* Stem;
-		const TCHAR* Extension;
+		const TCHAR* LegacyExtension;
+		const TCHAR* PerChunkExtension;
 
-		FString LegacyName() const { return FString(Stem) + Extension; }
+		FString LegacyName() const { return FString(Stem) + LegacyExtension; }
 		FString PerChunkName(const int32 ChunkId) const
 		{
-			return FString::Printf(TEXT("%s_%d%s"), Stem, ChunkId, Extension);
+			return FString::Printf(TEXT("%s_%d%s"), Stem, ChunkId, PerChunkExtension);
 		}
 	};
 
@@ -43,13 +49,61 @@ namespace
 	 * The other two are rebuildable from a Publish; that one is not.
 	 */
 	const FStateFile StateFiles[] = {
-		{ TEXT("CreateAssetData"), TEXT(".json") },
-		{ TEXT("PakMetaData"),     TEXT(".json") },
-		{ TEXT("ModdingMetaData"), TEXT(".txt") },
+		{ TEXT("CreateAssetData"), TEXT(".json"), TEXT(".json") },
+		{ TEXT("PakMetaData"),     TEXT(".json"), TEXT(".json") },
+		{ TEXT("ModdingMetaData"), TEXT(".txt"),  TEXT(".json") },
 	};
 
 	/** Memoised GetSoleChunkId. Unset means "not yet resolved from a completed Asset Registry scan". */
 	TOptional<int32> CachedSoleChunkId;
+
+	FString StateDirectoryIn(const FString& EssentialsDirectory, const int32 ChunkId)
+	{
+		return FPaths::Combine(EssentialsDirectory, FString::Printf(TEXT("ChunkId_%d"), ChunkId));
+	}
+
+	/** A URL reduced to one spelling per backend, plus the part of it a human can read. */
+	struct FCanonicalUrl
+	{
+		/** Scheme, authority and path. This is what is hashed, and it is the whole identity. */
+		FString Whole;
+		/** Authority and path alone, what the readable half of the slug is made from. */
+		FString HostAndPath;
+	};
+
+	FCanonicalUrl CanonicaliseUrl(const FString& BaseUrl)
+	{
+		const FString Trimmed = BaseUrl.TrimStartAndEnd();
+
+		FString Scheme, Rest;
+		if (!Trimmed.Split(TEXT("://"), &Scheme, &Rest))
+		{
+			Rest = Trimmed;
+		}
+
+		FString Authority = Rest;
+		FString Path;
+		int32 FirstSlash = INDEX_NONE;
+		if (Rest.FindChar(TEXT('/'), FirstSlash))
+		{
+			Authority = Rest.Left(FirstSlash);
+			Path = Rest.RightChop(FirstSlash);
+		}
+
+		// A trailing slash is one address typed two ways - GetFullURL puts one there either way. The
+		// rest of the path is the server's to interpret, so it keeps the case the creator wrote.
+		while (Path.EndsWith(TEXT("/")))
+		{
+			Path.LeftChopInline(1);
+		}
+
+		FCanonicalUrl Canonical;
+		Canonical.HostAndPath = Authority.ToLower() + Path;
+		Canonical.Whole = Scheme.IsEmpty()
+			? Canonical.HostAndPath
+			: Scheme.ToLower() + TEXT("://") + Canonical.HostAndPath;
+		return Canonical;
+	}
 }
 
 TArray<FCPM_Chunk> Discover()
@@ -149,37 +203,148 @@ FString GetEssentialsDirectory()
 
 FString GetStateDirectory(const int32 ChunkId)
 {
-	return FPaths::Combine(GetEssentialsDirectory(), FString::Printf(TEXT("ChunkId_%d"), ChunkId));
+	return StateDirectoryIn(GetEssentialsDirectory(), ChunkId);
 }
 
-FString GetCreateAssetDataPath(const int32 ChunkId)
+FString EnvironmentSlug(const FString& BaseUrl)
 {
-	return FPaths::Combine(GetStateDirectory(ChunkId), FString::Printf(TEXT("CreateAssetData_%d.json"), ChunkId));
+	const FCanonicalUrl Canonical = CanonicaliseUrl(BaseUrl);
+
+	// The whole canonical URL, not just the host: two backends can share a host and differ by
+	// scheme, port or path, and one folder they both wrote into is the crossover this exists to stop.
+	const FTCHARToUTF8 Utf8(*Canonical.Whole);
+	const FString Hash =
+		FMD5::HashBytes(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length()).Left(8);
+
+	// ASCII spelled out rather than FChar::IsAlnum: this becomes a directory name on three
+	// platforms, and a locale that calls some other letter alphanumeric would put it in one.
+	FString Segment;
+	Segment.Reserve(Canonical.HostAndPath.Len());
+	for (const TCHAR Character : Canonical.HostAndPath)
+	{
+		const bool bReadable = (Character >= TEXT('0') && Character <= TEXT('9'))
+			|| (Character >= TEXT('A') && Character <= TEXT('Z'))
+			|| (Character >= TEXT('a') && Character <= TEXT('z'))
+			|| Character == TEXT('.');
+		Segment.AppendChar(bReadable ? Character : TEXT('-'));
+	}
+	Segment.LeftInline(24);
+
+	return FString::Printf(TEXT("Env_%s_%s"), Segment.IsEmpty() ? TEXT("unknown") : *Segment, *Hash);
 }
 
-FString GetPakMetadataPath(const int32 ChunkId)
+FString CurrentEnvironmentSlug()
 {
-	return FPaths::Combine(GetStateDirectory(ChunkId), FString::Printf(TEXT("PakMetaData_%d.json"), ChunkId));
+	return EnvironmentSlug(UConvaiURL::GetBaseURL(/*bUseBeta=*/false));
+}
+
+FString GetEnvironmentDirectory(const int32 ChunkId, const FString& EnvironmentSlug)
+{
+	return FPaths::Combine(GetStateDirectory(ChunkId), EnvironmentSlug);
+}
+
+FString GetCreateAssetDataPath(const int32 ChunkId, const FString& EnvironmentSlug)
+{
+	return FPaths::Combine(
+		GetEnvironmentDirectory(ChunkId, EnvironmentSlug),
+		FString::Printf(TEXT("CreateAssetData_%d.json"), ChunkId));
+}
+
+FString GetPakMetadataPath(const int32 ChunkId, const FString& EnvironmentSlug)
+{
+	return FPaths::Combine(
+		GetEnvironmentDirectory(ChunkId, EnvironmentSlug),
+		FString::Printf(TEXT("PakMetaData_%d.json"), ChunkId));
+}
+
+FString ReadAssetId(const int32 ChunkId, const FString& EnvironmentSlug)
+{
+	FString Contents;
+	if (!FFileHelper::LoadFileToString(Contents, *GetCreateAssetDataPath(ChunkId, EnvironmentSlug)))
+	{
+		return FString();
+	}
+
+	FCPM_CreatedAssets Created;
+	if (!UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(Contents, Created) || Created.Assets.IsEmpty())
+	{
+		return FString();
+	}
+
+	return Created.Assets[0].Asset.AssetId;
+}
+
+bool WriteCreateAssetData(const int32 ChunkId, const FString& EnvironmentSlug, const FString& ResponseString)
+{
+	// SaveStringToFile creates the environment directory on the way, so the first publish to a
+	// backend needs no separate step.
+	const FString Path = GetCreateAssetDataPath(ChunkId, EnvironmentSlug);
+	if (FFileHelper::SaveStringToFile(ResponseString, *Path))
+	{
+		return true;
+	}
+
+	// Loud, because this is the failure that orphans an Asset: it exists on Convai and the
+	// creator's project has no record of its id.
+	CPM_LOG(Error, TEXT("Could not write %s. This orphans an Asset that already exists on Convai."), *Path);
+	return false;
+}
+
+bool WritePakMetadata(const int32 ChunkId, const FString& EnvironmentSlug, const FString& Document)
+{
+	const FString Path = GetPakMetadataPath(ChunkId, EnvironmentSlug);
+	if (FFileHelper::SaveStringToFile(Document, *Path))
+	{
+		return true;
+	}
+
+	CPM_LOG(Error, TEXT("Could not write %s."), *Path);
+	return false;
+}
+
+FString GetModdingMetadataPathIn(const FString& EssentialsDirectory, const int32 ChunkId)
+{
+	const FString Directory = StateDirectoryIn(EssentialsDirectory, ChunkId);
+	const FString Path = FPaths::Combine(Directory, FString::Printf(TEXT("ModdingMetaData_%d.json"), ChunkId));
+	if (IFileManager::Get().FileExists(*Path))
+	{
+		return Path;
+	}
+
+	// A project generated by a Modding Tool that has not caught up yet still has to open.
+	const FString LegacyPath = FPaths::Combine(Directory, FString::Printf(TEXT("ModdingMetaData_%d.txt"), ChunkId));
+	return IFileManager::Get().FileExists(*LegacyPath) ? LegacyPath : Path;
 }
 
 FString GetModdingMetadataPath(const int32 ChunkId)
 {
-	return FPaths::Combine(GetStateDirectory(ChunkId), FString::Printf(TEXT("ModdingMetaData_%d.txt"), ChunkId));
+	return GetModdingMetadataPathIn(GetEssentialsDirectory(), ChunkId);
 }
 
-FString GetRawArchiveRecordPath(const int32 ChunkId)
+FString GetRawArchiveRecordPath(const int32 ChunkId, const FString& EnvironmentSlug)
 {
-	return FPaths::Combine(GetStateDirectory(ChunkId), FString::Printf(TEXT("RawArchive_%d.txt"), ChunkId));
+	return FPaths::Combine(
+		GetEnvironmentDirectory(ChunkId, EnvironmentSlug),
+		FString::Printf(TEXT("RawArchive_%d.txt"), ChunkId));
 }
 
-void ClearAssetRecordsIn(const FString& EssentialsDirectory, const int32 ChunkId, TArray<FString>& OutUndeleted)
+FString GetDraftPath(const int32 ChunkId)
 {
-	const FString Directory = FPaths::Combine(EssentialsDirectory, FString::Printf(TEXT("ChunkId_%d"), ChunkId));
+	return FPaths::Combine(GetStateDirectory(ChunkId), FString::Printf(TEXT("Draft_%d.json"), ChunkId));
+}
+
+void ClearAssetRecordsIn(
+	const FString& EssentialsDirectory,
+	const int32 ChunkId,
+	const FString& EnvironmentSlug,
+	TArray<FString>& OutUndeleted)
+{
+	const FString Directory =
+		FPaths::Combine(StateDirectoryIn(EssentialsDirectory, ChunkId), EnvironmentSlug);
 
 	const TArray<FString> Records = {
 		FPaths::Combine(Directory, FString::Printf(TEXT("CreateAssetData_%d.json"), ChunkId)),
 		FPaths::Combine(Directory, FString::Printf(TEXT("PakMetaData_%d.json"), ChunkId)),
-		FPaths::Combine(Directory, FString::Printf(TEXT("Thumbnail_%d.png"), ChunkId)),
 		FPaths::Combine(Directory, FString::Printf(TEXT("RawArchive_%d.txt"), ChunkId)),
 	};
 
@@ -194,9 +359,9 @@ void ClearAssetRecordsIn(const FString& EssentialsDirectory, const int32 ChunkId
 	}
 }
 
-void ClearAssetRecords(const int32 ChunkId, TArray<FString>& OutUndeleted)
+void ClearAssetRecords(const int32 ChunkId, const FString& EnvironmentSlug, TArray<FString>& OutUndeleted)
 {
-	ClearAssetRecordsIn(GetEssentialsDirectory(), ChunkId, OutUndeleted);
+	ClearAssetRecordsIn(GetEssentialsDirectory(), ChunkId, EnvironmentSlug, OutUndeleted);
 }
 
 FString GetThumbnailPath(const int32 ChunkId)
@@ -236,7 +401,7 @@ EMigrationResult MigrateLegacyLayoutIn(
 		return EMigrationResult::Ambiguous;
 	}
 
-	const FString StateDirectory = FPaths::Combine(EssentialsDirectory, FString::Printf(TEXT("ChunkId_%d"), ChunkId));
+	const FString StateDirectory = StateDirectoryIn(EssentialsDirectory, ChunkId);
 	if (!FileManager.DirectoryExists(*StateDirectory) && !FileManager.MakeDirectory(*StateDirectory, true))
 	{
 		CPM_LOG(Error, TEXT("Could not create Chunk state directory %s. Nothing was moved."), *StateDirectory);
@@ -293,6 +458,187 @@ EMigrationResult MigrateLegacyLayoutIn(
 EMigrationResult MigrateLegacyLayout(TArray<FString>& OutMovedFiles)
 {
 	return MigrateLegacyLayoutIn(GetEssentialsDirectory(), GetSoleChunkId(), OutMovedFiles);
+}
+
+namespace
+{
+	/** Everything on a metadata document that the creator typed rather than a backend minted. */
+	const TCHAR* DraftFields[] = {
+		TEXT("asset_name"),
+		TEXT("asset_description"),
+		TEXT("root_path"),
+		TEXT("level_name"),
+		TEXT("blueprint_class"),
+		TEXT("blueprint_class_path"),
+	};
+
+	bool SaveJsonObject(const TSharedRef<FJsonObject>& Root, const FString& Path)
+	{
+		FString Serialised;
+		const TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>> Writer =
+			TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&Serialised);
+		if (!FJsonSerializer::Serialize(Root, Writer))
+		{
+			return false;
+		}
+
+		return FFileHelper::SaveStringToFile(Serialised, *Path);
+	}
+
+	/**
+	 * Gives the Draft the fields the pre-partition PakMetaData was carrying on its behalf.
+	 *
+	 * The creator's name, description and Entry Point live in the server's document today. That
+	 * document is about to move under one backend, so without this the form comes back empty on the
+	 * first launch after the upgrade and the creator re-types what they already entered.
+	 */
+	void SeedDraftFromPakMetadata(const FString& StateDirectory, const int32 ChunkId)
+	{
+		const FString DraftPath = FPaths::Combine(StateDirectory, FString::Printf(TEXT("Draft_%d.json"), ChunkId));
+		if (IFileManager::Get().FileExists(*DraftPath))
+		{
+			// A Draft that already exists is the creator's own, and outranks anything reconstructed.
+			return;
+		}
+
+		const FString MetadataPath =
+			FPaths::Combine(StateDirectory, FString::Printf(TEXT("PakMetaData_%d.json"), ChunkId));
+		FString Contents;
+		if (!FFileHelper::LoadFileToString(Contents, *MetadataPath))
+		{
+			return;
+		}
+
+		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Contents);
+		TSharedPtr<FJsonObject> Parsed;
+		if (!FJsonSerializer::Deserialize(Reader, Parsed) || !Parsed.IsValid())
+		{
+			// Not fatal to the adoption: the document still moves, it just cannot be read from.
+			CPM_LOG(Warning, TEXT("%s is not valid JSON, so no Draft could be seeded from it."), *MetadataPath);
+			return;
+		}
+
+		const TSharedRef<FJsonObject> Draft = MakeShared<FJsonObject>();
+		for (const TCHAR* Field : DraftFields)
+		{
+			FString Value;
+			if (Parsed->TryGetStringField(Field, Value))
+			{
+				Draft->SetStringField(Field, Value);
+			}
+		}
+
+		SaveJsonObject(Draft, DraftPath);
+	}
+}
+
+EMigrationResult AdoptLooseRecordsIn(
+	const FString& EssentialsDirectory,
+	const int32 ChunkId,
+	const FString& EnvironmentSlug,
+	TArray<FString>& OutMovedFiles)
+{
+	IFileManager& FileManager = IFileManager::Get();
+
+	const FString StateDirectory = StateDirectoryIn(EssentialsDirectory, ChunkId);
+	if (!FileManager.DirectoryExists(*StateDirectory))
+	{
+		return EMigrationResult::NothingToMigrate;
+	}
+
+	const FString EnvironmentDirectory = FPaths::Combine(StateDirectory, EnvironmentSlug);
+
+	struct FAdoption
+	{
+		FString Source;
+		FString Destination;
+	};
+	TArray<FAdoption> Loose;
+
+	for (const FString& Name : {
+		FString::Printf(TEXT("CreateAssetData_%d.json"), ChunkId),
+		FString::Printf(TEXT("PakMetaData_%d.json"), ChunkId),
+		FString::Printf(TEXT("RawArchive_%d.txt"), ChunkId) })
+	{
+		const FString Source = FPaths::Combine(StateDirectory, Name);
+		if (FileManager.FileExists(*Source))
+		{
+			Loose.Add({ Source, FPaths::Combine(EnvironmentDirectory, Name) });
+		}
+	}
+
+	// Stays at Chunk level - it describes the project, which is the same on every backend. This one
+	// is only here because the same pass is what renames it to the extension its contents deserve.
+	const FString LegacyModdingPath =
+		FPaths::Combine(StateDirectory, FString::Printf(TEXT("ModdingMetaData_%d.txt"), ChunkId));
+	if (FileManager.FileExists(*LegacyModdingPath))
+	{
+		Loose.Add({
+			LegacyModdingPath,
+			FPaths::Combine(StateDirectory, FString::Printf(TEXT("ModdingMetaData_%d.json"), ChunkId)) });
+	}
+
+	if (Loose.IsEmpty())
+	{
+		return EMigrationResult::NothingToMigrate;
+	}
+
+	// Before anything moves: once PakMetaData is under the backend folder there is nothing left at
+	// Chunk level to read the creator's fields out of.
+	SeedDraftFromPakMetadata(StateDirectory, ChunkId);
+
+	if (!FileManager.DirectoryExists(*EnvironmentDirectory) &&
+		!FileManager.MakeDirectory(*EnvironmentDirectory, true))
+	{
+		CPM_LOG(Error, TEXT("Could not create environment directory %s. Nothing was moved."), *EnvironmentDirectory);
+		return EMigrationResult::Failed;
+	}
+
+	bool bAnyFailed = false;
+	for (const FAdoption& Adoption : Loose)
+	{
+		if (FileManager.FileExists(*Adoption.Destination))
+		{
+			// This backend has published since. Its record is the live one and the loose file is the
+			// older copy, so neither is destroyed and the creator can see both.
+			CPM_LOG(Warning, TEXT("%s already exists; leaving the loose %s in place untouched."),
+				*Adoption.Destination, *FPaths::GetCleanFilename(Adoption.Source));
+			continue;
+		}
+
+		// Move rather than copy-then-delete, for the reason MigrateLegacyLayoutIn gives: a
+		// half-finished copy that then loses its original is how the AssetID gets destroyed.
+		if (FileManager.Move(*Adoption.Destination, *Adoption.Source))
+		{
+			OutMovedFiles.Add(Adoption.Destination);
+		}
+		else
+		{
+			bAnyFailed = true;
+			CPM_LOG(Error, TEXT("Could not move %s to %s."), *Adoption.Source, *Adoption.Destination);
+		}
+	}
+
+	if (bAnyFailed)
+	{
+		return EMigrationResult::Failed;
+	}
+
+	if (!OutMovedFiles.IsEmpty())
+	{
+		CPM_LOG(Log, TEXT("Adopted %d loose record(s) into %s."), OutMovedFiles.Num(), *EnvironmentDirectory);
+		return EMigrationResult::Migrated;
+	}
+
+	return EMigrationResult::NothingToMigrate;
+}
+
+EMigrationResult AdoptLooseRecords(
+	const int32 ChunkId,
+	const FString& EnvironmentSlug,
+	TArray<FString>& OutMovedFiles)
+{
+	return AdoptLooseRecordsIn(GetEssentialsDirectory(), ChunkId, EnvironmentSlug, OutMovedFiles);
 }
 
 namespace
@@ -438,24 +784,53 @@ FString ResolveLevelPackage(const FString& LevelName, const FString& RootPath)
 	return LevelName;
 }
 
-bool NormalizePakMetadata(const int32 ChunkId)
+bool ComposePakMetadataAt(
+	const FString& MetadataPath,
+	const FString& DraftPath,
+	const FString& ProjectName,
+	const FString& PluginName,
+	const FString& AssetType)
 {
-	const FString Path = GetPakMetadataPath(ChunkId);
-
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	FString Contents;
-	if (FFileHelper::LoadFileToString(Contents, *Path))
+	if (FFileHelper::LoadFileToString(Contents, *MetadataPath))
 	{
 		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Contents);
 		TSharedPtr<FJsonObject> Parsed;
 		if (!FJsonSerializer::Deserialize(Reader, Parsed) || !Parsed.IsValid())
 		{
-			// Same refusal as every other edit of this document: it holds the only copy of things
-			// nobody can re-enter, so an unparseable one is left exactly as it is.
-			CPM_LOG(Error, TEXT("Refusing to normalize %s: it is not valid JSON."), *Path);
+			// Refused rather than started fresh: the server puts things in this document that
+			// nothing here would know to put back, so an unparseable one is left exactly as it is.
+			CPM_LOG(Error, TEXT("Refusing to compose %s: it is not valid JSON."), *MetadataPath);
 			return false;
 		}
 		Root = Parsed;
+	}
+
+	// The Draft wins every field it names. What a creator typed is the record of their Asset, and
+	// the server's echo is only the last thing it was told. See docs/adr/0005.
+	FString DraftContents;
+	if (FFileHelper::LoadFileToString(DraftContents, *DraftPath))
+	{
+		const TSharedRef<TJsonReader<>> DraftReader = TJsonReaderFactory<>::Create(DraftContents);
+		TSharedPtr<FJsonObject> Draft;
+		if (FJsonSerializer::Deserialize(DraftReader, Draft) && Draft.IsValid())
+		{
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Draft->Values)
+			{
+				FString Value;
+				if (Field.Value.IsValid() && Field.Value->TryGetString(Value))
+				{
+					Root->SetStringField(Field.Key, Value);
+				}
+			}
+		}
+		else
+		{
+			CPM_LOG(Error, TEXT("Refusing to compose %s: the Draft at %s is not valid JSON."),
+				*MetadataPath, *DraftPath);
+			return false;
+		}
 	}
 
 	// Upgraded here rather than left to the creator to re-pick: a document written by an older Pak
@@ -468,23 +843,21 @@ bool NormalizePakMetadata(const int32 ChunkId)
 		Root->SetStringField(TEXT("level_name"), ResolveLevelPackage(LevelName, RootPath));
 	}
 
-	FCPM_ModdingMetadata Modding;
-	UCPM_UtilityLibrary::GetModdingMetadata(Modding);
+	FillRequiredMetadataFields(Root.ToSharedRef(), ProjectName, PluginName, AssetType);
 
-	FillRequiredMetadataFields(
-		Root.ToSharedRef(),
+	return SaveJsonObject(Root.ToSharedRef(), MetadataPath);
+}
+
+bool ComposePakMetadata(const int32 ChunkId, const FString& EnvironmentSlug)
+{
+	FCPM_ModdingMetadata Modding;
+	UCPM_UtilityLibrary::GetModdingMetadataForChunk(ChunkId, Modding);
+
+	return ComposePakMetadataAt(
+		GetPakMetadataPath(ChunkId, EnvironmentSlug),
+		GetDraftPath(ChunkId),
 		UCPM_UtilityLibrary::GetProjectName(),
 		Modding.PluginName,
 		Modding.AssetType);
-
-	FString Serialised;
-	const TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>> Writer =
-		TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&Serialised);
-	if (!FJsonSerializer::Serialize(Root.ToSharedRef(), Writer))
-	{
-		return false;
-	}
-
-	return FFileHelper::SaveStringToFile(Serialised, *Path);
 }
 }
