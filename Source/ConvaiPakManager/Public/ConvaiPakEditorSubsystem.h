@@ -69,14 +69,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	FString GetAssetId(int32 ChunkId) const;
 
-	/**
-	 * Whether this project may gain another Chunk.
-	 *
-	 * A stated policy, not an enforcement boundary - the plugin ships as source. See docs/adr/0003.
-	 */
-	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
-	bool CanAddAnotherChunk() const;
-
 	/** This project's fixed Asset Type, decided by the Modding Tool. Max when the metadata is absent. */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	ECPM_AssetType GetAssetType() const;
@@ -124,6 +116,56 @@ public:
 	/** Tagged spawn-point actors in the open editor world. Scenes only make sense asking. */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	FCPM_SpawnPointStatus GetSpawnPointStatus() const;
+
+	// ---- Chunks ----
+
+	/**
+	 * Whether this project may gain another Chunk.
+	 *
+	 * A stated policy, not an enforcement boundary - the plugin ships as source. See docs/adr/0003.
+	 *
+	 * False while the Asset Registry is still scanning: the Chunk set is not known yet, and offering
+	 * a Create against a partial one mints an id another label may already claim.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool CanAddAnotherChunk() const;
+
+	/**
+	 * Gives this project a Chunk, by minting the Primary Asset Label that makes one.
+	 *
+	 * A Chunk is whatever a label gathers, so a project with no label has nothing to publish and no
+	 * way in: everything else here takes a Chunk ID. Until now the only way to get one was to author
+	 * a Primary Asset Label by hand, which is the one concept this tool exists to hide.
+	 *
+	 * The label goes in the Modding Plugin the project's metadata names, because that is where its
+	 * content is; a project that records no plugin is told to author the label itself rather than
+	 * having one put somewhere guessed.
+	 *
+	 * @param OutError  Why no Chunk was minted, in words a creator can act on. Empty on success.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool CreateChunk(FString& OutError);
+
+	/**
+	 * Brings this project's recorded state up to the layout this version reads.
+	 *
+	 * Called on every panel refresh and by CreateChunk after minting, not once at boot: the label set
+	 * changes under a running session, and migration that had nothing to attribute a pre-Chunk layout
+	 * to when the editor opened can attribute it the moment the project gains its first Chunk.
+	 *
+	 * Does nothing while the Asset Registry is still scanning - see Chunk::ReconcileStateLayout.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	void ReconcileChunkState();
+
+	/**
+	 * Whether a pre-Chunk layout is still sitting in ConvaiEssentials, unattributed to any Chunk.
+	 *
+	 * A condition of the PROJECT rather than of a Chunk, so deliberately not a Chunk status: there
+	 * may be no Chunk to hang it on, which is the usual reason it is true. See docs/adr/0008.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool HasUnmigratedLegacyLayout() const;
 
 	// ---- Edits ----
 	//
@@ -292,6 +334,19 @@ public:
 	FCPM_OnPolicyChanged OnPolicyChanged;
 
 private:
+	/**
+	 * Whether this package can serve as that Chunk's Entry Point, fixing up an Avatar blueprint that
+	 * only needs Convai's components adding.
+	 *
+	 * Shared by SetEntryPoint and by every Publish and Package, because a pick-time check only ever
+	 * caught the pick: a creator can delete the chatbot component, move the asset out of the plugin
+	 * or delete it outright afterwards, and a run is the last moment before the content is cooked.
+	 *
+	 * @param OutWhy       Why not, phrased for the creator. Untouched on success.
+	 * @param bOutIsLevel  Whether the package is a level, which is how the Draft records it.
+	 */
+	bool CheckEntryPoint(int32 ChunkId, const FString& PackageName, FString& OutWhy, bool& bOutIsLevel);
+
 	/** Reads the Publish Policy, from disk when a project overrides it and from the repository otherwise. */
 	void ResolvePolicy(int32 ChunkId, TFunction<void(bool bSucceeded, const FCPM_PublishPolicy&, const FString& Error)> OnResolved);
 

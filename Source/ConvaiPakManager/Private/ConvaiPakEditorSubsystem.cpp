@@ -4,6 +4,7 @@
 #include "ConvaiPakEditorSubsystem.h"
 
 #include "CPM_PakManagerSettings.h"
+#include "Avatar/CPM_AvatarBlueprint.h"
 #include "Chunk/CPM_Chunk.h"
 #include "ConvaiPakManagerEditorUtils.h"
 #include "Core/WorkflowManagerSubsystem.h"
@@ -25,8 +26,11 @@
 #include "Serialization/JsonWriter.h"
 #include "Jobs/CPM_PublishJobs.h"
 #include "Misc/FileHelper.h"
+#include "Misc/PackageName.h"
 #include "Proxy/CPM_Proxy.h"
 #include "Publish/CPM_PolicyRequest.h"
+#include "UObject/Package.h"
+#include "UObject/SavePackage.h"
 #include "Utility/CPM_Log.h"
 #include "Utility/CPM_UtilityLibrary.h"
 
@@ -89,7 +93,84 @@ FString UConvaiPakEditorSubsystem::GetAssetId(const int32 ChunkId) const
 
 bool UConvaiPakEditorSubsystem::CanAddAnotherChunk() const
 {
+	// Mid-scan the Chunk count is an undercount, so "yes" here would offer a Create whose id is
+	// picked from labels the scan has not surfaced yet - two labels claiming one Chunk. The panel
+	// re-asks when the scan completes, so the offer appears seconds later.
+	if (const IAssetRegistry* AssetRegistry = IAssetRegistry::Get(); AssetRegistry && AssetRegistry->IsLoadingAssets())
+	{
+		return false;
+	}
+
 	return !UCPM_PakManagerSettings::Get().IsAtChunkLimit(GetChunkIds().Num());
+}
+
+bool UConvaiPakEditorSubsystem::CreateChunk(FString& OutError)
+{
+	// Checked ahead of the limit, so a creator who gets here mid-scan is told what is actually
+	// happening rather than that their project is full.
+	if (const IAssetRegistry* AssetRegistry = IAssetRegistry::Get(); AssetRegistry && AssetRegistry->IsLoadingAssets())
+	{
+		OutError = TEXT("the editor is still scanning this project's assets, so it cannot yet tell which "
+			"chunks exist; try again in a moment");
+		return false;
+	}
+
+	if (!CanAddAnotherChunk())
+	{
+		OutError = TEXT("this project already has as many chunks as it may publish");
+		return false;
+	}
+
+	// INDEX_NONE while the project has no Chunk, which is exactly what makes this read the flat
+	// ConvaiEssentials/ModdingMetaData.txt - the only place a pre-Chunk project writes its plugin.
+	FCPM_ModdingMetadata Modding;
+	UCPM_UtilityLibrary::GetModdingMetadataForChunk(ConvaiPakManager::Chunk::GetSoleChunkId(), Modding);
+	if (Modding.PluginName.IsEmpty())
+	{
+		OutError = TEXT("this project records no modding plugin, so the Pak Manager cannot say where its "
+			"chunk's label belongs; add a Primary Asset Label by hand");
+		return false;
+	}
+
+	// 10 for the first, which is what the Modding Tool has always written: a creator whose project it
+	// generated and one minted here name their Paks the same, so nothing downstream has two cases.
+	// GetChunkIds is sorted, so the last is the highest.
+	const TArray<int32> Existing = GetChunkIds();
+	// Not const: a label that already declares a Chunk keeps it, and EnsureLabel says which.
+	int32 ChunkId = Existing.IsEmpty() ? 10 : Existing.Last() + 1;
+
+	const FString MountRoot = TEXT("/") + Modding.PluginName;
+	if (!ConvaiPakManager::Chunk::EnsureLabel(MountRoot, ChunkId, OutError))
+	{
+		return false;
+	}
+
+	// A false here is a DefaultGame.ini that could not be written, which Chunk has already logged and
+	// which the setting still applies past for this session. Failing the Command over it would tell a
+	// creator they have no Chunk while the label sits there declaring one.
+	ConvaiPakManager::Chunk::EnsureLabelDirectoryScanned(MountRoot);
+
+	// The project may have just gained its first Chunk, and a pre-Chunk layout that nothing could be
+	// attributed to a moment ago now can be.
+	ReconcileChunkState();
+
+	if (!GetChunkIds().Contains(ChunkId))
+	{
+		OutError = FString::Printf(
+			TEXT("the label was written but the project still reports no chunk %d; see the Output Log"), ChunkId);
+		return false;
+	}
+	return true;
+}
+
+void UConvaiPakEditorSubsystem::ReconcileChunkState()
+{
+	ConvaiPakManager::Chunk::ReconcileStateLayout();
+}
+
+bool UConvaiPakEditorSubsystem::HasUnmigratedLegacyLayout() const
+{
+	return ConvaiPakManager::Chunk::HasUnmigratedLegacyLayout();
 }
 
 ECPM_AssetType UConvaiPakEditorSubsystem::GetAssetType() const
@@ -270,17 +351,19 @@ FString UConvaiPakEditorSubsystem::GetEntryPoint(const int32 ChunkId) const
 		ReadDraftField(ChunkId, TEXT("root_path")));
 }
 
-bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString& PackageName)
+bool UConvaiPakEditorSubsystem::CheckEntryPoint(
+	const int32 ChunkId, const FString& PackageName, FString& OutWhy, bool& bOutIsLevel)
 {
 	if (PackageName.IsEmpty())
 	{
-		SetStatus(ChunkId, ECPM_AssetManagerStatus::Update_Failed, TEXT("no asset was picked"));
+		OutWhy = TEXT("no asset was picked");
 		return false;
 	}
 
 	const IAssetRegistry* AssetRegistry = IAssetRegistry::Get();
 	if (!AssetRegistry)
 	{
+		OutWhy = TEXT("the asset registry is unavailable");
 		return false;
 	}
 
@@ -288,32 +371,92 @@ bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString
 	AssetRegistry->GetAssetsByPackageName(FName(*PackageName), Assets);
 	if (Assets.IsEmpty())
 	{
-		SetStatus(ChunkId, ECPM_AssetManagerStatus::Update_Failed,
-			FString::Printf(TEXT("nothing exists at %s"), *PackageName));
+		OutWhy = FString::Printf(TEXT("nothing exists at %s"), *PackageName);
 		return false;
 	}
 
 	const FAssetData& Asset = Assets[0];
-	const bool bIsLevel = Asset.AssetClassPath == UWorld::StaticClass()->GetClassPathName();
+	bOutIsLevel = Asset.AssetClassPath == UWorld::StaticClass()->GetClassPathName();
 	const bool bIsBlueprint = Asset.AssetClassPath == UBlueprint::StaticClass()->GetClassPathName();
 
 	FCPM_ModdingMetadata Modding;
 	UCPM_UtilityLibrary::GetModdingMetadataForChunk(ChunkId, Modding);
+
+	// Before the type checks, because it is the one a creator is most likely to trip and the least
+	// visible: an Entry Point outside the plugin is not in what the label gathers, so it cooks into
+	// no Pak and the published Asset opens nothing.
+	if (!ConvaiPakManager::Chunk::IsUnderModdingPlugin(PackageName, Modding.PluginName))
+	{
+		OutWhy = FString::Printf(
+			TEXT("%s is outside the %s plugin. A published asset can only reach content under /%s/ - "
+				"move it there first."),
+			*PackageName, *Modding.PluginName, *Modding.PluginName);
+		return false;
+	}
+
 	const bool bWantsLevel = Modding.AssetType.Equals(TEXT("Scene"), ESearchCase::IgnoreCase);
 
 	// Checked here rather than discovered on the server: an Avatar whose entry point is a level, or a
 	// Scene whose entry point is a blueprint, publishes an Asset no product can open - and nothing
 	// between here and there would notice.
-	if (bWantsLevel && !bIsLevel)
+	if (bWantsLevel && !bOutIsLevel)
 	{
-		SetStatus(ChunkId, ECPM_AssetManagerStatus::Update_Failed,
-			FString::Printf(TEXT("a scene's entry point must be a level, and %s is not"), *PackageName));
+		OutWhy = FString::Printf(TEXT("a scene's entry point must be a level, and %s is not"), *PackageName);
 		return false;
 	}
 	if (!bWantsLevel && !bIsBlueprint)
 	{
-		SetStatus(ChunkId, ECPM_AssetManagerStatus::Update_Failed,
-			FString::Printf(TEXT("an avatar's entry point must be a blueprint, and %s is not"), *PackageName));
+		OutWhy = FString::Printf(TEXT("an avatar's entry point must be a blueprint, and %s is not"), *PackageName);
+		return false;
+	}
+
+	if (!bWantsLevel)
+	{
+		// The blueprint is edited in place rather than merely inspected: a creator picks the character
+		// they built, and everything Convai needs on top of it is wiring nobody should have to know
+		// about. Refuses only what it cannot fix without overwriting the creator's own work.
+		UBlueprint* Blueprint = Cast<UBlueprint>(Asset.GetAsset());
+		TArray<FString> Changes;
+		FString Error;
+		if (!Blueprint || !ConvaiPakManager::Avatar::PrepareAvatarBlueprint(Blueprint, Error, Changes))
+		{
+			OutWhy = Error.IsEmpty() ? FString::Printf(TEXT("could not load %s"), *PackageName) : Error;
+			return false;
+		}
+
+		if (!Changes.IsEmpty())
+		{
+			UPackage* Package = Blueprint->GetOutermost();
+			FSavePackageArgs SaveArgs;
+			SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+			// No dialog: this runs behind a pick or a publish the creator asked for, not to be asked
+			// back about package saving.
+			SaveArgs.SaveFlags = SAVE_NoError;
+
+			if (!UPackage::SavePackage(
+				Package, Blueprint,
+				*FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension()),
+				SaveArgs))
+			{
+				OutWhy = FString::Printf(TEXT("%s was set up for Convai but could not be saved"), *PackageName);
+				return false;
+			}
+
+			CPM_LOG(Display, TEXT("Saved %s after setting it up as an Avatar entry point: %s."),
+				*PackageName, *FString::Join(Changes, TEXT(", ")));
+		}
+	}
+
+	return true;
+}
+
+bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString& PackageName)
+{
+	FString Why;
+	bool bIsLevel = false;
+	if (!CheckEntryPoint(ChunkId, PackageName, Why, bIsLevel))
+	{
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Update_Failed, Why);
 		return false;
 	}
 
@@ -589,6 +732,23 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 	{
 		SetStatus(ChunkId, Refusal, TEXT("this project is deleting a plugin's content"));
 		return false;
+	}
+
+	// Checked again, having been checked when it was picked: the pick is the only thing that check
+	// caught, and a creator is free afterwards to delete the chatbot component, move the asset out of
+	// the plugin or delete it outright. This is the last moment before the content is cooked, and it
+	// re-applies the fix-up as well as the refusals. An Entry Point that was never picked is left to
+	// the UI's own gate - a script may package without one, and widening that is not this check's job.
+	const FString EntryPoint = GetEntryPoint(ChunkId);
+	if (!EntryPoint.IsEmpty())
+	{
+		FString Why;
+		bool bIsLevel = false;
+		if (!CheckEntryPoint(ChunkId, EntryPoint, Why, bIsLevel))
+		{
+			SetStatus(ChunkId, Refusal, Why);
+			return false;
+		}
 	}
 
 	SetStatus(ChunkId, ECPM_AssetManagerStatus::Packaging_Begin, FString(), 0.0f, TEXT("Reading publish policy"));
