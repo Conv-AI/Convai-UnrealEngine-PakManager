@@ -4,6 +4,7 @@
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "CPM_PakManagerSettings.h"
+#include "Chunk/CPM_Chunk.h"
 #include "ContentBrowserModule.h"
 #include "Editor.h"
 #include "Framework/Application/SlateApplication.h"
@@ -12,6 +13,7 @@
 #include "HAL/PlatformApplicationMisc.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/MessageDialog.h"
+#include "Misc/Paths.h"
 #include "Widgets/Input/SComboButton.h"
 #include "IContentBrowserSingleton.h"
 #include "IImageWrapper.h"
@@ -21,6 +23,7 @@
 #include "Styling/AppStyle.h"
 #include "Styling/CoreStyle.h"
 #include "UI/CPM_PakManagerStyle.h"
+#include "Utility/CPM_UtilityLibrary.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
@@ -32,6 +35,8 @@
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SWidgetSwitcher.h"
 #include "Widgets/Layout/SWrapBox.h"
+#include "Widgets/Views/SListView.h"
+#include "Widgets/Views/STableRow.h"
 #include "Widgets/Notifications/SNotificationList.h"
 #include "Widgets/Notifications/SProgressBar.h"
 #include "Widgets/SBoxPanel.h"
@@ -340,6 +345,8 @@ void SCPM_AssetDetailPanel::SetAssetViewModel(TSharedPtr<FCPM_AssetViewModel> In
 
 	Asset = InAsset;
 	EntryPointError = FText::GetEmpty();
+	SetupNotes = FText::GetEmpty();
+	OutsidePick.Reset();
 
 	if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
 	{
@@ -557,6 +564,16 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildContentSourceSection()
 					+ SHorizontalBox::Slot().AutoWidth().Padding(4.0f, 0.0f, 0.0f, 0.0f)
 					[
 						SNew(SButton)
+						.ButtonStyle(&SecondaryButtonStyle())
+						.Text(LOCTEXT("ShowDependencies", "Dependencies..."))
+						.ToolTipText(LOCTEXT("ShowDependenciesTip",
+							"What this asset drags into its pak, and how much of it lies outside the plugin."))
+						.IsEnabled_Lambda([this] { return Asset.IsValid() && !Asset->EntryPoint.IsEmpty(); })
+						.OnClicked(this, &SCPM_AssetDetailPanel::HandleShowDependencies)
+					]
+					+ SHorizontalBox::Slot().AutoWidth().Padding(4.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(SButton)
 						.ButtonStyle(&FAppStyle::Get(), "SimpleButton")
 						.ToolTipText(LOCTEXT("RevealEntryPointTip", "Find the Entry Point in the Content Browser"))
 						.IsEnabled_Lambda([this] { return Asset.IsValid() && !Asset->EntryPoint.IsEmpty(); })
@@ -568,13 +585,41 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildContentSourceSection()
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(120.0f, 0.0f, 0.0f, 4.0f)
 			[
-				SNew(STextBlock)
-				.Text_Lambda([this] { return EntryPointError; })
-				.ColorAndOpacity(FSlateColor(FPalette::Error))
-				.AutoWrapText(true)
+				SNew(SHorizontalBox)
 				.Visibility_Lambda([this]
 				{
 					return EntryPointError.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible;
+				})
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text_Lambda([this] { return EntryPointError; })
+					.ColorAndOpacity(FSlateColor(FPalette::Error))
+					.AutoWrapText(true)
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.ButtonStyle(&SecondaryButtonStyle())
+					.Text(LOCTEXT("RelocateEntryPoint", "Copy into plugin..."))
+					.ToolTipText(LOCTEXT("RelocateEntryPointTip",
+						"Copies this asset and everything it needs into the modding plugin, then picks the copy."))
+					.Visibility_Lambda([this]
+					{
+						return OutsidePick.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible;
+					})
+					.OnClicked(this, &SCPM_AssetDetailPanel::HandleRelocateEntryPoint)
+				]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(120.0f, 0.0f, 0.0f, 4.0f)
+			[
+				SNew(STextBlock)
+				.Text_Lambda([this] { return SetupNotes; })
+				.ColorAndOpacity(FSlateColor(FPalette::GreenPrimary))
+				.AutoWrapText(true)
+				.Visibility_Lambda([this]
+				{
+					return SetupNotes.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible;
 				})
 			]
 		];
@@ -626,8 +671,19 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPreviewSection()
 				SNew(SButton)
 				.ButtonStyle(&SecondaryButtonStyle())
 				.Text(LOCTEXT("CaptureThumbnail", "Capture thumbnail"))
-				.ToolTipText(LOCTEXT("CaptureThumbnailTip", "Captures the active viewport as this asset's thumbnail."))
+				.ToolTipText(bIsScene
+					? LOCTEXT("CaptureThumbnailTip", "Captures the active viewport as this asset's thumbnail.")
+					: LOCTEXT("CaptureAvatarThumbnailTip", "Renders the avatar blueprint you picked as this asset's thumbnail."))
 				.OnClicked(this, &SCPM_AssetDetailPanel::HandleCaptureThumbnail)
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f)
+			[
+				SNew(SButton)
+				.ButtonStyle(&SecondaryButtonStyle())
+				.Text(LOCTEXT("ChooseThumbnailImage", "Choose image..."))
+				.ToolTipText(LOCTEXT("ChooseThumbnailImageTip",
+					"Use a PNG or JPEG you made yourself; it is stored as this asset's thumbnail."))
+				.OnClicked(this, &SCPM_AssetDetailPanel::HandleChooseThumbnailImage)
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f)
 			[
@@ -851,24 +907,37 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildTechnicalSection()
 		})
 		.BodyContent()
 		[
-			Row(LOCTEXT("AssetIdLabel", "Asset ID"),
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
-				[
-					SNew(SEditableTextBox)
-					.IsReadOnly(true)
-					.Text_Lambda([this]
-					{
-						return Asset.IsValid() ? FText::FromString(Asset->AssetId) : FText::GetEmpty();
-					})
-				]
-				+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f, 0.0f, 0.0f)
-				[
-					SNew(SButton)
-					.ButtonStyle(&SecondaryButtonStyle())
-					.Text(LOCTEXT("CopyAssetId", "Copy"))
-					.OnClicked(this, &SCPM_AssetDetailPanel::HandleCopyAssetId)
-				])
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				Row(LOCTEXT("AssetIdLabel", "Asset ID"),
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+					[
+						SNew(SEditableTextBox)
+						.IsReadOnly(true)
+						.Text_Lambda([this]
+						{
+							return Asset.IsValid() ? FText::FromString(Asset->AssetId) : FText::GetEmpty();
+						})
+					]
+					+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(SButton)
+						.ButtonStyle(&SecondaryButtonStyle())
+						.Text(LOCTEXT("CopyAssetId", "Copy"))
+						.OnClicked(this, &SCPM_AssetDetailPanel::HandleCopyAssetId)
+					])
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock)
+				.TextStyle(&SecondaryTextStyle())
+				.AutoWrapText(true)
+				.Text(LOCTEXT("EssentialsWarning",
+					"This asset's identity lives in this project's ConvaiEssentials folder. Never move or delete it - "
+					"without it this asset can no longer be updated or deleted."))
+			]
 		];
 }
 
@@ -905,9 +974,14 @@ FReply SCPM_AssetDetailPanel::HandleUseSelectedAsset()
 		return FReply::Handled();
 	}
 
-	if (Subsystem->PickEntryPointFromSelection(Asset->ChunkId))
+	SetupNotes = FText::GetEmpty();
+	OutsidePick.Reset();
+
+	FString Notes;
+	if (Subsystem->PickEntryPointFromSelection(Asset->ChunkId, Notes))
 	{
 		EntryPointError = FText::GetEmpty();
+		SetupNotes = FText::FromString(Notes);
 		Asset->LoadFrom(*Subsystem);
 	}
 	else
@@ -918,7 +992,143 @@ FReply SCPM_AssetDetailPanel::HandleUseSelectedAsset()
 			? LOCTEXT("EntryPointRefused",
 				"The selection does not match this project's Asset Type - a Scene needs a level, an Avatar a blueprint. The previous Entry Point is kept.")
 			: FText::FromString(Message);
+
+		// Asked of the subsystem rather than read out of the refusal text: only one of the refusals
+		// is fixable by copying, and matching on a sentence is how the offer reaches the others.
+		FString Picked;
+		Subsystem->GetSelectedAssetPackageName(Picked);
+		if (!Picked.IsEmpty() && !Subsystem->IsInsideModdingPlugin(Asset->ChunkId, Picked))
+		{
+			OutsidePick = Picked;
+		}
 	}
+	return FReply::Handled();
+}
+
+FReply SCPM_AssetDetailPanel::HandleRelocateEntryPoint()
+{
+	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+	if (!Subsystem || !Asset.IsValid() || OutsidePick.IsEmpty())
+	{
+		return FReply::Handled();
+	}
+
+	TArray<FString> Inside;
+	TArray<FString> Outside;
+	// Refused rather than asked with the empty arrays: the count is the whole substance of the
+	// question below, and a confirmed "0 dependencies" is a different copy than the one that runs.
+	if (!Subsystem->ListDependencies(Asset->ChunkId, OutsidePick, Inside, Outside))
+	{
+		Notify(LOCTEXT("DependenciesUnreadable", "Could not read this asset's dependencies."),
+			SNotificationItem::CS_Fail);
+		return FReply::Handled();
+	}
+
+	FCPM_ModdingMetadata Modding;
+	UCPM_UtilityLibrary::GetModdingMetadataForChunk(Asset->ChunkId, Modding);
+
+	// The count is in the question because the copy is not one asset: a blueprint with a full
+	// character on it brings its meshes and materials, and that is what fills the creator's plugin.
+	const FText Question = FText::Format(
+		LOCTEXT("RelocateQuestion",
+			"Copy {0} and its {1} dependencies into /{2}/?\n\nYour original stays where it is; the copy is what publishes."),
+		FText::FromString(FPaths::GetCleanFilename(OutsidePick)),
+		FText::AsNumber(Inside.Num() + Outside.Num()),
+		FText::FromString(Modding.PluginName));
+	if (FMessageDialog::Open(EAppMsgType::YesNo, Question) != EAppReturnType::Yes)
+	{
+		return FReply::Handled();
+	}
+
+	FString NewPackage;
+	FString Why;
+	if (!Subsystem->RelocateEntryPointIntoPlugin(Asset->ChunkId, OutsidePick, NewPackage, Why))
+	{
+		EntryPointError = FText::FromString(Why);
+		return FReply::Handled();
+	}
+
+	EntryPointError = FText::GetEmpty();
+	OutsidePick.Reset();
+	Asset->LoadFrom(*Subsystem);
+	Notify(FText::Format(LOCTEXT("RelocateDone", "Copied into the plugin as {0}, and picked it."),
+		FText::FromString(NewPackage)), SNotificationItem::CS_Success);
+	return FReply::Handled();
+}
+
+FReply SCPM_AssetDetailPanel::HandleShowDependencies()
+{
+	using FPalette = FCPM_PakManagerStyle::FPalette;
+
+	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+	if (!Subsystem || !Asset.IsValid() || Asset->EntryPoint.IsEmpty())
+	{
+		return FReply::Handled();
+	}
+
+	TArray<FString> Inside;
+	TArray<FString> Outside;
+	if (!Subsystem->ListDependencies(Asset->ChunkId, Asset->EntryPoint, Inside, Outside))
+	{
+		Notify(LOCTEXT("DependenciesUnreadable", "Could not read this asset's dependencies."),
+			SNotificationItem::CS_Fail);
+		return FReply::Handled();
+	}
+
+	FCPM_ModdingMetadata Modding;
+	UCPM_UtilityLibrary::GetModdingMetadataForChunk(Asset->ChunkId, Modding);
+
+	// Held by the row generator the list view owns, not by this panel: the window outlives a closed
+	// tab, and a list view whose items source has been freed paints freed memory.
+	const TSharedRef<TArray<TSharedPtr<FString>>> Items = MakeShared<TArray<TSharedPtr<FString>>>();
+	for (const FString& Package : Outside)
+	{
+		Items->Add(MakeShared<FString>(Package));
+	}
+	for (const FString& Package : Inside)
+	{
+		Items->Add(MakeShared<FString>(Package));
+	}
+
+	const int32 NumOutside = Outside.Num();
+	const FText Header = FText::Format(
+		LOCTEXT("DependencyHeader",
+			"{0} packages travel with {1}. {2} are outside /{3}/ and are pulled in by the label's recursive rule."),
+		FText::AsNumber(Items->Num()),
+		FText::FromString(FPaths::GetCleanFilename(Asset->EntryPoint)),
+		FText::AsNumber(NumOutside),
+		FText::FromString(Modding.PluginName));
+
+	FSlateApplication::Get().AddWindow(
+		SNew(SWindow)
+		.Title(LOCTEXT("DependencyWindowTitle", "Dependencies"))
+		.ClientSize(FVector2D(640.0, 480.0))
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().Padding(12.0f)
+			[
+				SNew(STextBlock).AutoWrapText(true).Text(Header)
+			]
+			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(12.0f, 0.0f, 12.0f, 12.0f)
+			[
+				SNew(SListView<TSharedPtr<FString>>)
+				.ListItemsSource(&Items.Get())
+				.SelectionMode(ESelectionMode::None)
+				// Items is captured for its lifetime, not its contents: this reference is the only
+				// thing keeping alive what ListItemsSource points at.
+				.OnGenerateRow_Lambda([Items, PluginName = Modding.PluginName](TSharedPtr<FString> Item, const TSharedRef<STableViewBase>& Owner)
+				{
+					const bool bOutside = !ConvaiPakManager::Chunk::IsUnderModdingPlugin(*Item, PluginName);
+					return SNew(STableRow<TSharedPtr<FString>>, Owner)
+						[
+							SNew(STextBlock)
+							.Text(FText::FromString(*Item))
+							.ColorAndOpacity(FSlateColor(bOutside ? FPalette::Warning : FPalette::TextPrimary))
+						];
+				})
+			]
+		]);
+
 	return FReply::Handled();
 }
 
@@ -948,14 +1158,44 @@ FReply SCPM_AssetDetailPanel::HandleCaptureThumbnail()
 		return FReply::Handled();
 	}
 
-	if (Subsystem->CaptureThumbnail(Asset->ChunkId))
+	FString Why;
+	if (Subsystem->CaptureThumbnail(Asset->ChunkId, Why))
 	{
 		Asset->LoadFrom(*Subsystem);
 		RefreshThumbnailBrush(true);
 	}
 	else
 	{
-		Notify(LOCTEXT("CaptureFailed", "Could not capture a thumbnail from the viewport."), SNotificationItem::CS_Fail);
+		Notify(Why.IsEmpty()
+			? LOCTEXT("CaptureFailed", "Could not capture a thumbnail.")
+			: FText::FromString(Why), SNotificationItem::CS_Fail);
+	}
+	return FReply::Handled();
+}
+
+FReply SCPM_AssetDetailPanel::HandleChooseThumbnailImage()
+{
+	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+	if (!Subsystem || !Asset.IsValid())
+	{
+		return FReply::Handled();
+	}
+
+	const FString ImagePath = UCPM_UtilityLibrary::OpenFileDialog({ TEXT("png"), TEXT("jpg"), TEXT("jpeg") });
+	if (ImagePath.IsEmpty())
+	{
+		return FReply::Handled();
+	}
+
+	FString Why;
+	if (Subsystem->SetThumbnailFromFile(Asset->ChunkId, ImagePath, Why))
+	{
+		Asset->LoadFrom(*Subsystem);
+		RefreshThumbnailBrush(true);
+	}
+	else
+	{
+		Notify(FText::FromString(Why), SNotificationItem::CS_Fail);
 	}
 	return FReply::Handled();
 }

@@ -7,6 +7,7 @@
 #include "Engine/AssetManager.h"
 #include "Engine/AssetManagerSettings.h"
 #include "Engine/AssetManagerTypes.h"
+#include "Engine/Blueprint.h"
 #include "Engine/PrimaryAssetLabel.h"
 #include "Factories/DataAssetFactory.h"
 #include "HAL/FileManager.h"
@@ -1075,6 +1076,27 @@ bool IsUnderModdingPlugin(const FString& PackageName, const FString& PluginName)
 {
 	return PluginName.IsEmpty()
 		|| PackageName.StartsWith(TEXT("/") + PluginName + TEXT("/"), ESearchCase::IgnoreCase);
+}
+
+bool EntryPointSuitsAssetType(const FTopLevelAssetPath& AssetClass, const FString& PackageName,
+	const FString& AssetType, FString& OutWhy)
+{
+	if (AssetType.Equals(TEXT("Scene"), ESearchCase::IgnoreCase))
+	{
+		if (AssetClass != UWorld::StaticClass()->GetClassPathName())
+		{
+			OutWhy = FString::Printf(TEXT("a scene's entry point must be a level, and %s is not"), *PackageName);
+			return false;
+		}
+		return true;
+	}
+
+	if (AssetClass != UBlueprint::StaticClass()->GetClassPathName())
+	{
+		OutWhy = FString::Printf(TEXT("an avatar's entry point must be a blueprint, and %s is not"), *PackageName);
+		return false;
+	}
+	return true;
 }
 
 FString ResolveLevelPackage(const FString& LevelName, const FString& RootPath)

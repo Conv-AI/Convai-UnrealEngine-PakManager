@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UObject/TopLevelAssetPath.h"
 
 /**
  * A Chunk: the Source Packages gathered into one publishable unit by one Primary Asset Label.
@@ -251,6 +252,22 @@ CONVAIPAKMANAGER_API void FillRequiredMetadataFields(
  * its own /Game content records no plugin to be inside.
  */
 CONVAIPAKMANAGER_API bool IsUnderModdingPlugin(const FString& PackageName, const FString& PluginName);
+
+/**
+ * Whether an asset is the kind a Chunk's Asset Type can publish.
+ *
+ * Decided in the editor rather than on the server: an Avatar whose Entry Point is a level, or a
+ * Scene whose Entry Point is a blueprint, publishes an Asset no product can open, and nothing
+ * between here and there would notice. Also the gate on copying an Entry Point into the plugin -
+ * that copy drags a whole dependency closure under the mount and leaves it there, so it has to be
+ * refused before it starts rather than when the Entry Point is finally recorded.
+ *
+ * Anything that is not a Scene is an Avatar, matching what the metadata records.
+ *
+ * @param OutWhy  Why the asset is refused, phrased for the creator. Untouched when it passes.
+ */
+CONVAIPAKMANAGER_API bool EntryPointSuitsAssetType(const FTopLevelAssetPath& AssetClass,
+	const FString& PackageName, const FString& AssetType, FString& OutWhy);
 
 /**
  * The package path of a level recorded by short name, or the name unchanged if nothing matches.

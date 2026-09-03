@@ -1,6 +1,8 @@
 // Copyright 2025 Convai Inc. All Rights Reserved.
 
 #include "Chunk/CPM_Chunk.h"
+#include "Engine/Blueprint.h"
+#include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/FileHelper.h"
@@ -104,6 +106,46 @@ bool FCPMChunkBootstrapEntryPointMustLiveInThePlugin::RunTest(const FString&)
 	// An internal project labels its own /Game content and records no plugin to be inside of.
 	TestTrue(TEXT("a project with no Modding Plugin is not restricted"),
 		IsUnderModdingPlugin(TEXT("/Game/Anything"), FString()));
+
+	return true;
+}
+
+/**
+ * The same refusal gates recording an Entry Point and copying one into the plugin, because the copy
+ * drags a whole dependency closure under the mount and leaves it there: a level picked from /Game
+ * in an Avatar project is outside the plugin AND the wrong kind, and only the second one can stop
+ * the copy before it starts.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMChunkBootstrapEntryPointMustMatchTheAssetType,
+	"ConvaiPakManager.Chunk.Bootstrap.EntryPointMustMatchTheAssetType",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMChunkBootstrapEntryPointMustMatchTheAssetType::RunTest(const FString&)
+{
+	const FTopLevelAssetPath Level = UWorld::StaticClass()->GetClassPathName();
+	const FTopLevelAssetPath Blueprint = UBlueprint::StaticClass()->GetClassPathName();
+
+	FString Why;
+	TestTrue(TEXT("a scene takes a level"), EntryPointSuitsAssetType(Level, TEXT("/P/Maps/A"), TEXT("Scene"), Why));
+	TestTrue(TEXT("an avatar takes a blueprint"),
+		EntryPointSuitsAssetType(Blueprint, TEXT("/P/BP_A"), TEXT("Avatar"), Why));
+	TestTrue(TEXT("a passing asset leaves OutWhy alone"), Why.IsEmpty());
+
+	TestFalse(TEXT("a scene refuses a blueprint"),
+		EntryPointSuitsAssetType(Blueprint, TEXT("/P/BP_A"), TEXT("Scene"), Why));
+	TestTrue(TEXT("and says why"), Why.Contains(TEXT("must be a level")));
+
+	// The case the relocate path exists for: outside the plugin is checked first, so this asset
+	// reaches the copy offer and only the kind can turn it back.
+	TestFalse(TEXT("an avatar refuses a level"),
+		EntryPointSuitsAssetType(Level, TEXT("/Game/Maps/A"), TEXT("Avatar"), Why));
+	TestTrue(TEXT("and names the asset"), Why.Contains(TEXT("/Game/Maps/A")));
+
+	// The metadata records "Scene" or "Avatar"; anything else a legacy project wrote is an avatar,
+	// which is what a Chunk is when nothing says otherwise.
+	TestFalse(TEXT("an unrecognised asset type is read as an avatar"),
+		EntryPointSuitsAssetType(Level, TEXT("/P/Maps/A"), FString(), Why));
 
 	return true;
 }

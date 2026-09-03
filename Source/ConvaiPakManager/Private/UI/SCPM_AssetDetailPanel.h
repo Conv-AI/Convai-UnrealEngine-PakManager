@@ -82,8 +82,11 @@ private:
 
 	FReply HandleCreateChunk();
 	FReply HandleUseSelectedAsset();
+	FReply HandleRelocateEntryPoint();
+	FReply HandleShowDependencies();
 	FReply HandleRevealEntryPoint();
 	FReply HandleCaptureThumbnail();
+	FReply HandleChooseThumbnailImage();
 	FReply HandlePreviewThumbnail();
 	FReply HandleSetSpawnPoint();
 	FReply HandleCopyAssetId();
@@ -129,6 +132,21 @@ private:
 
 	/** Why the last Entry Point pick was refused. Empty means no inline error row. */
 	FText EntryPointError;
+
+	/**
+	 * What the last pick changed on the creator's own asset, or empty when it changed nothing.
+	 *
+	 * On screen rather than only in the Output Log: a pick edits and saves the creator's blueprint,
+	 * and an edit nobody is told about is one nobody knows to undo.
+	 */
+	FText SetupNotes;
+
+	/**
+	 * The package a refused pick named, when the refusal was that it sits outside the Modding Plugin.
+	 *
+	 * Empty for every other refusal - offering to copy is only honest when copying is the fix.
+	 */
+	FString OutsidePick;
 
 	/** The only brush on the thumbnail file, so a recapture can release the texture and re-read it. */
 	TSharedPtr<FSlateDynamicImageBrush> ThumbnailBrush;

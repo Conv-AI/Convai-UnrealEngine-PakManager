@@ -3,6 +3,7 @@
 
 #include "ConvaiPakEditorSubsystem.h"
 
+#include "CPM_DependencyCopyAPI.h"
 #include "CPM_PakManagerSettings.h"
 #include "Avatar/CPM_AvatarBlueprint.h"
 #include "Chunk/CPM_Chunk.h"
@@ -20,15 +21,19 @@
 #include "Engine/TargetPoint.h"
 #include "Engine/World.h"
 #include "IContentBrowserSingleton.h"
+#include "Interfaces/IPluginManager.h"
 #include "HAL/FileManager.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "Jobs/CPM_PublishJobs.h"
+#include "Misc/EngineVersion.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
 #include "Proxy/CPM_Proxy.h"
+#include "Publish/CPM_Compatibility.h"
 #include "Publish/CPM_PolicyRequest.h"
+#include "Thumbnail/CPM_Thumbnail.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
 #include "Utility/CPM_Log.h"
@@ -140,18 +145,25 @@ bool UConvaiPakEditorSubsystem::CreateChunk(FString& OutError)
 	int32 ChunkId = Existing.IsEmpty() ? 10 : Existing.Last() + 1;
 
 	const FString MountRoot = TEXT("/") + Modding.PluginName;
+	const int32 Requested = ChunkId;
 	if (!ConvaiPakManager::Chunk::EnsureLabel(MountRoot, ChunkId, OutError))
 	{
 		return false;
 	}
 
-	// A false here is a DefaultGame.ini that could not be written, which Chunk has already logged and
-	// which the setting still applies past for this session. Failing the Command over it would tell a
-	// creator they have no Chunk while the label sits there declaring one.
-	ConvaiPakManager::Chunk::EnsureLabelDirectoryScanned(MountRoot);
+	// EnsureLabel leaves a label that already declares a Chunk exactly as it found it and hands back
+	// the id it declares, so nothing was minted here - and reporting success would tell a creator
+	// they gained a Chunk that has been there all along.
+	if (ChunkId != Requested)
+	{
+		OutError = FString::Printf(TEXT("%s already declares chunk %d, so no new chunk was created"),
+			*(MountRoot / (TEXT("PAL_") + Modding.PluginName)), ChunkId);
+		return false;
+	}
 
 	// The project may have just gained its first Chunk, and a pre-Chunk layout that nothing could be
-	// attributed to a moment ago now can be.
+	// attributed to a moment ago now can be. This also registers the new label's directory for the
+	// Asset Manager, for every label the scan found.
 	ReconcileChunkState();
 
 	if (!GetChunkIds().Contains(ChunkId))
@@ -245,6 +257,23 @@ FCPM_SpawnPointStatus UConvaiPakEditorSubsystem::GetSpawnPointStatus() const
 
 namespace
 {
+	/**
+	 * Where the Convai SDK is mounted, with its trailing slash.
+	 *
+	 * Kept out of a creator's plugin and out of its dependency lists: every Convai product already
+	 * ships the SDK, so a copy of it is a duplicate the product will never load - and to the copy
+	 * API it looks like ordinary project content, because IsEnginePackage counts project plugins as
+	 * game content.
+	 */
+	FString ConvaiSdkMountRoot()
+	{
+		if (const TSharedPtr<IPlugin> Convai = IPluginManager::Get().FindPlugin(TEXT("ConvAI")))
+		{
+			return Convai->GetMountedAssetPath();
+		}
+		return TEXT("/ConvAI/");
+	}
+
 	/** Field names as the Convai asset metadata document spells them; the Draft keeps them. */
 	const TCHAR* AssetNameField = TEXT("asset_name");
 	const TCHAR* AssetDescriptionField = TEXT("asset_description");
@@ -351,8 +380,8 @@ FString UConvaiPakEditorSubsystem::GetEntryPoint(const int32 ChunkId) const
 		ReadDraftField(ChunkId, TEXT("root_path")));
 }
 
-bool UConvaiPakEditorSubsystem::CheckEntryPoint(
-	const int32 ChunkId, const FString& PackageName, FString& OutWhy, bool& bOutIsLevel)
+bool UConvaiPakEditorSubsystem::PrepareEntryPoint(
+	const int32 ChunkId, const FString& PackageName, FString& OutWhy, bool& bOutIsLevel, TArray<FString>& OutChanges)
 {
 	if (PackageName.IsEmpty())
 	{
@@ -377,7 +406,6 @@ bool UConvaiPakEditorSubsystem::CheckEntryPoint(
 
 	const FAssetData& Asset = Assets[0];
 	bOutIsLevel = Asset.AssetClassPath == UWorld::StaticClass()->GetClassPathName();
-	const bool bIsBlueprint = Asset.AssetClassPath == UBlueprint::StaticClass()->GetClassPathName();
 
 	FCPM_ModdingMetadata Modding;
 	UCPM_UtilityLibrary::GetModdingMetadataForChunk(ChunkId, Modding);
@@ -394,37 +422,26 @@ bool UConvaiPakEditorSubsystem::CheckEntryPoint(
 		return false;
 	}
 
+	if (!ConvaiPakManager::Chunk::EntryPointSuitsAssetType(Asset.AssetClassPath, PackageName, Modding.AssetType, OutWhy))
+	{
+		return false;
+	}
+
 	const bool bWantsLevel = Modding.AssetType.Equals(TEXT("Scene"), ESearchCase::IgnoreCase);
-
-	// Checked here rather than discovered on the server: an Avatar whose entry point is a level, or a
-	// Scene whose entry point is a blueprint, publishes an Asset no product can open - and nothing
-	// between here and there would notice.
-	if (bWantsLevel && !bOutIsLevel)
-	{
-		OutWhy = FString::Printf(TEXT("a scene's entry point must be a level, and %s is not"), *PackageName);
-		return false;
-	}
-	if (!bWantsLevel && !bIsBlueprint)
-	{
-		OutWhy = FString::Printf(TEXT("an avatar's entry point must be a blueprint, and %s is not"), *PackageName);
-		return false;
-	}
-
 	if (!bWantsLevel)
 	{
 		// The blueprint is edited in place rather than merely inspected: a creator picks the character
 		// they built, and everything Convai needs on top of it is wiring nobody should have to know
 		// about. Refuses only what it cannot fix without overwriting the creator's own work.
 		UBlueprint* Blueprint = Cast<UBlueprint>(Asset.GetAsset());
-		TArray<FString> Changes;
 		FString Error;
-		if (!Blueprint || !ConvaiPakManager::Avatar::PrepareAvatarBlueprint(Blueprint, Error, Changes))
+		if (!Blueprint || !ConvaiPakManager::Avatar::PrepareAvatarBlueprint(Blueprint, Error, OutChanges))
 		{
 			OutWhy = Error.IsEmpty() ? FString::Printf(TEXT("could not load %s"), *PackageName) : Error;
 			return false;
 		}
 
-		if (!Changes.IsEmpty())
+		if (!OutChanges.IsEmpty())
 		{
 			UPackage* Package = Blueprint->GetOutermost();
 			FSavePackageArgs SaveArgs;
@@ -443,21 +460,30 @@ bool UConvaiPakEditorSubsystem::CheckEntryPoint(
 			}
 
 			CPM_LOG(Display, TEXT("Saved %s after setting it up as an Avatar entry point: %s."),
-				*PackageName, *FString::Join(Changes, TEXT(", ")));
+				*PackageName, *FString::Join(OutChanges, TEXT(", ")));
 		}
 	}
 
 	return true;
 }
 
-bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString& PackageName)
+bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString& PackageName, FString& OutSetupNotes)
 {
+	OutSetupNotes.Reset();
+
 	FString Why;
 	bool bIsLevel = false;
-	if (!CheckEntryPoint(ChunkId, PackageName, Why, bIsLevel))
+	TArray<FString> Changes;
+	if (!PrepareEntryPoint(ChunkId, PackageName, Why, bIsLevel, Changes))
 	{
 		SetStatus(ChunkId, ECPM_AssetManagerStatus::Update_Failed, Why);
 		return false;
+	}
+
+	if (!Changes.IsEmpty())
+	{
+		OutSetupNotes = FString::Printf(TEXT("Set up %s for Convai: %s"),
+			*FPaths::GetCleanFilename(PackageName), *FString::Join(Changes, TEXT(", ")));
 	}
 
 	// "/AGXRDJZ.../Maps/Landing" -> "/AGXRDJZ.../" : the mount point the package lives under.
@@ -495,11 +521,160 @@ bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString
 	return WriteDraftFields(ChunkId, Fields);
 }
 
-bool UConvaiPakEditorSubsystem::PickEntryPointFromSelection(const int32 ChunkId)
+bool UConvaiPakEditorSubsystem::PickEntryPointFromSelection(const int32 ChunkId, FString& OutSetupNotes)
 {
 	FString PackageName;
 	GetSelectedAssetPackageName(PackageName);
-	return SetEntryPoint(ChunkId, PackageName);
+	return SetEntryPoint(ChunkId, PackageName, OutSetupNotes);
+}
+
+bool UConvaiPakEditorSubsystem::IsInsideModdingPlugin(const int32 ChunkId, const FString& PackageName) const
+{
+	FCPM_ModdingMetadata Modding;
+	UCPM_UtilityLibrary::GetModdingMetadataForChunk(ChunkId, Modding);
+	return ConvaiPakManager::Chunk::IsUnderModdingPlugin(PackageName, Modding.PluginName);
+}
+
+bool UConvaiPakEditorSubsystem::RelocateEntryPointIntoPlugin(
+	const int32 ChunkId, const FString& PackageName, FString& OutNewPackage, FString& OutWhy)
+{
+	FCPM_ModdingMetadata Modding;
+	UCPM_UtilityLibrary::GetModdingMetadataForChunk(ChunkId, Modding);
+	if (Modding.PluginName.IsEmpty())
+	{
+		OutWhy = TEXT("this project records no modding plugin to copy into");
+		return false;
+	}
+
+	if (ConvaiPakManager::Chunk::IsUnderModdingPlugin(PackageName, Modding.PluginName))
+	{
+		OutWhy = FString::Printf(TEXT("%s is already inside the %s plugin"), *PackageName, *Modding.PluginName);
+		return false;
+	}
+
+	const IAssetRegistry* AssetRegistry = IAssetRegistry::Get();
+	if (!AssetRegistry)
+	{
+		OutWhy = TEXT("the asset registry is unavailable");
+		return false;
+	}
+
+	TArray<FAssetData> Assets;
+	AssetRegistry->GetAssetsByPackageName(FName(*PackageName), Assets);
+	if (Assets.IsEmpty())
+	{
+		OutWhy = FString::Printf(TEXT("nothing exists at %s"), *PackageName);
+		return false;
+	}
+
+	// Before the copy, not after it: SetEntryPoint refuses the same mismatch at the end of this
+	// function, by which time the whole dependency closure is under the plugin mount and staying -
+	// which is content the chunk's label would then cook into the Pak.
+	if (!ConvaiPakManager::Chunk::EntryPointSuitsAssetType(
+		Assets[0].AssetClassPath, PackageName, Modding.AssetType, OutWhy))
+	{
+		return false;
+	}
+
+	FCPM_DependencyCopyOptions Options;
+	// Copy, never move: the creator picked an asset that lives somewhere for a reason, and a copy
+	// that goes wrong costs them nothing but the copies.
+	Options.Operation = ECPM_DependencyCopyOp::Copy;
+	Options.EnginePolicy = ECPM_EngineDependencyPolicy::Skip;
+	Options.bOverwriteExisting = false;
+	Options.bSaveAfterCopy = true;
+	Options.bSuppressUI = true;
+	Options.bFixupRedirectors = true;
+	Options.ExcludedPaths = { TEXT("/Engine/"), ConvaiSdkMountRoot(), TEXT("/ConvaiHTTP/") };
+
+	const FString DestinationRoot = TEXT("/") + Modding.PluginName + TEXT("/");
+	const FName Source(*PackageName);
+	const FCPM_DependencyCopyReport Report =
+		FCPM_DependencyCopyAPI::CopyPackageWithDependencies(Source, DestinationRoot, Options);
+	if (!Report.bSuccess)
+	{
+		TArray<FString> Failed;
+		for (const FName& Package : Report.FailedPackages)
+		{
+			Failed.Add(Package.ToString());
+		}
+
+		if (!Report.ErrorMessage.IsEmpty())
+		{
+			OutWhy = Report.ErrorMessage;
+		}
+		else if (!Failed.IsEmpty())
+		{
+			OutWhy = FString::Printf(TEXT("could not copy %s"), *FString::Join(Failed, TEXT(", ")));
+		}
+		else
+		{
+			OutWhy = TEXT("the copy failed; see the Output Log");
+		}
+		return false;
+	}
+
+	const FName* Copied = Report.Remap.Find(Source);
+	OutNewPackage = Copied
+		? Copied->ToString()
+		: FCPM_DependencyCopyAPI::MakeDestinationPackage(Source, DestinationRoot).ToString();
+
+	CPM_LOG(Display, TEXT("Copied %d packages into %s (%d skipped); %s is this chunk's entry point now."),
+		Report.CopiedCount, *DestinationRoot, Report.SkippedCount, *OutNewPackage);
+
+	FString Notes;
+	if (!SetEntryPoint(ChunkId, OutNewPackage, Notes))
+	{
+		// The copies stay. Deleting them would throw away the one part that worked, and the creator
+		// can now pick the copy by hand once whatever SetEntryPoint objected to is fixed.
+		OutWhy = GetChunkStatus(ChunkId).Message;
+		return false;
+	}
+	return true;
+}
+
+bool UConvaiPakEditorSubsystem::ListDependencies(const int32 ChunkId, const FString& PackageName,
+	TArray<FString>& OutInsidePlugin, TArray<FString>& OutOutsidePlugin) const
+{
+	OutInsidePlugin.Reset();
+	OutOutsidePlugin.Reset();
+
+	if (PackageName.IsEmpty() || !IAssetRegistry::Get())
+	{
+		return false;
+	}
+
+	FCPM_ModdingMetadata Modding;
+	UCPM_UtilityLibrary::GetModdingMetadataForChunk(ChunkId, Modding);
+
+	TSet<FName> AllDependencies;
+	TSet<FString> ExternalObjectsPaths;
+	TSet<FName> Excluded;
+	// Its return says whether everything sat under one mount point, which is a different question -
+	// what is wanted here is the walk, stopped at the content every product already has.
+	UConvaiPakManagerEditorUtils::GetPackageDependencies(
+		FName(*PackageName),
+		{ TEXT("/Engine/"), ConvaiSdkMountRoot(), TEXT("/ConvaiHTTP/") },
+		AllDependencies, ExternalObjectsPaths, Excluded);
+
+	for (const FName& Dependency : AllDependencies)
+	{
+		const FString Dep = Dependency.ToString();
+		// A cycle walks back to the Entry Point itself, which is not one of its dependencies.
+		if (Dep == PackageName)
+		{
+			continue;
+		}
+
+		TArray<FString>& Bucket = ConvaiPakManager::Chunk::IsUnderModdingPlugin(Dep, Modding.PluginName)
+			? OutInsidePlugin
+			: OutOutsidePlugin;
+		Bucket.Add(Dep);
+	}
+
+	OutInsidePlugin.Sort();
+	OutOutsidePlugin.Sort();
+	return true;
 }
 
 AActor* UConvaiPakEditorSubsystem::AddSpawnPoint()
@@ -533,11 +708,81 @@ FString UConvaiPakEditorSubsystem::GetThumbnailPath(const int32 ChunkId) const
 	return ConvaiPakManager::Chunk::GetThumbnailPath(ChunkId);
 }
 
-bool UConvaiPakEditorSubsystem::CaptureThumbnail(const int32 ChunkId)
+bool UConvaiPakEditorSubsystem::CaptureThumbnail(const int32 ChunkId, FString& OutWhy)
 {
 	const FString Path = ConvaiPakManager::Chunk::GetThumbnailPath(ChunkId);
 	IFileManager::Get().MakeDirectory(*FPaths::GetPath(Path), true);
-	return UConvaiPakManagerEditorUtils::CPM_TakeViewportScreenshot(Path);
+
+	if (GetAssetType() != ECPM_AssetType::Avatar)
+	{
+		if (!UConvaiPakManagerEditorUtils::CPM_TakeViewportScreenshot(Path))
+		{
+			OutWhy = TEXT("the viewport could not be captured; see the Output Log");
+			return false;
+		}
+
+		if (!ConvaiPakManager::Thumbnail::FileHasContent(Path))
+		{
+			// Deleted rather than left: a blank file reads to every later check as a thumbnail this
+			// Chunk has, and the Chunk is better off with none than with a black one.
+			IFileManager::Get().Delete(*Path);
+			OutWhy = TEXT("the capture was blank; is the viewport showing your level?");
+			return false;
+		}
+		return true;
+	}
+
+	// An Avatar has nothing to point a camera at - the thing being published is a blueprint, and the
+	// editor already knows how to draw one: it is what the Content Browser shows for it.
+	const FString EntryPoint = GetEntryPoint(ChunkId);
+	if (EntryPoint.IsEmpty())
+	{
+		OutWhy = TEXT("pick the avatar's blueprint first");
+		return false;
+	}
+
+	const IAssetRegistry* AssetRegistry = IAssetRegistry::Get();
+	if (!AssetRegistry)
+	{
+		OutWhy = TEXT("the asset registry is unavailable");
+		return false;
+	}
+
+	TArray<FAssetData> Assets;
+	AssetRegistry->GetAssetsByPackageName(FName(*EntryPoint), Assets);
+	UBlueprint* Blueprint = Assets.IsEmpty() ? nullptr : Cast<UBlueprint>(Assets[0].GetAsset());
+	if (!Blueprint)
+	{
+		OutWhy = FString::Printf(TEXT("could not load %s"), *EntryPoint);
+		return false;
+	}
+
+	int32 Width = 1920;
+	int32 Height = 1080;
+	TArray<FColor> Pixels;
+	if (!ConvaiPakManager::Thumbnail::RenderBlueprintThumbnail(Blueprint, Width, Height, Pixels, OutWhy))
+	{
+		return false;
+	}
+
+	if (!ConvaiPakManager::Thumbnail::HasContent(Pixels))
+	{
+		OutWhy = TEXT("the render was blank; does the blueprint have a visible mesh?");
+		return false;
+	}
+
+	if (!ConvaiPakManager::Thumbnail::WritePng(Path, Width, Height, Pixels))
+	{
+		OutWhy = FString::Printf(TEXT("could not write %s"), *Path);
+		return false;
+	}
+	return true;
+}
+
+bool UConvaiPakEditorSubsystem::SetThumbnailFromFile(const int32 ChunkId, const FString& ImagePath, FString& OutWhy)
+{
+	return ConvaiPakManager::Thumbnail::ImportImageFile(
+		ImagePath, ConvaiPakManager::Chunk::GetThumbnailPath(ChunkId), OutWhy);
 }
 
 void UConvaiPakEditorSubsystem::SetStatus(
@@ -698,6 +943,99 @@ void UConvaiPakEditorSubsystem::RefreshPolicy()
 	});
 }
 
+bool UConvaiPakEditorSubsystem::GetCompatibility(FCPM_CompatibilityStatus& Out) const
+{
+	Out = Compatibility;
+	return Compatibility.bChecked;
+}
+
+void UConvaiPakEditorSubsystem::RefreshCompatibility()
+{
+	if (bCompatibilityRefreshInFlight)
+	{
+		return;
+	}
+
+	bCompatibilityRefreshInFlight = true;
+	PendingCompatibilityFetches = 2;
+
+	Compatibility.InstalledToolVersion = ConvaiPakManager::Compatibility::InstalledToolVersion();
+	Compatibility.EngineVersion = FEngineVersion::Current().ToString(EVersionComponent::Patch);
+
+	TWeakObjectPtr<UConvaiPakEditorSubsystem> WeakThis(this);
+
+	UCPM_PolicyRequest::Start(
+		ConvaiPakManager::Compatibility::ToolRepository,
+		ConvaiPakManager::Compatibility::SourceRef,
+		ConvaiPakManager::Compatibility::ToolVersionFile,
+		UCPM_PolicyRequest::FOnPolicyFetched::CreateLambda(
+			[WeakThis](const bool bSucceeded, const FString& Contents)
+			{
+				UConvaiPakEditorSubsystem* Self = WeakThis.Get();
+				if (!Self)
+				{
+					return;
+				}
+
+				if (bSucceeded)
+				{
+					Self->Compatibility.LatestToolVersion =
+						ConvaiPakManager::Compatibility::ParsePluginVersionName(Contents);
+					Self->Compatibility.bToolOutdated = ConvaiPakManager::Compatibility::IsNewerVersion(
+						Self->Compatibility.InstalledToolVersion, Self->Compatibility.LatestToolVersion);
+				}
+				else
+				{
+					// Log, not Warning: a creator offline or behind a proxy has done nothing wrong,
+					// and the flag stays false, so the banner simply never appears.
+					CPM_LOG(Log, TEXT("Could not read the published Pak Manager version."));
+				}
+
+				Self->FinishCompatibilityFetch();
+			}));
+
+	UCPM_PolicyRequest::Start(
+		ConvaiPakManager::Compatibility::ModdingToolRepository,
+		ConvaiPakManager::Compatibility::SourceRef,
+		ConvaiPakManager::Compatibility::TargetEngineFile,
+		UCPM_PolicyRequest::FOnPolicyFetched::CreateLambda(
+			[WeakThis](const bool bSucceeded, const FString& Contents)
+			{
+				UConvaiPakEditorSubsystem* Self = WeakThis.Get();
+				if (!Self)
+				{
+					return;
+				}
+
+				if (bSucceeded)
+				{
+					Self->Compatibility.TargetEngineVersion =
+						ConvaiPakManager::Compatibility::ParseTargetEngineVersion(Contents);
+					Self->Compatibility.bEngineMismatch = !ConvaiPakManager::Compatibility::EngineMatchesTarget(
+						Self->Compatibility.EngineVersion, Self->Compatibility.TargetEngineVersion);
+				}
+				else
+				{
+					CPM_LOG(Log, TEXT("Could not read the engine version the Modding Tool targets."));
+				}
+
+				Self->FinishCompatibilityFetch();
+			}));
+}
+
+void UConvaiPakEditorSubsystem::FinishCompatibilityFetch()
+{
+	if (--PendingCompatibilityFetches > 0)
+	{
+		return;
+	}
+
+	bCompatibilityRefreshInFlight = false;
+	// True even when both reads failed: the check ran, and both flags being false is its answer.
+	Compatibility.bChecked = true;
+	OnCompatibilityChanged.Broadcast();
+}
+
 bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool bPackageOnly, const FCPM_PublishOptions& Options)
 {
 	const ECPM_AssetManagerStatus Refusal =
@@ -744,11 +1082,21 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 	{
 		FString Why;
 		bool bIsLevel = false;
-		if (!CheckEntryPoint(ChunkId, EntryPoint, Why, bIsLevel))
+		TArray<FString> Changes;
+		if (!PrepareEntryPoint(ChunkId, EntryPoint, Why, bIsLevel, Changes))
 		{
 			SetStatus(ChunkId, Refusal, Why);
 			return false;
 		}
+	}
+
+	// A thumbnail that exists has to be worth publishing; one that does not is the UI's gate, not
+	// this one, because a script may package without ever taking a picture.
+	const FString Thumbnail = ConvaiPakManager::Chunk::GetThumbnailPath(ChunkId);
+	if (FPaths::FileExists(Thumbnail) && !ConvaiPakManager::Thumbnail::FileHasContent(Thumbnail))
+	{
+		SetStatus(ChunkId, Refusal, TEXT("this chunk's thumbnail is blank; capture it again or choose an image"));
+		return false;
 	}
 
 	SetStatus(ChunkId, ECPM_AssetManagerStatus::Packaging_Begin, FString(), 0.0f, TEXT("Reading publish policy"));
