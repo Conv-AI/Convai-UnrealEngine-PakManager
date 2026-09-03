@@ -596,12 +596,6 @@ EMigrationResult MigrateLegacyLayoutIn(
 
 	if (ChunkId == INDEX_NONE)
 	{
-		// Named at Error rather than logged quietly: the creator's Assets are unreachable until this
-		// is resolved, and silence here looks exactly like a project that was never published.
-		CPM_LOG(Error,
-			TEXT("Found a pre-Chunk ConvaiEssentials layout (%s) but this project does not have exactly one Chunk, ")
-			TEXT("so it cannot be attributed. Nothing was moved."),
-			*FString::Join(Present, TEXT(", ")));
 		return EMigrationResult::Ambiguous;
 	}
 
@@ -657,11 +651,6 @@ EMigrationResult MigrateLegacyLayoutIn(
 	}
 
 	return EMigrationResult::NothingToMigrate;
-}
-
-EMigrationResult MigrateLegacyLayout(TArray<FString>& OutMovedFiles)
-{
-	return MigrateLegacyLayoutIn(GetEssentialsDirectory(), GetSoleChunkId(), OutMovedFiles);
 }
 
 bool HasUnmigratedLegacyLayoutIn(const FString& EssentialsDirectory)
@@ -855,6 +844,47 @@ EMigrationResult AdoptLooseRecords(
 	return AdoptLooseRecordsIn(GetEssentialsDirectory(), ChunkId, EnvironmentSlug, OutMovedFiles);
 }
 
+EMigrationResult ReconcileStateLayoutIn(
+	const FString& EssentialsDirectory,
+	const TArray<FCPM_Chunk>& Chunks,
+	const FString& ProductionSlug,
+	TArray<FString>& OutMovedFiles)
+{
+	// A flat layout predates multi-Chunk support, so anything but one Chunk is unattributable and
+	// MigrateLegacyLayoutIn refuses on INDEX_NONE.
+	const EMigrationResult Result = MigrateLegacyLayoutIn(
+		EssentialsDirectory, Chunks.Num() == 1 ? Chunks[0].Id : INDEX_NONE, OutMovedFiles);
+
+	// Second, because its input is what the first pass moved.
+	for (const FCPM_Chunk& Chunk : Chunks)
+	{
+		TArray<FString> Adopted;
+		if (AdoptLooseRecordsIn(EssentialsDirectory, Chunk.Id, ProductionSlug, Adopted) == EMigrationResult::Migrated)
+		{
+			CPM_LOG(Display, TEXT("Adopted %d loose record(s) of chunk %d into %s: %s"),
+				Adopted.Num(), Chunk.Id, *ProductionSlug, *FString::Join(Adopted, TEXT(", ")));
+		}
+	}
+
+	return Result;
+}
+
+namespace
+{
+	/**
+	 * Whether this session has already said the layout cannot be attributed.
+	 *
+	 * The panel's banner is the creator-facing report; this line is for a headless run and for the
+	 * log a creator sends in. Reconciling happens on every panel refresh and every tab activation, so
+	 * repeating it per call buries the log in the common case - a Modding Tool project that was
+	 * generated, never published, and never given a Chunk.
+	 *
+	 * Lives out here rather than in ReconcileStateLayoutIn because the automation suite can run twice
+	 * in one editor session, and the tests rely on that variant being silent.
+	 */
+	bool bUnattributedLayoutReported = false;
+}
+
 void ReconcileStateLayout()
 {
 	// Refuses to run at all against a partial scan. This MOVES the flat CreateAssetData.json - the
@@ -870,28 +900,14 @@ void ReconcileStateLayout()
 	// been answered mid-scan or before a label existed at all.
 	InvalidateSoleChunkCache();
 
-	TArray<FString> MovedFiles;
-	switch (MigrateLegacyLayout(MovedFiles))
-	{
-	case EMigrationResult::Migrated:
-		CPM_LOG(Display, TEXT("Moved %d file(s) into this project's per-Chunk state directory."), MovedFiles.Num());
-		break;
-
-	case EMigrationResult::Ambiguous:
-	case EMigrationResult::Failed:
-		// MigrateLegacyLayout has already logged which files and why. Nothing was moved, so the
-		// creator's own copy of their AssetID is still where it was, and HasUnmigratedLegacyLayout
-		// is what puts it in front of them.
-		break;
-
-	case EMigrationResult::NothingToMigrate:
-		break;
-	}
+	const TArray<FCPM_Chunk> Chunks = Discover();
 
 	// Everything still loose is production's by definition - nothing that could reach another
 	// backend has shipped. The URL comes from the SETTINGS rather than UConvaiURL::GetBaseURL,
 	// which honours -ConvaiProdURL= on the command line: one CI launch against staging would file a
-	// production record under staging permanently, where nothing would ever look for it again.
+	// production record under staging permanently, where nothing would ever look for it again. It is
+	// also the setting the legacy tool resolved its own URL through, so a project whose CustomProdURL
+	// named staging published there and its loose records belong under that slug.
 	//
 	// Read through GConfig because UConvaiSettings lives at the SDK module's root, outside its
 	// Public folder, so its header is not includable from here. The default is the SDK's own, from
@@ -904,19 +920,39 @@ void ReconcileStateLayout()
 		ProdUrl = TEXT("https://api.convai.com");
 	}
 
-	const FString ProductionSlug = EnvironmentSlug(ProdUrl);
-	for (const FCPM_Chunk& Chunk : Discover())
+	TArray<FString> MovedFiles;
+	switch (ReconcileStateLayoutIn(GetEssentialsDirectory(), Chunks, EnvironmentSlug(ProdUrl), MovedFiles))
 	{
-		TArray<FString> Adopted;
-		if (AdoptLooseRecords(Chunk.Id, ProductionSlug, Adopted) == EMigrationResult::Migrated)
-		{
-			CPM_LOG(Display, TEXT("Adopted %d loose record(s) of chunk %d into %s: %s"),
-				Adopted.Num(), Chunk.Id, *ProductionSlug, *FString::Join(Adopted, TEXT(", ")));
-		}
+	case EMigrationResult::Migrated:
+		CPM_LOG(Display, TEXT("Moved %d file(s) into this project's per-Chunk state directory."), MovedFiles.Num());
+		break;
 
-		// Not only the labels this tool minted: a Modding Plugin generated before the Modding Tool
-		// wrote the scan entry cooks into chunk 0 and produces no pakchunk, and the creator's only
-		// symptom is a Publish that ships nothing.
+	case EMigrationResult::Ambiguous:
+		if (!bUnattributedLayoutReported)
+		{
+			bUnattributedLayoutReported = true;
+			CPM_LOG(Warning,
+				TEXT("Found a pre-Chunk ConvaiEssentials layout (%s) but this project does not have exactly one ")
+				TEXT("Chunk, so it cannot be attributed and nothing was moved. The Pak Manager panel shows this ")
+				TEXT("as a banner."),
+				*FString::Join(FlatLegacyFilesIn(GetEssentialsDirectory()), TEXT(", ")));
+		}
+		break;
+
+	case EMigrationResult::Failed:
+		// Already logged which file and why. Nothing was moved, so the creator's own copy of their
+		// AssetID is still where it was, and HasUnmigratedLegacyLayout is what puts it in front of them.
+		break;
+
+	case EMigrationResult::NothingToMigrate:
+		break;
+	}
+
+	// Writes DefaultGame.ini, so it stays out of the seam. Not only the labels this tool minted: a
+	// Modding Plugin generated before the Modding Tool wrote the scan entry cooks into chunk 0 and
+	// produces no pakchunk, and the creator's only symptom is a Publish that ships nothing.
+	for (const FCPM_Chunk& Chunk : Chunks)
+	{
 		const FString LabelPackage = Chunk.LabelPackage.ToString();
 		const int32 SecondSlash = LabelPackage.Find(TEXT("/"), ESearchCase::CaseSensitive, ESearchDir::FromStart, 1);
 		if (SecondSlash != INDEX_NONE)

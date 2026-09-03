@@ -309,18 +309,19 @@ enum class EMigrationResult : uint8
  * new path without migrating and the Pak Manager reports no Asset, offers Create where it should
  * offer Update, and publishes a duplicate while the original becomes permanently unreachable.
  *
- * Refuses rather than guesses when the project does not have exactly one Chunk: a flat layout
- * predates multi-Chunk support, so it can only have belonged to a single-Chunk project, and
- * attributing it to one of several would silently bind an Asset to the wrong Chunk.
+ * INDEX_NONE means the caller could not name one Chunk to attribute the layout to, and the answer is
+ * Ambiguous with nothing moved: a flat layout predates multi-Chunk support, so it can only have
+ * belonged to a single-Chunk project, and attributing it to one of several would silently bind an
+ * Asset to the wrong Chunk. Silent about it - this runs on every panel refresh, so how loudly to say
+ * so is the caller's decision.
  *
  * Never overwrites. A destination that already exists means migration has already happened and the
  * flat file is a leftover, so the newer per-Chunk state wins.
  *
+ * Takes an explicit root and Chunk, so tests need no project on disk.
+ *
  * @param OutMovedFiles  Destination paths of files actually moved. For logging and for tests.
  */
-CONVAIPAKMANAGER_API EMigrationResult MigrateLegacyLayout(TArray<FString>& OutMovedFiles);
-
-/** Migration against an explicit root and Chunk, so tests need no project on disk. */
 CONVAIPAKMANAGER_API EMigrationResult MigrateLegacyLayoutIn(
 	const FString& EssentialsDirectory,
 	int32 ChunkId,
@@ -388,4 +389,20 @@ CONVAIPAKMANAGER_API bool HasUnmigratedLegacyLayoutIn(const FString& EssentialsD
  * scan completes.
  */
 CONVAIPAKMANAGER_API void ReconcileStateLayout();
+
+/**
+ * The decision ReconcileStateLayout makes, with every registry, config and memo read hoisted out to
+ * the caller: given the Chunks this project has and the backend its loose records belong to, migrate
+ * the pre-Chunk layout and adopt what is still loose. Everything it touches is a file under
+ * EssentialsDirectory, so a test can assert on the outcome without a project on disk - which is the
+ * half of this that was never covered, the suite having only ever exercised the migration with the
+ * Chunk handed to it.
+ *
+ * Returns the flat-layout migration's result; the per-Chunk adoptions log their own.
+ */
+CONVAIPAKMANAGER_API EMigrationResult ReconcileStateLayoutIn(
+	const FString& EssentialsDirectory,
+	const TArray<FCPM_Chunk>& Chunks,
+	const FString& ProductionSlug,
+	TArray<FString>& OutMovedFiles);
 }

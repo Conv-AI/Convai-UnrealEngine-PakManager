@@ -69,6 +69,14 @@ namespace
 		}
 	};
 
+	/** Whatever is at that path right now, or empty when nothing is. */
+	FString ReadMigrationScratchFile(const FString& Path)
+	{
+		FString Contents;
+		FFileHelper::LoadFileToString(Contents, *Path);
+		return Contents;
+	}
+
 	/** A published creator project's CreateAssetData, trimmed to the field that cannot be recovered. */
 	const TCHAR* PublishedAssetJson =
 		TEXT("{\"transactionID\":\"t-1\",\"assets\":[{\"asset\":{\"asset_id\":\"ea7a8d50-90b8-4485-a746-f53eeb34a843\"}}]}");
@@ -128,8 +136,6 @@ bool FCPMChunkMigrationRefusesWhenTheChunkIsUnknown::RunTest(const FString&)
 {
 	const FScratchEssentials Scratch(TEXT("RefusesWhenTheChunkIsUnknown"));
 	Scratch.WriteLegacy(TEXT("CreateAssetData.json"), PublishedAssetJson);
-
-	AddExpectedError(TEXT("pre-Chunk ConvaiEssentials layout"), EAutomationExpectedErrorFlags::Contains, 1);
 
 	TArray<FString> Moved;
 	const EMigrationResult Result = MigrateLegacyLayoutIn(Scratch.Path, INDEX_NONE, Moved);
@@ -257,6 +263,100 @@ bool FCPMChunkMigrationReportsWhatIsStillFlat::RunTest(const FString&)
 
 	TestEqual(TEXT("nothing moves over the existing copy"), MovedAgain.Num(), 0);
 	TestTrue(TEXT("and the leftover is still reported"), HasUnmigratedLegacyLayoutIn(Scratch.Path));
+
+	return true;
+}
+
+/**
+ * The whole reconcile decision, which nothing exercised before: the suite only ever called the
+ * migration with the Chunk handed to it, so a flat layout that never moved on a real project could
+ * not have failed a test. Every file a published pre-Chunk project owns has to end up where this
+ * version reads it - the AssetID under the backend that minted it, the creator's own fields in a
+ * Draft that outlives the move.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMChunkReconcileAttributesToTheSoleChunk,
+	"ConvaiPakManager.Chunk.Reconcile.AttributesToTheSoleChunk",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMChunkReconcileAttributesToTheSoleChunk::RunTest(const FString&)
+{
+	const FScratchEssentials Scratch(TEXT("ReconcileAttributesToTheSoleChunk"));
+	Scratch.WriteLegacy(TEXT("CreateAssetData.json"), PublishedAssetJson);
+	Scratch.WriteLegacy(TEXT("PakMetaData.json"), TEXT("{\"asset_name\":\"Dev_CPM_53\"}"));
+	Scratch.WriteLegacy(TEXT("ModdingMetaData.txt"), TEXT("{\"asset_type\":\"Scene\"}"));
+
+	const FString Slug = TEXT("Env_test_00000000");
+	const FString ChunkDirectory = FPaths::Combine(Scratch.Path, TEXT("ChunkId_10"));
+
+	TArray<FString> Moved;
+	const EMigrationResult Result = ReconcileStateLayoutIn(Scratch.Path, { FCPM_Chunk{ 10 } }, Slug, Moved);
+
+	TestTrue(TEXT("reports that it migrated"), Result == EMigrationResult::Migrated);
+
+	TestEqual(TEXT("the AssetID lands under the backend that minted it"),
+		ReadMigrationScratchFile(FPaths::Combine(ChunkDirectory, Slug, TEXT("CreateAssetData_10.json"))),
+		FString(PublishedAssetJson));
+	TestTrue(TEXT("the server's document lands beside it"),
+		IFileManager::Get().FileExists(*FPaths::Combine(ChunkDirectory, Slug, TEXT("PakMetaData_10.json"))));
+	// What the Modding Tool decided about the project is the same on every backend, so it stays up here.
+	TestTrue(TEXT("the modding metadata stays at Chunk level"),
+		Scratch.PerChunkExists(10, TEXT("ModdingMetaData_10.json")));
+	TestTrue(TEXT("the creator's fields are seeded into a Draft before the document moves"),
+		ReadMigrationScratchFile(FPaths::Combine(ChunkDirectory, TEXT("Draft_10.json"))).Contains(TEXT("asset_name")));
+
+	TestFalse(TEXT("the flat CreateAssetData is gone"), Scratch.LegacyExists(TEXT("CreateAssetData.json")));
+	TestFalse(TEXT("the flat PakMetaData is gone"), Scratch.LegacyExists(TEXT("PakMetaData.json")));
+	TestFalse(TEXT("the flat ModdingMetaData is gone"), Scratch.LegacyExists(TEXT("ModdingMetaData.txt")));
+	TestFalse(TEXT("and the project no longer reports an unmigrated layout"),
+		HasUnmigratedLegacyLayoutIn(Scratch.Path));
+
+	return true;
+}
+
+/**
+ * The refusal, reached the way production reaches it - through the Chunk set rather than a Chunk ID
+ * a caller chose. Neither an empty set nor several may move the flat CreateAssetData: it holds the
+ * only copy of the AssetID, and filing it under the wrong Chunk orphans a live Asset.
+ *
+ * Registers no expected error: the reconcile seam must stay silent, because it runs on every panel
+ * refresh and the once-per-session line belongs to the wrapper.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMChunkReconcileRefusesWithoutASoleChunk,
+	"ConvaiPakManager.Chunk.Reconcile.RefusesWithoutASoleChunk",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMChunkReconcileRefusesWithoutASoleChunk::RunTest(const FString&)
+{
+	const FScratchEssentials Scratch(TEXT("ReconcileRefusesWithoutASoleChunk"));
+	Scratch.WriteLegacy(TEXT("CreateAssetData.json"), PublishedAssetJson);
+	Scratch.WriteLegacy(TEXT("PakMetaData.json"), TEXT("{\"asset_name\":\"Dev_CPM_53\"}"));
+	Scratch.WriteLegacy(TEXT("ModdingMetaData.txt"), TEXT("{\"asset_type\":\"Scene\"}"));
+
+	const auto RefusesWith = [&](const TCHAR* What, const TArray<FCPM_Chunk>& Chunks)
+	{
+		TArray<FString> Moved;
+		const EMigrationResult Result = ReconcileStateLayoutIn(Scratch.Path, Chunks, TEXT("Env_test_00000000"), Moved);
+
+		TestTrue(FString::Printf(TEXT("%s: reports that it could not attribute the files"), What),
+			Result == EMigrationResult::Ambiguous);
+		TestEqual(FString::Printf(TEXT("%s: moves nothing"), What), Moved.Num(), 0);
+		TestEqual(FString::Printf(TEXT("%s: the only copy of the AssetID is untouched"), What),
+			ReadMigrationScratchFile(FPaths::Combine(Scratch.Path, TEXT("CreateAssetData.json"))),
+			FString(PublishedAssetJson));
+		TestEqual(FString::Printf(TEXT("%s: the pak metadata is untouched"), What),
+			ReadMigrationScratchFile(FPaths::Combine(Scratch.Path, TEXT("PakMetaData.json"))),
+			FString(TEXT("{\"asset_name\":\"Dev_CPM_53\"}")));
+		TestEqual(FString::Printf(TEXT("%s: the modding metadata is untouched"), What),
+			ReadMigrationScratchFile(FPaths::Combine(Scratch.Path, TEXT("ModdingMetaData.txt"))),
+			FString(TEXT("{\"asset_type\":\"Scene\"}")));
+		TestTrue(FString::Printf(TEXT("%s: and the layout is still reported as unmigrated"), What),
+			HasUnmigratedLegacyLayoutIn(Scratch.Path));
+	};
+
+	RefusesWith(TEXT("no Chunks"), {});
+	RefusesWith(TEXT("two Chunks"), { FCPM_Chunk{ 10 }, FCPM_Chunk{ 11 } });
 
 	return true;
 }
