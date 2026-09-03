@@ -270,7 +270,12 @@ CONVAIPAKMANAGER_API bool IsUnderModdingPlugin(const FString& PackageName, const
  * An empty PluginName passes: a project that labels its own /Game content has no descriptor to
  * amend and needs none, project content already seeing every project plugin.
  *
- * @param OutError  Why the descriptor could not be written. Untouched when there was nothing to do.
+ * Requires Convai to be enabled rather than merely discovered: the domain database resolves a
+ * declared dependency with FindEnabledPlugin, so a name taken from a disabled plugin grants nothing.
+ *
+ * @param OutError  Why the dependency could not be declared - no plugin of that name is mounted,
+ *                  Convai is not enabled in this project, or the `.uplugin` could not be written.
+ *                  Untouched when there was nothing to do.
  */
 CONVAIPAKMANAGER_API bool EnsureConvaiDependency(const FString& PluginName, FString& OutError);
 

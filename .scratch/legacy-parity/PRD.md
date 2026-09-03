@@ -1,8 +1,8 @@
 # Legacy parity: what the Blueprint uploader did that the Slate tool does not
 
 Status: `ready-for-agent` — for **Still unexamined** items 1–3 only. Every numbered gap below is
-closed, declined or registered for later; the Scene-path audit (item 1) is the one still capable of
-producing new register entries.
+closed, declined or registered for later. Two things still produce new entries: the Scene-path audit
+(item 1), and what building a real Pak teaches — gaps 32–34 came from listing one.
 
 The Slate rewrite (`3526d98 refactor!: delete the Blueprint tool and collapse to one editor module`)
 dropped the Editor Utility Widget `Content/Editor/AssetUploader.uasset` and, with it, a set of
@@ -170,10 +170,11 @@ Registry.
 
 ## Gap register
 
-29 confirmed, plus 30 and 31 which the dead-helper census surfaced afterwards. Severity is "does a
-creator get a broken Asset or a dead tool" (blocker), "the tool is materially worse than the one it
-replaced" (major), or "polish" (minor). **Landed** names the commit on `feat/legacy-parity` that
-closed the gap; `declined` and `registered` rows are explained under **Notes on the closures**.
+29 confirmed, plus 30 and 31 which the dead-helper census surfaced afterwards, plus 32–34 which
+listing a built Pak surfaced. Severity is "does a creator get a broken Asset or a dead tool"
+(blocker), "the tool is materially worse than the one it replaced" (major), or "polish" (minor).
+**Landed** names the commit that closed the gap; `declined` and `registered` rows are explained
+under **Notes on the closures**.
 
 | Commit | |
 |---|---|
@@ -187,6 +188,9 @@ closed the gap; `declined` and `registered` rows are explained under **Notes on 
 | `410c406` | feat(publish): compare tool and engine versions |
 | `770177a` | feat(subsystem): wire the new editor commands |
 | `403d935` | feat(ui): warn on outdated tool or engine |
+| `71aa9b4` | fix(chunk): declare Convai in the modding plugin |
+| `e55b7b2` | feat(entry-point): gather what a pick needs into the plugin |
+| `24f86a8` | fix(gather): repoint every in-plugin package, not just the entry point |
 
 ### Bootstrap and migration
 
@@ -222,6 +226,9 @@ closed the gap; `declined` and `registered` rows are explained under **Notes on 
 | 18 | Refuse an Entry Point outside the Modding Plugin's mount root | blocker | `8bd838f` |
 | 19 | Offer to relocate an out-of-plugin pick — `CPM_DependencyCopyAPI` exists, nothing calls it | major | `770177a` |
 | 20 | Show the Entry Point's dependencies that fall outside the Modding Plugin | major | `770177a` |
+| 32 | A dependency outside the Modding Plugin is not in the Pak at all — copy it in and repoint what referenced it | blocker | `e55b7b2` `24f86a8` |
+| 33 | Repoint every in-plugin package that reaches outside, not only the Entry Point — a World Partition level holds its actors in external packages, and those are what reference the creator's meshes | blocker | `24f86a8` |
+| 34 | Declare the Convai SDK in the Modding Plugin's `.uplugin`, so the components this tool adds stop failing `AssetValidator_AssetReferenceRestrictions` | blocker | `71aa9b4` |
 
 ### Dropped in the rewrite
 
@@ -248,9 +255,24 @@ closed the gap; `declined` and `registered` rows are explained under **Notes on 
   re-upload, so the register keeps the re-upload.
 - **20 and 26 closed as one feature.** Both ask what comes with the Entry Point, so they are one
   on-demand dependency window: `ListDependencies` partitions the package's recursive closure by
-  `IsUnderModdingPlugin`, minus `/Script`, `/Engine` and the Convai SDK mount, and the detail panel's
-  `Dependencies…` button opens it. On demand rather than on every refresh, because the walk
-  force-loads packages and the panel already refreshes on every tab activation.
+  `IsUnderModdingPlugin`, minus only the Convai SDK mount and `/ConvaiHTTP/` — the content every
+  Convai product already ships — and the detail panel's `Dependencies…` button opens it. Engine
+  content is deliberately NOT excluded: a product cooks only the engine assets its own content
+  references, so a creator's level built from engine shapes opens with those references dangling,
+  and engine dependencies are copied in like any other. The window says the outside list will NOT be
+  in the Pak, not that it is dragged into it. On demand rather than on every refresh, because the
+  walk force-loads packages and the panel already refreshes on every tab activation.
+- **32 is offered at the pick and nowhere else.** The dialog fires from `HandleUseSelectedAsset`;
+  the publish path does not re-walk, so a creator who wires up an outside reference after picking
+  publishes without being asked again. Deliberate for now — the walk force-loads packages and a
+  publish is not the moment to block on it — and it is the same argument gap 16 lost, so it will
+  come back.
+- **Engine plugin content counts as engine content.** Niagara, Megascans and any other engine-plugin
+  package is copied into the Modding Plugin like any other outside dependency. Correct for the Pak,
+  expensive for the copy; nothing tells them apart today.
+- **The gather has no automation coverage.** `CPM_ChunkBootstrapTest` covers the descriptor rule
+  (`DeclareConvaiDependency`) only. The copy and the repoint need a real Asset Registry and packages
+  on disk, so they were verified by listing a built Pak rather than by a test.
 - **23 renders through the engine.** `ThumbnailTools::RenderThumbnail` — the renderer the Content
   Browser already draws a blueprint with — rather than a bespoke preview scene, so the thumbnail is
   the picture the creator recognises. It needs an RHI, so that path has no headless coverage.

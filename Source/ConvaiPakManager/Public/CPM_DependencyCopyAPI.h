@@ -119,10 +119,11 @@ struct CONVAIPAKMANAGER_API FCPM_DependencyCopyOptions
 	/**
 	 * Packages that reference the copies but are not themselves copied, rewritten to point at them.
 	 *
-	 * The reference fixup only reaches packages it copied, which leaves out the one case where the
-	 * asset being gathered for already lives at the destination: an Entry Point inside the Modding
-	 * Plugin whose meshes and materials are outside it. Copying its dependencies in and leaving the
-	 * Entry Point pointing at the originals gathers nothing into the Pak.
+	 * The reference fixup only reaches packages it copied, which leaves out everything that already
+	 * lives at the destination: an Entry Point inside the Modding Plugin whose meshes and materials
+	 * are outside it, and - for a World Partition level - the external actor packages that hold the
+	 * references to them. Copying the dependencies in and leaving those pointing at the originals
+	 * gathers nothing into the Pak.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
 	TArray<FName> AdditionalPackagesToFixup;
@@ -178,11 +179,14 @@ struct CONVAIPAKMANAGER_API FCPM_DependencyCopyReport
 	bool bSuccess = false;
 
 	/**
-	 * Whether the reference fixup pass finished, so the copies are actually pointed at.
+	 * Whether the reference fixup pass ran to its end without reporting an error.
 	 *
 	 * Separate from bSuccess, which only counts failed copies: a copy that lands but leaves every
 	 * referencer pointing at the originals has done nothing for the caller, and reporting that as
 	 * success is how a creator publishes a Pak whose Entry Point still reaches outside the plugin.
+	 * Not a per-package guarantee - a package named in AdditionalPackagesToFixup that will not load
+	 * is logged and skipped - and meaningless unless bSuccess, since a run that fails before the
+	 * fixup leaves this at its default.
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Dependency Copy")
 	bool bReferencesFixedUp = true;

@@ -34,9 +34,9 @@ _Avoid_: asset, uasset, content
 
 **Entry Point**:
 The one **Source Package** in a Chunk that a Convai product opens — the level for a Scene, the
-blueprint for an Avatar. A Chunk gathers everything in its label's reach and does not on its own say
-which of those things is the thing to load; the Entry Point does. Its kind must match the **Asset
-Type**.
+blueprint for an Avatar. A Chunk gathers everything under its label's mount and does not on its own
+say which of those things is the thing to load; the Entry Point does. Its kind must match the
+**Asset Type**.
 The UI does NOT use this term. It labels the field "Selected asset", because a creator reads "entry
 point" as a place — it sits two rows from "Spawn point" — and because one general label is right
 where the code needs a general concept: the field holds a level path or a blueprint path and the
@@ -48,22 +48,22 @@ _Avoid_: source package (for this), main asset; and "Entry point" as a UI label
 The Source Packages gathered into one publishable unit by one Primary Asset Label, identified by
 that label's **Chunk ID**. The unit of packaging AND the unit of publishing — one Chunk is one
 **Asset**, never a part of one.
-Defined by the label alone, and by nothing about *where* the label lives: a project may label a
-generated **Modding Plugin**, or its own content directly, and both are ordinary Chunks.
+Defined by the label alone: a project may label a generated **Modding Plugin**, or its own content
+directly, and both are ordinary Chunks. But *where* the label lives fixes the Chunk's edge — a label
+gathers what is under its own mount and nothing else, verified by listing a built Pak that held only
+the plugin's own packages. A **Source Package** the Chunk reaches but does not contain is not
+published, and an **Entry Point** that reaches one loads in a Convai product with that content
+missing. The Convai SDK's mounts — its content root and `/ConvaiHTTP/` — are the exception nobody
+has to copy in: every Convai product ships them.
 _Avoid_: bundle, package, group
 
 **Modding Plugin**:
 The content-only plugin, uniquely named, that the Convai Modding Tool generates into an external
 creator's project, already carrying a Primary Asset Label at its content root. A convention for
-where a creator puts things, not a part of what a **Chunk** is — projects set up by hand have none.
+where a creator puts things rather than a part of what a **Chunk** is — projects set up by hand have
+none — but not a free one: the plugin's mount is the edge of any Chunk labelled inside it, so
+whatever a creator leaves in `/Game/` or `/Engine/` stays out of the **Pak**.
 _Avoid_: mod folder, content plugin, asset plugin
-
-The mount is also the Pak's boundary. A **Chunk**'s label gathers what lives under its own mount and
-nothing else: verified by listing a built Pak, whose only packages were the plugin's. So a dependency
-in `/Game/` or `/Engine/` is NOT published, and an **Entry Point** that reaches one loads in a Convai
-product with that content missing. Copying such dependencies under the mount, and repointing what
-referenced them, is what the relocate and gather Commands exist for. The Convai SDK's own content is
-the exception that is never copied - every product ships it.
 
 **Pak**:
 The built artefact for one Chunk on one platform. A Chunk yields one Pak per platform, so naming a
@@ -100,9 +100,10 @@ one artefact without deleting the Asset possible.
 _Avoid_: revision, release, build number — a Version names a *variant*, not a point in time
 
 **Publish**:
-Taking a Chunk all the way from the creator's project to a usable Asset: everything from gathering
-its content to the last artefact landing in its **Version**. One request by the creator, however
-many steps it takes.
+Taking a Chunk all the way from the creator's project to a usable Asset: everything from cooking its
+content to the last artefact landing in its **Version**. It publishes the Chunk as it finds it —
+nothing is copied under the label's mount that was not already there. One request by the creator,
+however many steps it takes.
 _Avoid_: upload, export, deploy — upload is one step of a Publish, not the whole of it
 
 **Publish Policy**:
@@ -134,6 +135,10 @@ _Avoid_: category, entity type
 - A **Modding Plugin** holds many **Source Packages** and exactly one Primary Asset Label
 - That label gathers every **Source Package** in the plugin into one **Chunk**
 - A **Chunk** builds to one **Pak** per platform
+- A **Source Package** outside the label's mount is absent from the **Pak** however many packages
+  inside it reference that package. Copying one in and repointing its referencers is offered when
+  the creator picks the **Entry Point**, and only then — a **Publish** never re-checks, so a
+  dependency added after the pick ships missing
 - A **Chunk** publishes as at most one **Asset** per **Environment**
 - A **Draft** belongs to a **Chunk**, not to an **Environment**
 - An **Asset** has exactly one **Asset Type**, decided before the creator ever opens the Pak Manager

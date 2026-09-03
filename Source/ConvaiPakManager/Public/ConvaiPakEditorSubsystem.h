@@ -222,7 +222,9 @@ public:
 	 *
 	 * @param OutSetupNotes  What was changed on the blueprint to make it usable, in one sentence.
 	 *                       Empty when nothing was: a pick edits the creator's own asset, and an
-	 *                       edit only the Output Log hears about is one nobody knows to undo.
+	 *                       edit only the Output Log hears about is one nobody knows to undo. The
+	 *                       one exception is the Modding Plugin's `.uplugin`, which a pick also
+	 *                       amends to declare Convai; that edit is logged, not reported here.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool SetEntryPoint(int32 ChunkId, const FString& PackageName, FString& OutSetupNotes);
@@ -242,6 +244,10 @@ public:
 	 * The way past the refusal above, which otherwise leaves a creator holding a working asset in
 	 * the wrong folder and no way to move it without knowing what a mount point is.
 	 *
+	 * Everything it needs means engine content too - a product cooks only the engine assets its own
+	 * content uses, so a level built from engine shapes needs copies of them. Only the Convai SDK's
+	 * content is left where it is, because every product ships it.
+	 *
 	 * @param OutWhy  Why nothing was copied, phrased for the creator. Untouched on success.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
@@ -249,24 +255,27 @@ public:
 
 	/**
 	 * Copies everything an Entry Point inside the Modding Plugin needs from outside it in, and
-	 * repoints the Entry Point at the copies.
+	 * repoints at the copies every package in the plugin that referenced them.
 	 *
 	 * The other half of the same problem: a creator whose level is in the plugin but whose meshes,
 	 * materials and engine shapes are not publishes a Pak that opens missing everything it draws.
-	 * The Entry Point itself is not copied - it is already where it belongs - so only its references
-	 * move.
+	 * Nothing already under the mount is copied - it is where it belongs - so the Entry Point and,
+	 * for a World Partition level, the external actor packages that actually hold its references
+	 * are rewritten in place instead.
 	 *
 	 * The originals stay put. A creator keeps working in /Game if that is where they work.
 	 *
 	 * @param OutCopied  How many packages were copied in. Zero is a success: nothing was outside.
-	 * @param OutWhy     Why nothing was copied, phrased for the creator. Untouched on success.
+	 * @param OutWhy     Why the gather failed, phrased for the creator. Untouched on success. A
+	 *                   failure can still leave copies on disk: the repointing runs after them, and
+	 *                   OutCopied stays zero when repointing is the part that failed.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool GatherDependenciesIntoPlugin(int32 ChunkId, const FString& PackageName, int32& OutCopied, FString& OutWhy);
 
 	/**
-	 * The Source Packages this Entry Point drags into the Pak, split by whether they are in the
-	 * Modding Plugin.
+	 * The Source Packages this Entry Point reaches, split by whether they are in the Modding Plugin -
+	 * which is to say by whether the Pak will carry them.
 	 *
 	 * The Pak holds what the label gathers, which is the plugin's own content: a dependency outside
 	 * it is not in the Pak, and the product loads an Asset missing whatever that dependency drew.
@@ -426,7 +435,9 @@ public:
 private:
 	/**
 	 * Makes this package fit to be that Chunk's Entry Point, or says why it cannot be - which for an
-	 * Avatar blueprint means adding Convai's components and saving the asset.
+	 * Avatar blueprint means adding Convai's components and saving the asset, and for either kind
+	 * means declaring Convai in the Modding Plugin's `.uplugin` so those references are legal. That
+	 * descriptor write warns rather than refuses, and is not reported through OutChanges.
 	 *
 	 * Shared by SetEntryPoint and by every Publish and Package, because a pick-time check only ever
 	 * caught the pick: a creator can delete the chatbot component, move the asset out of the plugin
