@@ -293,7 +293,7 @@ bool PrepareAvatarBlueprint(UBlueprint* Blueprint, FString& OutError, TArray<FSt
 
 	if (bNeedsChatbot)
 	{
-		if (!AddComponentNode(Blueprint, ChatbotClass, TEXT("ConvaiChatbot")))
+		if (!AddComponentNode(Blueprint, ChatbotClass, TEXT("BP_ConvaiChatbotComponent")))
 		{
 			OutError = FString::Printf(TEXT("Could not add BP_ConvaiChatbotComponent to %s."), *Blueprint->GetName());
 			return false;
