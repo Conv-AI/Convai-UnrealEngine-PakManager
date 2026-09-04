@@ -448,7 +448,7 @@ private:
 	 * Makes this package fit to be that Chunk's Entry Point, or says why it cannot be - which for an
 	 * Avatar blueprint means adding Convai's components and saving the asset, and for either kind
 	 * means declaring Convai in the Modding Plugin's `.uplugin` so those references are legal. That
-	 * descriptor write warns rather than refuses, and is not reported through OutChanges.
+	 * descriptor write warns rather than refuses.
 	 *
 	 * Shared by SetEntryPoint and by every Publish and Package, because a pick-time check only ever
 	 * caught the pick: a creator can delete the chatbot component, move the asset out of the plugin

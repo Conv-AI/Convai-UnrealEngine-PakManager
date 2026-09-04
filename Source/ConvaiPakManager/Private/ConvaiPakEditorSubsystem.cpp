@@ -14,6 +14,7 @@
 #include "Editor.h"
 #include "Engine/Blueprint.h"
 #include "Engine/LevelStreaming.h"
+#include "Engine/Texture2D.h"
 #include "Containers/Ticker.h"
 #include "EngineUtils.h"
 #include "FileHelpers.h"
@@ -906,8 +907,8 @@ bool UConvaiPakEditorSubsystem::CaptureThumbnail(const int32 ChunkId, FString& O
 		return false;
 	}
 
-	int32 Width = 1920;
-	int32 Height = 1080;
+	int32 Width = ConvaiPakManager::Thumbnail::WrittenWidth;
+	int32 Height = ConvaiPakManager::Thumbnail::WrittenHeight;
 	TArray<FColor> Pixels;
 	if (!ConvaiPakManager::Thumbnail::RenderBlueprintThumbnail(Blueprint, Width, Height, Pixels, OutWhy))
 	{
@@ -932,6 +933,56 @@ bool UConvaiPakEditorSubsystem::SetThumbnailFromFile(const int32 ChunkId, const 
 {
 	return ConvaiPakManager::Thumbnail::ImportImageFile(
 		ImagePath, ConvaiPakManager::Chunk::GetThumbnailPath(ChunkId), OutWhy);
+}
+
+bool UConvaiPakEditorSubsystem::SetThumbnailFromTexture(const int32 ChunkId, const FString& PackageName, FString& OutWhy)
+{
+	const IAssetRegistry* AssetRegistry = IAssetRegistry::Get();
+	if (!AssetRegistry)
+	{
+		OutWhy = TEXT("the asset registry is unavailable");
+		return false;
+	}
+
+	TArray<FAssetData> Assets;
+	AssetRegistry->GetAssetsByPackageName(FName(*PackageName), Assets);
+	UObject* Asset = Assets.IsEmpty() ? nullptr : Assets[0].GetAsset();
+	if (!Asset)
+	{
+		OutWhy = FString::Printf(TEXT("could not load %s"), *PackageName);
+		return false;
+	}
+
+	UTexture2D* Texture = Cast<UTexture2D>(Asset);
+	if (!Texture)
+	{
+		OutWhy = FString::Printf(TEXT("%s is a %s, not a texture"), *PackageName, *Asset->GetClass()->GetName());
+		return false;
+	}
+
+	int32 Width = 0;
+	int32 Height = 0;
+	TArray<FColor> Pixels;
+	if (!ConvaiPakManager::Thumbnail::ReadTextureSource(Texture, Width, Height, Pixels, OutWhy))
+	{
+		return false;
+	}
+
+	if (!ConvaiPakManager::Thumbnail::HasContent(Pixels))
+	{
+		OutWhy = FString::Printf(TEXT("%s is blank"), *PackageName);
+		return false;
+	}
+
+	const FString Path = ConvaiPakManager::Chunk::GetThumbnailPath(ChunkId);
+	if (!ConvaiPakManager::Thumbnail::WritePng(Path, Width, Height, Pixels))
+	{
+		OutWhy = FString::Printf(TEXT("could not write %s"), *Path);
+		return false;
+	}
+
+	OutWhy.Empty();
+	return true;
 }
 
 void UConvaiPakEditorSubsystem::SetStatus(

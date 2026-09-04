@@ -95,6 +95,7 @@ private:
 	FReply HandleRevealEntryPoint();
 	FReply HandleCaptureThumbnail();
 	FReply HandleChooseThumbnailImage();
+	FReply HandleUseSelectedTexture();
 	FReply HandlePreviewThumbnail();
 	FReply HandleSetSpawnPoint();
 	FReply HandleCopyAssetId();

@@ -28,6 +28,7 @@
 #include "Elements/Framework/TypedElementHandle.h" // For FTypedElementHandle
 #include "Engine/PrimaryAssetLabel.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "Thumbnail/CPM_Thumbnail.h"
 #include "EditorAssetLibrary.h"
 #include "Utility/CPM_Log.h"
 
@@ -181,9 +182,9 @@ bool UConvaiPakManagerEditorUtils::CPM_TakeViewportScreenshot(const FString& Fil
 	// Enter game view (hides gizmos and overlays)
 	EditorViewportClient->SetGameView(true);
 
-	// Resize viewport to 1920x1080
-	constexpr uint32 TargetX = 1920;
-	constexpr uint32 TargetY = 1080;
+	// Every thumbnail this tool writes is one shape, whichever path made it.
+	constexpr uint32 TargetX = static_cast<uint32>(ConvaiPakManager::Thumbnail::WrittenWidth);
+	constexpr uint32 TargetY = static_cast<uint32>(ConvaiPakManager::Thumbnail::WrittenHeight);
 	SceneViewport->SetFixedViewportSize(TargetX, TargetY);
 	SceneViewport->UpdateViewportRHI(false, TargetX, TargetY, EWindowMode::Windowed, PF_Unknown);
 	SceneViewport->Invalidate();

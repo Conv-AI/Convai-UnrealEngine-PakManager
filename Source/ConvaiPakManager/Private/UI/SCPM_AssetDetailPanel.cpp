@@ -16,12 +16,10 @@
 #include "Misc/Paths.h"
 #include "Widgets/Input/SComboButton.h"
 #include "IContentBrowserSingleton.h"
-#include "IImageWrapper.h"
-#include "IImageWrapperModule.h"
-#include "Misc/FileHelper.h"
 #include "Modules/ModuleManager.h"
 #include "Styling/AppStyle.h"
 #include "Styling/CoreStyle.h"
+#include "Thumbnail/CPM_Thumbnail.h"
 #include "UI/CPM_PakManagerStyle.h"
 #include "Utility/CPM_UtilityLibrary.h"
 #include "Widgets/Images/SImage.h"
@@ -629,6 +627,12 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPreviewSection()
 {
 	using FPalette = FCPM_PakManagerStyle::FPalette;
 
+	// The preview mirrors the shape this tool captures at, so the box does not imply a framing the
+	// capture will not produce.
+	constexpr float PreviewHeight = 192.0f;
+	const float PreviewWidth =
+		PreviewHeight * ConvaiPakManager::Thumbnail::WrittenWidth / ConvaiPakManager::Thumbnail::WrittenHeight;
+
 	TSharedRef<SVerticalBox> Body = SNew(SVerticalBox);
 
 	Body->AddSlot().AutoHeight().Padding(0.0f, 4.0f)
@@ -641,13 +645,19 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPreviewSection()
 			.Padding(2.0f)
 			[
 				SNew(SBox)
-				.WidthOverride(192.0f)
-				.HeightOverride(108.0f)
+				.WidthOverride(PreviewWidth)
+				.HeightOverride(PreviewHeight)
 				[
 					SNew(SOverlay)
 					+ SOverlay::Slot()
 					[
-						SAssignNew(ThumbnailImage, SImage)
+						// Fitted, not filled: a picked texture or an imported file keeps its own
+						// shape, and the box would otherwise stretch a square one to twice its height.
+						SNew(SScaleBox)
+						.Stretch(EStretch::ScaleToFit)
+						[
+							SAssignNew(ThumbnailImage, SImage)
+						]
 					]
 					+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 					[
@@ -684,6 +694,15 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPreviewSection()
 				.ToolTipText(LOCTEXT("ChooseThumbnailImageTip",
 					"Use a PNG or JPEG you made yourself; it is stored as this asset's thumbnail."))
 				.OnClicked(this, &SCPM_AssetDetailPanel::HandleChooseThumbnailImage)
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f)
+			[
+				SNew(SButton)
+				.ButtonStyle(&SecondaryButtonStyle())
+				.Text(LOCTEXT("UseSelectedTexture", "Use selected texture"))
+				.ToolTipText(LOCTEXT("UseSelectedTextureTip",
+					"Uses the texture selected in the Content Browser as this asset's thumbnail."))
+				.OnClicked(this, &SCPM_AssetDetailPanel::HandleUseSelectedTexture)
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f)
 			[
@@ -1274,6 +1293,36 @@ FReply SCPM_AssetDetailPanel::HandleChooseThumbnailImage()
 	return FReply::Handled();
 }
 
+FReply SCPM_AssetDetailPanel::HandleUseSelectedTexture()
+{
+	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+	if (!Subsystem || !Asset.IsValid())
+	{
+		return FReply::Handled();
+	}
+
+	FString Picked;
+	Subsystem->GetSelectedAssetPackageName(Picked);
+	if (Picked.IsEmpty())
+	{
+		Notify(LOCTEXT("NoTextureSelected", "Select a texture in the Content Browser first."),
+			SNotificationItem::CS_Fail);
+		return FReply::Handled();
+	}
+
+	FString Why;
+	if (Subsystem->SetThumbnailFromTexture(Asset->ChunkId, Picked, Why))
+	{
+		Asset->LoadFrom(*Subsystem);
+		RefreshThumbnailBrush(true);
+	}
+	else
+	{
+		Notify(FText::FromString(Why), SNotificationItem::CS_Fail);
+	}
+	return FReply::Handled();
+}
+
 FReply SCPM_AssetDetailPanel::HandlePreviewThumbnail()
 {
 	if (!Asset.IsValid() || Asset->ThumbnailPath.IsEmpty())
@@ -1281,21 +1330,13 @@ FReply SCPM_AssetDetailPanel::HandlePreviewThumbnail()
 		return FReply::Handled();
 	}
 
-	TArray<uint8> Bytes;
-	if (!FFileHelper::LoadFileToArray(Bytes, *Asset->ThumbnailPath))
+	if (!ThumbnailBrush.IsValid())
 	{
 		Notify(LOCTEXT("PreviewLoadFailed", "Could not read the thumbnail file."), SNotificationItem::CS_Fail);
 		return FReply::Handled();
 	}
 
-	FVector2D ImageSize(1280.0, 720.0);
-	IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>("ImageWrapper");
-	const TSharedPtr<IImageWrapper> Wrapper = ImageWrapperModule.CreateImageWrapper(EImageFormat::PNG);
-	if (Wrapper.IsValid() && Wrapper->SetCompressed(Bytes.GetData(), Bytes.Num()))
-	{
-		ImageSize = FVector2D(Wrapper->GetWidth(), Wrapper->GetHeight());
-	}
-
+	const FVector2D ImageSize = ThumbnailBrush->GetImageSize();
 	const double Scale = FMath::Min3(1.0, 1280.0 / ImageSize.X, 720.0 / ImageSize.Y);
 
 	// The window paints the panel's brush through a weak guard rather than owning one of its own: two
@@ -1365,9 +1406,14 @@ void SCPM_AssetDetailPanel::RefreshThumbnailBrush(bool bForceReload)
 	// Destroy first: the destructor releases the renderer resource, so a recapture at the same path
 	// is re-read from disk instead of served from the texture cache.
 	ThumbnailBrush.Reset();
-	if (!Path.IsEmpty())
+	int32 Width = 0;
+	int32 Height = 0;
+	TArray<FColor> Pixels;
+	// Sized from the file rather than from the box: a brush that claims a shape the image does not
+	// have draws it stretched wherever it is painted, and the preview window opens at that lie too.
+	if (!Path.IsEmpty() && ConvaiPakManager::Thumbnail::DecodeImageFile(Path, Width, Height, Pixels))
 	{
-		ThumbnailBrush = MakeShareable(new FSlateDynamicImageBrush(FName(*Path), FVector2D(192.0, 108.0)));
+		ThumbnailBrush = MakeShareable(new FSlateDynamicImageBrush(FName(*Path), FVector2D(Width, Height)));
 	}
 	if (ThumbnailImage.IsValid())
 	{
