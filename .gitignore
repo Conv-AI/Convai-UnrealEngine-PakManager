@@ -8,6 +8,7 @@
 !/docs/
 !/Source/
 !/Resources/
+!/Config/
 !/Content/
 !/Scripts/
 # Ignore intermediate build files
