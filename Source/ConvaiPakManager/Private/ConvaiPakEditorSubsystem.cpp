@@ -11,6 +11,8 @@
 #include "AssetRegistry/IAssetRegistry.h"
 #include "ContentBrowserModule.h"
 #include "Editor.h"
+#include "EditorAssetLibrary.h"
+#include "Engine/PrimaryAssetLabel.h"
 #include "Engine/Blueprint.h"
 #include "Engine/LevelStreaming.h"
 #include "Engine/Texture2D.h"
@@ -1799,6 +1801,15 @@ void UConvaiPakEditorSubsystem::DeletePluginContent(const int32 ChunkId)
 			break;
 		}
 	}
+	UPrimaryAssetLabel* Label = nullptr;
+	for (const FAssetData& Asset : Assets)
+	{
+		if (Asset.PackageName == LabelPackage)
+		{
+			Label = Cast<UPrimaryAssetLabel>(Asset.GetAsset());
+			break;
+		}
+	}
 	Assets.RemoveAll([&LabelPackage](const FAssetData& Asset) { return Asset.PackageName == LabelPackage; });
 
 	if (Assets.IsEmpty())
@@ -1830,21 +1841,56 @@ void UConvaiPakEditorSubsystem::DeletePluginContent(const int32 ChunkId)
 		UEditorLoadingAndSavingUtils::NewBlankMap(/*bSaveExistingMap=*/false);
 	}
 
+	// The label soft-references every package it labels - bLabelAssetsInMyDirectory bakes the whole
+	// directory into its AssetBundleData on save - and it is the one package deliberately kept out
+	// of the delete set above. To the engine's delete model that reads as an external referencer of
+	// every asset in the batch, and one of those refuses the WHOLE batch. Emptying the bundle first
+	// costs a save; leaving it costs the entire delete.
+	if (Label && Label->bLabelAssetsInMyDirectory)
+	{
+		Label->bLabelAssetsInMyDirectory = false;
+		if (!UEditorAssetLibrary::SaveLoadedAsset(Label, /*bOnlyIfIsDirty=*/false))
+		{
+			Label->bLabelAssetsInMyDirectory = true;
+			SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed,
+				FString::Printf(
+					TEXT("the asset was deleted on Convai, but %s could not be saved, so its content was left ")
+					TEXT("alone. Check that the file is not read-only."), *LabelPackage.ToString()));
+			return;
+		}
+	}
+
 	// The editor's own delete, not a file remove: it closes asset editors and unloads the objects.
 	// Deleting the files underneath a loaded package would leave the editor holding objects whose
 	// packages no longer exist.
 	const int32 Requested = Assets.Num();
 	const int32 Deleted = ObjectTools::DeleteAssets(Assets, /*bShowConfirmation=*/false);
 
+	// Restored whatever the delete did: the label is what gathers this Chunk, and one left not
+	// gathering would cook an empty Pak on the next Publish. Re-derived on save, so what it lists
+	// now is whatever survived the delete.
+	if (Label && !Label->bLabelAssetsInMyDirectory)
+	{
+		Label->bLabelAssetsInMyDirectory = true;
+		if (!UEditorAssetLibrary::SaveLoadedAsset(Label, /*bOnlyIfIsDirty=*/false))
+		{
+			CPM_LOG(Error, TEXT("Deleted this chunk's content but could not re-save %s. Until it is saved with ")
+				TEXT("'Label Assets In My Directory' ticked, this chunk packages an empty Pak."),
+				*LabelPackage.ToString());
+		}
+	}
+
 	// Reported, because without the confirmation dialog the engine deletes NOTHING when anything in
 	// the set is still referenced from outside it - it answers 0, and the creator would otherwise be
 	// told their content was deleted while all of it is still there.
 	if (Deleted < Requested)
 	{
+		// No cause named: the engine reports a count, not who held the reference, and the count is
+		// all-or-nothing under bShowConfirmation=false, so "584 of 584" means "at least one".
 		SetStatus(ChunkId, ECPM_AssetManagerStatus::Delete_Failed,
 			FString::Printf(
-				TEXT("the asset was deleted on Convai, but %d of %d source packages were kept - something outside %s ")
-				TEXT("still references them. Delete them from the Content Browser to see what."),
+				TEXT("the asset was deleted on Convai, but %d of %d source packages were kept - at least one is ")
+				TEXT("still referenced. Delete %s from the Content Browser to see which, and by what."),
 				Requested - Deleted, Requested, *MountRoot.ToString()));
 		return;
 	}
