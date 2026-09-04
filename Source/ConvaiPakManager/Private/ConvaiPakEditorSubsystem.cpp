@@ -932,7 +932,8 @@ bool UConvaiPakEditorSubsystem::CaptureThumbnailInto(const int32 ChunkId, FStrin
 
 	if (GetAssetType() != ECPM_AssetType::Avatar)
 	{
-		if (!UConvaiPakManagerEditorUtils::CPM_TakeViewportScreenshot(Path))
+		if (!UConvaiPakManagerEditorUtils::CPM_TakeViewportScreenshot(
+				Path, ConvaiPakManager::Thumbnail::WrittenShape(GetAssetType())))
 		{
 			OutWhy = TEXT("the viewport could not be captured; see the Output Log");
 			return false;
@@ -974,8 +975,9 @@ bool UConvaiPakEditorSubsystem::CaptureThumbnailInto(const int32 ChunkId, FStrin
 		return false;
 	}
 
-	int32 Width = ConvaiPakManager::Thumbnail::WrittenWidth;
-	int32 Height = ConvaiPakManager::Thumbnail::WrittenHeight;
+	const FIntPoint Shape = ConvaiPakManager::Thumbnail::WrittenShape(GetAssetType());
+	int32 Width = Shape.X;
+	int32 Height = Shape.Y;
 	TArray<FColor> Pixels;
 	if (!ConvaiPakManager::Thumbnail::RenderBlueprintThumbnail(Blueprint, Width, Height, Pixels, OutWhy))
 	{

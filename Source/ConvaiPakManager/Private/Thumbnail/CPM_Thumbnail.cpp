@@ -397,6 +397,13 @@ bool ReadTextureSource(UTexture2D* Texture, int32& OutWidth, int32& OutHeight, T
 	return true;
 }
 
+FIntPoint WrittenShape(const ECPM_AssetType AssetType)
+{
+	return AssetType == ECPM_AssetType::Avatar
+		? FIntPoint(WrittenWidth, WrittenHeight)
+		: FIntPoint(WrittenHeight, WrittenWidth);
+}
+
 FIntRect CentreCrop(const FIntPoint Rendered, const FIntPoint Shape)
 {
 	// Both axes, because which one holds the surplus depends on which way Shape is longer, and Shape

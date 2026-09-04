@@ -233,4 +233,30 @@ bool FCPMThumbnailCropsToTheWrittenShape::RunTest(const FString&)
 	return true;
 }
 
+/**
+ * A Scene is photographed through the level viewport, so its card is wide where an Avatar's is tall.
+ * Only that the two are flips of one another matters here - the pair itself can move.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMThumbnailShapeFollowsAssetType,
+	"ConvaiPakManager.Thumbnail.ShapeFollowsAssetType",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMThumbnailShapeFollowsAssetType::RunTest(const FString&)
+{
+	const FIntPoint Avatar = WrittenShape(ECPM_AssetType::Avatar);
+	const FIntPoint Scene = WrittenShape(ECPM_AssetType::Scene);
+
+	TestEqual(TEXT("an avatar is the written pair"), Avatar, FIntPoint(WrittenWidth, WrittenHeight));
+	TestEqual(TEXT("a scene is the written pair flipped"), Scene, FIntPoint(Avatar.Y, Avatar.X));
+	TestTrue(TEXT("an avatar card is taller than it is wide"), Avatar.Y > Avatar.X);
+	TestTrue(TEXT("a scene card is wider than it is tall"), Scene.X > Scene.Y);
+
+	// A chunk with no type set yet is published as a Scene, and a blank capture would be worse than
+	// a wide one, so the fallback has to be the landscape shape rather than nothing.
+	TestEqual(TEXT("an unset type takes the scene shape"), WrittenShape(ECPM_AssetType::Max), Scene);
+
+	return true;
+}
+
 #endif

@@ -155,9 +155,9 @@ void UConvaiPakManagerEditorUtils::CPM_PackageProject(const FCPM_PackageParam& P
     );
 }
 
-bool UConvaiPakManagerEditorUtils::CPM_TakeViewportScreenshot(const FString& FilePath)
+bool UConvaiPakManagerEditorUtils::CPM_TakeViewportScreenshot(const FString& FilePath, const FIntPoint Shape)
 {
-	if (FilePath.IsEmpty()) return false;
+	if (FilePath.IsEmpty() || Shape.X <= 0 || Shape.Y <= 0) return false;
 	
 	if (!GEditor)
 	{
@@ -192,9 +192,10 @@ bool UConvaiPakManagerEditorUtils::CPM_TakeViewportScreenshot(const FString& Fil
 	// Enter game view (hides gizmos and overlays)
 	EditorViewportClient->SetGameView(true);
 
-	// Every thumbnail this tool writes is one shape, whichever path made it.
-	constexpr uint32 TargetX = static_cast<uint32>(ConvaiPakManager::Thumbnail::WrittenWidth);
-	constexpr uint32 TargetY = static_cast<uint32>(ConvaiPakManager::Thumbnail::WrittenHeight);
+	// The caller's shape, so a Scene's landscape frame and an Avatar's portrait card come out of the
+	// same capture path.
+	const uint32 TargetX = static_cast<uint32>(Shape.X);
+	const uint32 TargetY = static_cast<uint32>(Shape.Y);
 	SceneViewport->SetFixedViewportSize(TargetX, TargetY);
 	SceneViewport->UpdateViewportRHI(false, TargetX, TargetY, EWindowMode::Windowed, PF_Unknown);
 	SceneViewport->Invalidate();

@@ -684,10 +684,13 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPreviewSection()
 	using FPalette = FCPM_PakManagerStyle::FPalette;
 
 	// The preview mirrors the shape this tool captures at, so the box does not imply a framing the
-	// capture will not produce.
-	constexpr float PreviewHeight = 192.0f;
-	const float PreviewWidth =
-		PreviewHeight * ConvaiPakManager::Thumbnail::WrittenWidth / ConvaiPakManager::Thumbnail::WrittenHeight;
+	// capture will not produce - which flips with the asset type, a Scene being a landscape shot.
+	const FIntPoint Shape = ConvaiPakManager::Thumbnail::WrittenShape(
+		bIsScene ? ECPM_AssetType::Scene : ECPM_AssetType::Avatar);
+	constexpr float PreviewLongSide = 192.0f;
+	const float Scale = PreviewLongSide / static_cast<float>(FMath::Max(Shape.X, Shape.Y));
+	const float PreviewWidth = Shape.X * Scale;
+	const float PreviewHeight = Shape.Y * Scale;
 
 	TSharedRef<SVerticalBox> Body = SNew(SVerticalBox);
 

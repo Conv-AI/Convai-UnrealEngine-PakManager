@@ -4,6 +4,8 @@
 
 #include "CoreMinimal.h"
 
+#include "Utility/CPM_Utils.h"
+
 class UBlueprint;
 class UTexture2D;
 
@@ -29,6 +31,13 @@ namespace ConvaiPakManager::Thumbnail
  */
 constexpr int32 WrittenWidth = 512;
 constexpr int32 WrittenHeight = 1024;
+
+/**
+ * The written shape for an Asset of this type: portrait for an Avatar, and the same pair flipped to
+ * landscape for a Scene, because a Scene's thumbnail is a shot of a level through the viewport and a
+ * level reads as a wide frame, not as a tall card.
+ */
+CONVAIPAKMANAGER_API FIntPoint WrittenShape(ECPM_AssetType AssetType);
 
 /** The legacy rule: at least MinRatio of the pixels are opaque and not near-black. Empty is false. */
 CONVAIPAKMANAGER_API bool HasContent(TArrayView<const FColor> Pixels, float MinRatio = 0.01f);

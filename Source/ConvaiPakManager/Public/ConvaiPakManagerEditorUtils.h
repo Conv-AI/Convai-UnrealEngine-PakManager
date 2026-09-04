@@ -21,8 +21,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManagerEditor")
 	static void CPM_PackageProject(const FCPM_PackageParam& PackageParam, FOnUatTaskResultCallack OnPackagingCompleted);
 
+	/** Shape is the pixel size the viewport is forced to for the shot - see ConvaiPakManager::Thumbnail::WrittenShape. */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
-	static bool CPM_TakeViewportScreenshot(const FString& FilePath);
+	static bool CPM_TakeViewportScreenshot(const FString& FilePath, FIntPoint Shape);
 
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static bool CPM_CreateZip(const FString& ZipFilePath, const TArray<FString>& Files, const TArray<FString>& Directories);
