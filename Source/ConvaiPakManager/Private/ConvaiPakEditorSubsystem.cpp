@@ -299,32 +299,14 @@ FCPM_SpawnPointStatus UConvaiPakEditorSubsystem::GetSpawnPointStatus() const
 namespace
 {
 	/**
-	 * Where the Convai SDK is mounted, with its trailing slash.
-	 *
-	 * Kept out of a creator's plugin and out of its dependency lists: every Convai product already
-	 * ships the SDK, so a copy of it is a duplicate the product will never load - and to the copy
-	 * API it looks like ordinary project content, because IsEnginePackage counts project plugins as
-	 * game content.
-	 */
-	FString ConvaiSdkMountRoot()
-	{
-		if (const TSharedPtr<IPlugin> Convai = IPluginManager::Get().FindPlugin(TEXT("ConvAI")))
-		{
-			return Convai->GetMountedAssetPath();
-		}
-		return TEXT("/ConvAI/");
-	}
-
-	/**
-	 * The content no Pak has to carry, because every Convai product already ships it.
-	 *
-	 * Engine content is deliberately NOT here. A product cooks only the engine assets its own
-	 * content references, so a creator's level built from engine shapes and materials opens with
-	 * those references dangling; engine dependencies are copied into the plugin like any other.
+	 *	Return the list of modules names that we should not copy
 	 */
 	TArray<FString> ContentEveryProductShips()
 	{
-		return { ConvaiSdkMountRoot(), TEXT("/ConvaiHTTP/") };
+		FCPM_ModdingMetadata OutData;
+		UCPM_UtilityLibrary::GetModdingMetadata(OutData);
+		FString ContentOnlyPlugin = TEXT("/") + OutData.PluginName + TEXT("/");
+		return { TEXT("/ConvAI/"), TEXT("/ConvaiHTTP/"), TEXT("/Engine/EditorBlueprintResources/"), TEXT("/Engine/EditorResources/"), ContentOnlyPlugin };
 	}
 
 	/** Why a gather copied nothing, phrased for the creator. */
@@ -357,11 +339,15 @@ namespace
 		// Engine content is copied in rather than left where it is: what a Convai product cooked of
 		// /Engine/ is whatever its own content needed, which is not what a creator's level needs.
 		Options.EnginePolicy = ECPM_EngineDependencyPolicy::CopyIntoDestination;
-		Options.bOverwriteExisting = false;
+		Options.bIncludeSoftDependencies = true;
+		Options.bIncludeHardDependencies = true;
+		Options.bIncludeSearchableNameDependencies = false;
+		Options.bCopyIfAlreadyInDestination = false;
 		Options.bSaveAfterCopy = true;
 		Options.bSuppressUI = true;
+		Options.bOverwriteExisting = true;
 		Options.bFixupRedirectors = true;
-		Options.ExcludedPaths = ContentEveryProductShips();
+		Options.ExcludedModules = ContentEveryProductShips();
 		return Options;
 	}
 
