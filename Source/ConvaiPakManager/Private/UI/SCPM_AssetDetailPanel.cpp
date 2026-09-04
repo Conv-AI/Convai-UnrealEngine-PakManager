@@ -357,9 +357,20 @@ void SCPM_AssetDetailPanel::SetAssetViewModel(TSharedPtr<FCPM_AssetViewModel> In
 	const bool bSameChunk = Asset.IsValid() && InAsset.IsValid() && Asset->ChunkId == InAsset->ChunkId;
 
 	Asset = InAsset;
-	EntryPointError = FText::GetEmpty();
-	SetupNotes = FText::GetEmpty();
-	OutsidePick.Reset();
+
+	// Guarded by the same rule as the expanded sections below, and for a stronger reason. These
+	// three ARE the refusal a pick just reported and the offer to fix it, and this function runs on
+	// every refresh - a tab foregrounded, the Asset Registry finishing its scan. Resetting them
+	// unconditionally deleted the "Copy into plugin" button out from under the creator while the
+	// action bar, which reads durable chunk status, went on showing the refusal that produced it.
+	// The result was an error with no way to act on it and a button that could not be clicked
+	// because it was no longer there.
+	if (!bSameChunk)
+	{
+		EntryPointError = FText::GetEmpty();
+		SetupNotes = FText::GetEmpty();
+		OutsidePick.Reset();
+	}
 
 	if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
 	{
