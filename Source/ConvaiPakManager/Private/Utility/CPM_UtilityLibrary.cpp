@@ -421,14 +421,14 @@ UTexture2D* UCPM_UtilityLibrary::CPM_LoadTexture2DFromDisk(const FString& FilePa
 	 // 1) Check file exists and load bytes
     if (!FPaths::FileExists(FilePath))
     {
-        UE_LOG(LogTemp, Warning, TEXT("Image file not found: %s"), *FilePath);
+        CPM_LOG(Warning, TEXT("Image file not found: %s"), *FilePath);
         return nullptr;
     }
 
     TArray<uint8> FileData;
     if (!FFileHelper::LoadFileToArray(FileData, *FilePath) || FileData.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Failed to read or empty file: %s"), *FilePath);
+        CPM_LOG(Warning, TEXT("Failed to read or empty file: %s"), *FilePath);
         return nullptr;
     }
 
@@ -437,7 +437,7 @@ UTexture2D* UCPM_UtilityLibrary::CPM_LoadTexture2DFromDisk(const FString& FilePa
     EImageFormat DetectedFormat = ImgWrapperMod.DetectImageFormat(FileData.GetData(), FileData.Num());
     if (DetectedFormat == EImageFormat::Invalid)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Unknown or unsupported image format: %s"), *FilePath);
+        CPM_LOG(Warning, TEXT("Unknown or unsupported image format: %s"), *FilePath);
         return nullptr;
     }
 
@@ -446,7 +446,7 @@ UTexture2D* UCPM_UtilityLibrary::CPM_LoadTexture2DFromDisk(const FString& FilePa
     if (!ImgWrapper.IsValid() ||
         !ImgWrapper->SetCompressed(FileData.GetData(), FileData.Num()))
     {
-        UE_LOG(LogTemp, Warning, TEXT("Unsupported or corrupt image data: %s"), *FilePath);
+        CPM_LOG(Warning, TEXT("Unsupported or corrupt image data: %s"), *FilePath);
         return nullptr;
     }
 
@@ -454,7 +454,7 @@ UTexture2D* UCPM_UtilityLibrary::CPM_LoadTexture2DFromDisk(const FString& FilePa
     TArray<uint8> RawRGBA;
     if (!ImgWrapper->GetRaw(ERGBFormat::BGRA, 8, RawRGBA))
     {
-        UE_LOG(LogTemp, Warning, TEXT("Failed to decompress image: %s"), *FilePath);
+        CPM_LOG(Warning, TEXT("Failed to decompress image: %s"), *FilePath);
         return nullptr;
     }
 
@@ -573,7 +573,7 @@ bool UCPM_UtilityLibrary::Texture2DToBytes(UTexture2D* Texture2D, const EImageFo
 {
 	if (!Texture2D)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Texture2DToBytes: Invalid texture"));
+		CPM_LOG(Error, TEXT("Texture2DToBytes: Invalid texture"));
 		return false;
 	}
 

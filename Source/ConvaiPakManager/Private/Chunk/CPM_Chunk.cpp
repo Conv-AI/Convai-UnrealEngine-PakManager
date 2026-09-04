@@ -221,6 +221,10 @@ TArray<FCPM_Chunk> Discover()
 	}
 
 	Chunks.Sort([](const FCPM_Chunk& A, const FCPM_Chunk& B) { return A.Id < B.Id; });
+
+	// Verbose: Discover runs on every panel refresh, and the answer only matters when it is
+	// surprising - which is exactly when someone turns this category up.
+	CPM_LOG(Verbose, TEXT("Chunk discovery found %d chunk(s) across %d label(s)."), Chunks.Num(), Labels.Num());
 	return Chunks;
 }
 

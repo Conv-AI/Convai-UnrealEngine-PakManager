@@ -880,6 +880,19 @@ FString UConvaiPakEditorSubsystem::GetThumbnailPath(const int32 ChunkId) const
 
 bool UConvaiPakEditorSubsystem::CaptureThumbnail(const int32 ChunkId, FString& OutWhy)
 {
+	// Logged once here rather than at each of the ways below it can fail: every one of them already
+	// composes the sentence, and the only thing missing was somewhere for it to go.
+	if (CaptureThumbnailInto(ChunkId, OutWhy))
+	{
+		return true;
+	}
+
+	CPM_LOG(Warning, TEXT("Could not capture a thumbnail for chunk %d: %s"), ChunkId, *OutWhy);
+	return false;
+}
+
+bool UConvaiPakEditorSubsystem::CaptureThumbnailInto(const int32 ChunkId, FString& OutWhy)
+{
 	const FString Path = ConvaiPakManager::Chunk::GetThumbnailPath(ChunkId);
 	IFileManager::Get().MakeDirectory(*FPaths::GetPath(Path), true);
 
@@ -1012,7 +1025,24 @@ void UConvaiPakEditorSubsystem::SetStatus(
 	const float Progress,
 	const FString& StepName)
 {
+	// Every refusal this subsystem composes goes to the UI and, until now, nowhere else - so a
+	// creator who dismissed the panel had no record of why anything was refused. Only failures, and
+	// only when the message is new: SetStatus is also how progress is published, several times a
+	// second during an upload.
+	const bool bFailed =
+		Status == ECPM_AssetManagerStatus::Packaging_Failed
+		|| Status == ECPM_AssetManagerStatus::Create_Failed
+		|| Status == ECPM_AssetManagerStatus::Update_Failed
+		|| Status == ECPM_AssetManagerStatus::UploadPak_Failed
+		|| Status == ECPM_AssetManagerStatus::Delete_Failed;
+
 	FCPM_ChunkStatus& Stored = StatusByChunk.FindOrAdd(ChunkId);
+	if (bFailed && !Message.IsEmpty() && Message != Stored.Message)
+	{
+		CPM_LOG(Error, TEXT("Chunk %d - %s: %s"),
+			ChunkId, *UEnum::GetDisplayValueAsText(Status).ToString(), *Message);
+	}
+
 	Stored.ChunkId = ChunkId;
 	Stored.Status = Status;
 	Stored.Message = Message;
@@ -1693,6 +1723,11 @@ int32 UConvaiPakEditorSubsystem::DeleteBuiltPaks(const int32 ChunkId)
 
 void UConvaiPakEditorSubsystem::HandleDeleteSucceeded(const FString& ResponseString)
 {
+	// Irreversible and invisible from the project afterwards - the records that named the Asset are
+	// cleared moments from here - so this is the only chance to write down that it happened.
+	CPM_LOG(Display, TEXT("Convai deleted chunk %d's %s on %s."), DeletingChunkId,
+		DeletingVersion.IsEmpty() ? TEXT("asset") : *DeletingVersion, *DeletingEnvironmentSlug);
+
 	const int32 ChunkId = DeletingChunkId;
 	const FString Version = DeletingVersion;
 	const FString EnvironmentSlug = DeletingEnvironmentSlug;
@@ -1906,6 +1941,10 @@ void UConvaiPakEditorSubsystem::DeletePluginContent(const int32 ChunkId)
 
 void UConvaiPakEditorSubsystem::HandleDeleteFailed(const FString& ResponseString)
 {
+	CPM_LOG(Error, TEXT("assets/delete refused chunk %d's %s on %s. The server said: %s"),
+		DeletingChunkId, DeletingVersion.IsEmpty() ? TEXT("asset") : *DeletingVersion,
+		*DeletingEnvironmentSlug, ResponseString.IsEmpty() ? TEXT("nothing") : *ResponseString);
+
 	const int32 ChunkId = DeletingChunkId;
 	DeletingChunkId = INDEX_NONE;
 	DeletingVersion.Reset();

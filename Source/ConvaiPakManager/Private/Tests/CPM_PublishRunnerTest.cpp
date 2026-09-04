@@ -122,6 +122,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FCPMPublishRunnerAFailureStopsTheQueue::RunTest(const FString&)
 {
+	// The runner writes one Error for a failed run, which is the point of it.
+	AddExpectedError(TEXT("Publishing chunk .* failed"), EAutomationExpectedErrorFlags::Contains, 1);
+
 	UCPM_PublishRunnerTestJob* First = MakeJob();
 	UCPM_PublishRunnerTestJob* Second = MakeJob();
 	UCPM_PublishRunnerTestJob* Third = MakeJob();
@@ -219,6 +222,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FCPMPublishRunnerATimeoutFailsTheJob::RunTest(const FString&)
 {
+	// The runner writes one Error for a failed run, which is the point of it.
+	AddExpectedError(TEXT("Publishing chunk .* failed"), EAutomationExpectedErrorFlags::Contains, 1);
+
 	UCPM_PublishRunnerTestJob* Stuck = MakeJob();
 	Stuck->bReportOnExecute = false;
 	Stuck->TimeoutOverride = 0.001f;

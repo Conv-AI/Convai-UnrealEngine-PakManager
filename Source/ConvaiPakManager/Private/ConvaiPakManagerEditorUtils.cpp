@@ -86,7 +86,10 @@ void UConvaiPakManagerEditorUtils::CPM_PackageProject(const FCPM_PackageParam& P
 {
 	if (!PackageParam.IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("PackageParam is not valid"));
+        // Answered rather than dropped. The packaging Job keeps no deadline, so a silent return here
+        // leaves it waiting for a callback that never comes, for the rest of the editor session.
+        CPM_LOG(Error, TEXT("Refusing to package: platform or output directory is unset."));
+        OnPackagingCompleted.ExecuteIfBound(TEXT("Failed"), 0.0);
         return;
     }
 
@@ -127,6 +130,11 @@ void UConvaiPakManagerEditorUtils::CPM_PackageProject(const FCPM_PackageParam& P
         *PackageParam.Configuration    // -clientconfig=Shipping
     );
 
+    // The whole line, at Log. It is the first thing anyone diagnosing a cook asks for, and
+    // reconstructing it by hand from nine arguments is how it gets asked for twice.
+    CPM_LOG(Log, TEXT("Packaging %s (%s): %s %s"),
+        *PackageParam.GetPlatform(), *PackageParam.Configuration, *UnrealExe, *CommandLine);
+
     IUATHelperModule::Get().CreateUatTask(
         CommandLine,
         FText::FromString(PackageParam.GetPlatform()),              // PlatformDisplayName
@@ -138,6 +146,8 @@ void UConvaiPakManagerEditorUtils::CPM_PackageProject(const FCPM_PackageParam& P
         {
             AsyncTask(ENamedThreads::GameThread, [=]()
             {
+                CPM_LOG(Log, TEXT("Packaging %s finished: %s after %.0fs."),
+                    *PackageParam.GetPlatform(), *Result, Runtime);
                 OnPackagingCompleted.ExecuteIfBound(Result, Runtime);
             });
         },
@@ -151,28 +161,28 @@ bool UConvaiPakManagerEditorUtils::CPM_TakeViewportScreenshot(const FString& Fil
 	
 	if (!GEditor)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("GEditor is null."));
+		CPM_LOG(Warning, TEXT("GEditor is null."));
 		return false;
 	}
 
 	const FViewport* RawViewport = GEditor->GetActiveViewport();
 	if (!RawViewport)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("No active viewport."));
+		CPM_LOG(Warning, TEXT("No active viewport."));
 		return false;
 	}
 
 	FEditorViewportClient* EditorViewportClient = static_cast<FEditorViewportClient*>(RawViewport->GetClient());
 	if (!EditorViewportClient)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Viewport client is invalid."));
+		CPM_LOG(Warning, TEXT("Viewport client is invalid."));
 		return false;
 	}
 
 	FSceneViewport* SceneViewport = static_cast<FSceneViewport*>(EditorViewportClient->Viewport);
 	if (!SceneViewport)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Scene viewport is null."));
+		CPM_LOG(Warning, TEXT("Scene viewport is null."));
 		return false;
 	}
 
@@ -197,7 +207,7 @@ bool UConvaiPakManagerEditorUtils::CPM_TakeViewportScreenshot(const FString& Fil
 	TArray<FColor> Bitmap;
 	if (!SceneViewport->ReadPixels(Bitmap) || Bitmap.Num() == 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Failed to read pixels."));
+		CPM_LOG(Warning, TEXT("Failed to read pixels."));
 		return false;
 	}
 	
@@ -212,11 +222,11 @@ bool UConvaiPakManagerEditorUtils::CPM_TakeViewportScreenshot(const FString& Fil
 	FImageUtils::ThumbnailCompressImageArray(TargetX, TargetY, Bitmap, Compressed);
 	if (!FFileHelper::SaveArrayToFile(Compressed, *FilePath))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Failed to save screenshot to %s"), *FilePath);
+		CPM_LOG(Warning, TEXT("Failed to save screenshot to %s"), *FilePath);
 		return false;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("Clean screenshot saved to: %s"), *FilePath);
+	CPM_LOG(Log, TEXT("Clean screenshot saved to: %s"), *FilePath);
 	return true;
 }
 
@@ -226,7 +236,7 @@ bool UConvaiPakManagerEditorUtils::CPM_CreateZip(const FString& ZipFilePath, con
 	IFileHandle* FileHandle = PlatformFile.OpenWrite(*ZipFilePath);
 	if (!FileHandle)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Failed to create zip file: %s"), *ZipFilePath);
+		CPM_LOG(Error, TEXT("Could not create the project archive at %s."), *ZipFilePath);
 		return false;
 	}
 
@@ -239,7 +249,7 @@ bool UConvaiPakManagerEditorUtils::CPM_CreateZip(const FString& ZipFilePath, con
 		// Validate file exists
 		if (!PlatformFile.FileExists(*FilePath))
 		{
-			UE_LOG(LogTemp, Warning, TEXT("File not found: %s"), *FilePath);
+			CPM_LOG(Warning, TEXT("File not found: %s"), *FilePath);
 			return false;
 		}
 
@@ -260,7 +270,7 @@ bool UConvaiPakManagerEditorUtils::CPM_CreateZip(const FString& ZipFilePath, con
 		// Validate the relative path
 		if (RelativePath.IsEmpty() || RelativePath.Contains(TEXT("..")))
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Invalid relative path for file: %s -> %s"), *FilePath, *RelativePath);
+			CPM_LOG(Warning, TEXT("Invalid relative path for file: %s -> %s"), *FilePath, *RelativePath);
 			return false;
 		}
 
@@ -268,14 +278,14 @@ bool UConvaiPakManagerEditorUtils::CPM_CreateZip(const FString& ZipFilePath, con
 		TArray<uint8> FileData;
 		if (!FFileHelper::LoadFileToArray(FileData, *FilePath))
 		{
-			UE_LOG(LogTemp, Error, TEXT("Failed to read file: %s"), *FilePath);
+			CPM_LOG(Error, TEXT("Failed to read file: %s"), *FilePath);
 			return false;
 		}
 
 		// Validate file data
 		if (FileData.Num() == 0)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Empty file: %s"), *FilePath);
+			CPM_LOG(Warning, TEXT("Empty file: %s"), *FilePath);
 			return false;
 		}
 
@@ -284,12 +294,15 @@ bool UConvaiPakManagerEditorUtils::CPM_CreateZip(const FString& ZipFilePath, con
 		return true;
 	};
 
+	int32 Added = 0;
+	int32 Skipped = 0;
+
 	// Process directories
 	for (const FString& Directory : Directories)
 	{
 		if (!PlatformFile.DirectoryExists(*Directory))
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Directory not found: %s"), *Directory);
+			CPM_LOG(Warning, TEXT("Not archiving %s: no such directory."), *Directory);
 			continue;
 		}
 
@@ -298,16 +311,27 @@ bool UConvaiPakManagerEditorUtils::CPM_CreateZip(const FString& ZipFilePath, con
 
 		for (const FString& FilePath : L_Files)
 		{
-			SafeAddFileToZip(FilePath);
+			SafeAddFileToZip(FilePath) ? ++Added : ++Skipped;
 		}
 	}
 
 	// Process individual files
 	for (const FString& FilePath : Files)
 	{
-		SafeAddFileToZip(FilePath);
+		SafeAddFileToZip(FilePath) ? ++Added : ++Skipped;
 	}
-	
+
+	// The per-file results used to be discarded, so an archive in which every file failed reported
+	// Success and was uploaded. An empty one is a failure whatever the reason for it.
+	if (Added == 0)
+	{
+		CPM_LOG(Error, TEXT("The project archive at %s would have held nothing; %d file(s) were skipped."),
+			*ZipFilePath, Skipped);
+		return false;
+	}
+
+	CPM_LOG(Log, TEXT("Archived %d file(s) into %s%s."), Added, *ZipFilePath,
+		Skipped > 0 ? *FString::Printf(TEXT(" (%d skipped)"), Skipped) : TEXT(""));
 	return true;
 }
 
@@ -333,18 +357,18 @@ AActor* UConvaiPakManagerEditorUtils::SpawnAndSnapActorToView(UClass* ActorClass
     // --- Validation ---
     if (!ActorClass)
     {
-        UE_LOG(LogTemp, Warning, TEXT("SpawnAndSnapActorToView: ActorClass is null."));
+        CPM_LOG(Warning, TEXT("SpawnAndSnapActorToView: ActorClass is null."));
         return nullptr;
     }
     if (!GEditor || !GCurrentLevelEditingViewportClient)
     {
-        UE_LOG(LogTemp, Warning, TEXT("SpawnAndSnapActorToView: GEditor or GCurrentLevelEditingViewportClient is not available."));
+        CPM_LOG(Warning, TEXT("SpawnAndSnapActorToView: GEditor or GCurrentLevelEditingViewportClient is not available."));
         return nullptr;
     }
     UWorld* World = GEditor->GetEditorWorldContext().World();
     if (!World)
     {
-        UE_LOG(LogTemp, Warning, TEXT("SpawnAndSnapActorToView: Cannot get Editor World."));
+        CPM_LOG(Warning, TEXT("SpawnAndSnapActorToView: Cannot get Editor World."));
         return nullptr;
     }
 
@@ -414,7 +438,7 @@ AActor* UConvaiPakManagerEditorUtils::SpawnAndSnapActorToView(UClass* ActorClass
 
     if (!SpawnedActor)
     {
-        UE_LOG(LogTemp, Error, TEXT("SpawnAndSnapActorToView: Failed to spawn actor of class %s"), *ActorClass->GetName());
+        CPM_LOG(Error, TEXT("SpawnAndSnapActorToView: Failed to spawn actor of class %s"), *ActorClass->GetName());
         Transaction.Cancel();
         return nullptr;
     }

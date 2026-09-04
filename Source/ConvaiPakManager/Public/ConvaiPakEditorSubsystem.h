@@ -462,6 +462,9 @@ public:
 	FCPM_OnCompatibilityChanged OnCompatibilityChanged;
 
 private:
+	/** CaptureThumbnail's body. Split out so its every refusal is logged in one place, not eight. */
+	bool CaptureThumbnailInto(int32 ChunkId, FString& OutWhy);
+
 	/**
 	 * Makes this package fit to be that Chunk's Entry Point, or says why it cannot be - which for an
 	 * Avatar blueprint means adding Convai's components and saving the asset, and for either kind

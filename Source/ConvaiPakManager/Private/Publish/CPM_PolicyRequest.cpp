@@ -3,6 +3,7 @@
 #include "Publish/CPM_PolicyRequest.h"
 
 #include "Proxy/CPM_GithubProxy.h"
+#include "Utility/CPM_Log.h"
 
 void UCPM_PolicyRequest::Start(
 	const FString& Repository,
@@ -16,6 +17,8 @@ void UCPM_PolicyRequest::Start(
 	Request->Proxy = UCPM_GetGithubRepoFileProxy::GetGithubRepoFileProxy(Repository, Ref, Path);
 	if (!Request->Proxy)
 	{
+		CPM_LOG(Error, TEXT("Could not build a request for the publish policy at %s/%s (%s)."),
+			*Repository, *Path, *Ref);
 		OnFetched.ExecuteIfBound(false, FString());
 		return;
 	}
@@ -36,6 +39,10 @@ void UCPM_PolicyRequest::HandleSuccess(const FString& ResponseString)
 
 void UCPM_PolicyRequest::HandleFailure(const FString& ResponseString)
 {
+	// The body is thrown away deliberately - a policy the tool cannot read is not a policy - but the
+	// fact of the failure is what the whole Publish then fails on, and it used to be silent.
+	CPM_LOG(Error, TEXT("Fetching the publish policy failed. The server said: %s"),
+		ResponseString.IsEmpty() ? TEXT("nothing") : *ResponseString);
 	Finish(false, FString());
 }
 

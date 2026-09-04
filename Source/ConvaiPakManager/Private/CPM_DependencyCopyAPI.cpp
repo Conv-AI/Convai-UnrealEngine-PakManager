@@ -17,6 +17,7 @@
 #include "Misc/MessageDialog.h"
 #include "Logging/MessageLog.h"
 #include "Serialization/ArchiveReplaceObjectRef.h"
+#include "Utility/CPM_Log.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(CPM_DependencyCopyAPI)
 
@@ -82,7 +83,7 @@ FCPM_DependencyCopyReport FCPM_DependencyCopyAPI::CopyPackagesWithDependencies(
 	Report.EngineDependencyCount = EnginePackages.Num();
 	Report.GameDependencyCount = GamePackages.Num();
 
-	UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Found %d total dependencies (%d Engine, %d Game)"),
+	CPM_LOG(Log, TEXT("Found %d total dependencies (%d Engine, %d Game)"),
 		   AllPackages.Num(), EnginePackages.Num(), GamePackages.Num());
 
 	// Phase 2: Build copy plan
@@ -122,7 +123,7 @@ FCPM_DependencyCopyReport FCPM_DependencyCopyAPI::CopyPackagesWithDependencies(
 
 	Report.bSuccess = (Report.FailedCount == 0);
 
-	UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Copy complete. Copied: %d, Skipped: %d, Failed: %d"),
+	CPM_LOG(Log, TEXT("Copy complete. Copied: %d, Skipped: %d, Failed: %d"),
 		   Report.CopiedCount, Report.SkippedCount, Report.FailedCount);
 
 	return Report;
@@ -173,7 +174,7 @@ bool FCPM_DependencyCopyAPI::ShouldExcludePackage(const FName& PackageName, cons
 	// Check exact package name exclusions
 	if (Options.ExcludedPackages.Contains(PackageName))
 	{
-		UE_LOG(LogTemp, Verbose, TEXT("CPM_DependencyCopyAPI: Excluding package %s (exact match in ExcludedPackages)"), *PackageStr);
+		CPM_LOG(Verbose, TEXT("Excluding package %s (exact match in ExcludedPackages)"), *PackageStr);
 		return true;
 	}
 
@@ -182,7 +183,7 @@ bool FCPM_DependencyCopyAPI::ShouldExcludePackage(const FName& PackageName, cons
 	{
 		if (!ExcludedPath.IsEmpty() && PackageStr.StartsWith(ExcludedPath))
 		{
-			UE_LOG(LogTemp, Verbose, TEXT("CPM_DependencyCopyAPI: Excluding package %s (matches ExcludedPath %s)"), *PackageStr, *ExcludedPath);
+			CPM_LOG(Verbose, TEXT("Excluding package %s (matches ExcludedPath %s)"), *PackageStr, *ExcludedPath);
 			return true;
 		}
 	}
@@ -205,7 +206,7 @@ bool FCPM_DependencyCopyAPI::ShouldExcludePackage(const FName& PackageName, cons
 
 			if (PackageStr.StartsWith(ModulePattern))
 			{
-				UE_LOG(LogTemp, Verbose, TEXT("CPM_DependencyCopyAPI: Excluding package %s (matches ExcludedModule %s)"), *PackageStr, *ExcludedModule);
+				CPM_LOG(Verbose, TEXT("Excluding package %s (matches ExcludedModule %s)"), *PackageStr, *ExcludedModule);
 				return true;
 			}
 		}
@@ -233,7 +234,7 @@ FName FCPM_DependencyCopyAPI::MakeDestinationPackage(
 		(SourceStr.StartsWith(DestinationRoot) && !DestinationRoot.EndsWith(TEXT("/"))))
 	{
 		// Package is already at destination - return unchanged (no transformation needed)
-		UE_LOG(LogTemp, Verbose, TEXT("CPM_DependencyCopyAPI: Package %s is already under destination %s, no transformation needed"),
+		CPM_LOG(Verbose, TEXT("Package %s is already under destination %s, no transformation needed"),
 			*SourceStr, *DestinationRoot);
 		return SourcePackage;
 	}
@@ -486,7 +487,7 @@ bool FCPM_DependencyCopyAPI::ExecuteAdvancedCopy(
 {
 	if (SourceToDest.Num() == 0)
 	{
-		UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: No packages to copy"));
+		CPM_LOG(Log, TEXT("No packages to copy"));
 		return true;
 	}
 
@@ -511,7 +512,7 @@ bool FCPM_DependencyCopyAPI::ExecuteAdvancedCopy(
 	// Copy Game packages using AdvancedCopy
 	if (GamePackagesToCopy.Num() > 0)
 	{
-		UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Processing %d game packages for copy"), GamePackagesToCopy.Num());
+		CPM_LOG(Log, TEXT("Processing %d game packages for copy"), GamePackagesToCopy.Num());
 
 		// Filter out packages that already exist at destination to avoid World Partition crashes
 		// The AdvancedCopyPackages delete-then-copy approach crashes with WP actors
@@ -526,7 +527,7 @@ bool FCPM_DependencyCopyAPI::ExecuteAdvancedCopy(
 				if (Options.bOverwriteExisting)
 				{
 					// Destination exists but overwrite requested - skip and mark as already copied
-					UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Skipping %s -> %s (destination already exists)"), 
+					CPM_LOG(Verbose, TEXT("Skipping %s -> %s (destination already exists)"), 
 						*Pair.Key, *Pair.Value);
 					
 					// Mark as copied in report since it already exists
@@ -543,7 +544,7 @@ bool FCPM_DependencyCopyAPI::ExecuteAdvancedCopy(
 				else
 				{
 					// Destination exists and no overwrite - skip
-					UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Skipping %s (destination exists, overwrite disabled)"), *Pair.Key);
+					CPM_LOG(Verbose, TEXT("Skipping %s (destination exists, overwrite disabled)"), *Pair.Key);
 					FName SourceName(*Pair.Key);
 					for (FCPM_DependencyCopyItem& Item : InOutReport.Items)
 					{
@@ -565,7 +566,7 @@ bool FCPM_DependencyCopyAPI::ExecuteAdvancedCopy(
 
 		if (FilteredPackagesToCopy.Num() > 0)
 		{
-			UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Copying %d game packages via AdvancedCopy"), FilteredPackagesToCopy.Num());
+			CPM_LOG(Log, TEXT("Copying %d game packages via AdvancedCopy"), FilteredPackagesToCopy.Num());
 
 			IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
 
@@ -583,7 +584,7 @@ bool FCPM_DependencyCopyAPI::ExecuteAdvancedCopy(
 
 			if (!bCopyResult)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: AdvancedCopyPackages returned false"));
+				CPM_LOG(Warning, TEXT("AdvancedCopyPackages returned false"));
 				// Note: AdvancedCopy can return false but still have copied some packages
 			}
 
@@ -618,7 +619,7 @@ bool FCPM_DependencyCopyAPI::ExecuteAdvancedCopy(
 	// Copy Engine packages manually (AdvancedCopy rejects Engine content)
 	if (EnginePackagesToCopy.Num() > 0)
 	{
-		UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Copying %d engine packages manually"), EnginePackagesToCopy.Num());
+		CPM_LOG(Log, TEXT("Copying %d engine packages manually"), EnginePackagesToCopy.Num());
 
 		FScopedSlowTask EngineSlowTask(static_cast<float>(EnginePackagesToCopy.Num()),
 									   LOCTEXT("CopyingEnginePackages", "Copying Engine packages..."));
@@ -636,7 +637,7 @@ bool FCPM_DependencyCopyAPI::ExecuteAdvancedCopy(
 			// alone unless the caller asked for an overwrite.
 			if (!Options.bOverwriteExisting && FPackageName::DoesPackageExist(Pair.Value.ToString()))
 			{
-				UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Skipping %s (destination exists, overwrite disabled)"),
+				CPM_LOG(Verbose, TEXT("Skipping %s (destination exists, overwrite disabled)"),
 					*Pair.Key.ToString());
 				for (FCPM_DependencyCopyItem &Item : InOutReport.Items)
 				{
@@ -680,12 +681,12 @@ bool FCPM_DependencyCopyAPI::ExecuteAdvancedCopy(
 	// This is necessary because:
 	// 1. AdvancedCopy only remaps game->game references, not game->engine
 	// 2. Engine assets were duplicated with their original references intact
-	UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Performing comprehensive reference fixup for all copied packages..."));
+	CPM_LOG(Log, TEXT("Performing comprehensive reference fixup for all copied packages..."));
 	
 	FString FixupError;
 	if (!FixupAllHardReferences(SourceToDest, Options.AdditionalPackagesToFixup, FixupError))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: Reference fixup warning: %s"), *FixupError);
+		CPM_LOG(Warning, TEXT("Reference fixup warning: %s"), *FixupError);
 		// The copies themselves stand, so this is not a copy failure - but a caller that gathered in
 		// order to repoint something has to be able to tell that the repointing did not happen.
 		InOutReport.bReferencesFixedUp = false;
@@ -724,7 +725,7 @@ bool FCPM_DependencyCopyAPI::DuplicateAssetManually(
 		UObject *SourceObject = SourceAssetData.GetAsset();
 		if (!SourceObject)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: Failed to load source asset %s"), *SourceAssetData.GetObjectPathString());
+			CPM_LOG(Warning, TEXT("Failed to load source asset %s"), *SourceAssetData.GetObjectPathString());
 			continue;
 		}
 
@@ -776,7 +777,7 @@ bool FCPM_DependencyCopyAPI::DuplicateAssetManually(
 		if (SaveResult.Result == ESavePackageResult::Success)
 		{
 			bAnySuccess = true;
-			UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Duplicated %s -> %s"),
+			CPM_LOG(Verbose, TEXT("Duplicated %s -> %s"),
 				   *SourcePackage.ToString(), *DestPackage.ToString());
 		}
 		else
@@ -817,7 +818,7 @@ bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 		UPackage* SourcePackage = LoadPackage(nullptr, *SourcePackageName.ToString(), LOAD_None);
 		if (!SourcePackage)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: Could not load source package %s for reference mapping"),
+			CPM_LOG(Warning, TEXT("Could not load source package %s for reference mapping"),
 				*SourcePackageName.ToString());
 			continue;
 		}
@@ -826,7 +827,7 @@ bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 		UPackage* DestPackage = LoadPackage(nullptr, *DestPackageName.ToString(), LOAD_None);
 		if (!DestPackage)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: Could not load dest package %s for reference mapping"),
+			CPM_LOG(Warning, TEXT("Could not load dest package %s for reference mapping"),
 				*DestPackageName.ToString());
 			continue;
 		}
@@ -856,7 +857,7 @@ bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 			return true;
 		}, false);
 
-		UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Package %s -> %s has %d source objects, %d dest objects"),
+		CPM_LOG(Verbose, TEXT("Package %s -> %s has %d source objects, %d dest objects"),
 			*SourcePackageName.ToString(), *DestPackageName.ToString(), SourceObjects.Num(), DestObjects.Num());
 
 		// Match source to dest assets by class and name
@@ -883,7 +884,7 @@ bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 						FSoftObjectPath(DestObject)
 					);
 					
-					UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Mapped object %s -> %s"),
+					CPM_LOG(Verbose, TEXT("Mapped object %s -> %s"),
 						*SourceObject->GetPathName(), *DestObject->GetPathName());
 					break;
 				}
@@ -901,12 +902,12 @@ bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 		}
 		else
 		{
-			UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: Could not load %s to fix up its references"),
+			CPM_LOG(Warning, TEXT("Could not load %s to fix up its references"),
 				*PackageName.ToString());
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Built reference map with %d object mappings across %d packages"),
+	CPM_LOG(Log, TEXT("Built reference map with %d object mappings across %d packages"),
 		OldToNewObjects.Num(), DestinationPackages.Num());
 
 	if (OldToNewObjects.Num() == 0)
@@ -944,7 +945,7 @@ bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 			int32 ReplacedInThisObject = ReplaceAr.GetCount();
 			if (ReplacedInThisObject > 0)
 			{
-				UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Replaced %d references in %s"),
+				CPM_LOG(Verbose, TEXT("Replaced %d references in %s"),
 					ReplacedInThisObject, *Object->GetPathName());
 			}
 			TotalReplacedCount += ReplacedInThisObject;
@@ -954,7 +955,7 @@ bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 		(void)Package->MarkPackageDirty();
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Replaced %d object references"), TotalReplacedCount);
+	CPM_LOG(Log, TEXT("Replaced %d object references"), TotalReplacedCount);
 
 	// Step 3: Also fix soft object paths
 	if (DestinationPackages.Num() > 0 && SoftPathRemap.Num() > 0)
@@ -989,7 +990,7 @@ bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 
 	if (PackagesToSave.Num() > 0)
 	{
-		UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Saving %d modified packages..."), PackagesToSave.Num());
+		CPM_LOG(Log, TEXT("Saving %d modified packages..."), PackagesToSave.Num());
 
 		for (UPackage* Package : PackagesToSave)
 		{
@@ -1013,7 +1014,7 @@ bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 
 			if (!AssetToSave)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: No asset found in package %s"), *PackageName);
+				CPM_LOG(Warning, TEXT("No asset found in package %s"), *PackageName);
 				continue;
 			}
 
@@ -1026,11 +1027,11 @@ bool FCPM_DependencyCopyAPI::FixupAllHardReferences(
 
 			if (SaveResult.Result == ESavePackageResult::Success)
 			{
-				UE_LOG(LogTemp, Log, TEXT("CPM_DependencyCopyAPI: Saved package with updated references: %s"), *PackageName);
+				CPM_LOG(Verbose, TEXT("Saved package with updated references: %s"), *PackageName);
 			}
 			else
 			{
-				UE_LOG(LogTemp, Warning, TEXT("CPM_DependencyCopyAPI: Failed to save package: %s"), *PackageName);
+				CPM_LOG(Warning, TEXT("Failed to save package: %s"), *PackageName);
 			}
 		}
 	}

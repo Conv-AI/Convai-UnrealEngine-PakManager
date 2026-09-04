@@ -3,6 +3,20 @@
 #include "Jobs/CPM_PublishRunner.h"
 
 #include "Jobs/CPM_PublishJobs.h"
+#include "Utility/CPM_Log.h"
+
+namespace
+{
+	const TCHAR* ResultName(const ECPM_PublishResult Result)
+	{
+		switch (Result)
+		{
+		case ECPM_PublishResult::Success:   return TEXT("succeeded");
+		case ECPM_PublishResult::Cancelled: return TEXT("was cancelled");
+		default:                            return TEXT("failed");
+		}
+	}
+}
 
 void UCPM_PublishRunner::Start(const TArray<UCPM_PublishJobBase*>& InJobs, const FCPM_PublishContext& InContext,
 	FCPM_OnPublishProgress OnProgress, FCPM_OnPublishFinished OnFinished)
@@ -19,6 +33,9 @@ void UCPM_PublishRunner::Start(const TArray<UCPM_PublishJobBase*>& InJobs, const
 	}
 
 	CurrentIndex = 0;
+
+	CPM_LOG(Display, TEXT("Publishing chunk %d to %s: %d step(s)."),
+		Context.Request.ChunkId, *Context.Request.EnvironmentSlug, Jobs.Num());
 
 	// A tick, never inside this call. See the class comment: a synchronous queue that finished here
 	// would report a run over to a caller that has not yet been handed one to cancel.
@@ -44,6 +61,9 @@ void UCPM_PublishRunner::ExecuteCurrent()
 	}
 
 	UCPM_PublishJobBase* Job = Jobs[CurrentIndex];
+	CPM_LOG(Display, TEXT("Chunk %d, step %d of %d: %s."),
+		Context.Request.ChunkId, CurrentIndex + 1, Jobs.Num(), *Job->Name());
+
 	ArmTimeout(*Job);
 	Job->Execute();
 }
@@ -119,6 +139,9 @@ void UCPM_PublishRunner::ReportJobFinished(UCPM_PublishJobBase* Job, const ECPM_
 
 	ClearTimers();
 
+	CPM_LOG(Log, TEXT("Chunk %d: %s %s%s%s."), Context.Request.ChunkId, *Job->Name(), ResultName(Result),
+		Error.IsEmpty() ? TEXT("") : TEXT(" - "), *Error);
+
 	// Asked first, so a Job that answers a cancel with Failed - or succeeds in the moment between the
 	// creator clicking and the request unhooking - still resolves the run as the cancel it was.
 	if (bCancelling || Result == ECPM_PublishResult::Cancelled)
@@ -157,6 +180,24 @@ void UCPM_PublishRunner::Finish(const ECPM_PublishResult Result, const FString& 
 		return;
 	}
 	bFinished = true;
+
+	// The one line that says how a Publish ended. Error carries the reason, and until now it reached
+	// only the UI, which the creator has usually navigated away from by the time they ask why.
+	if (Result == ECPM_PublishResult::Success)
+	{
+		CPM_LOG(Display, TEXT("Publishing chunk %d succeeded."), Context.Request.ChunkId);
+	}
+	else if (Result == ECPM_PublishResult::Cancelled)
+	{
+		// Display, not Error: the creator asked for this. Logging it as an error would also fail any
+		// automation test that exercises the cancel path.
+		CPM_LOG(Display, TEXT("Publishing chunk %d was cancelled."), Context.Request.ChunkId);
+	}
+	else
+	{
+		CPM_LOG(Error, TEXT("Publishing chunk %d failed: %s"),
+			Context.Request.ChunkId, Error.IsEmpty() ? TEXT("no reason given") : *Error);
+	}
 
 	ClearTimers();
 	FinishedDelegate.ExecuteIfBound(Result, Error, Progress);

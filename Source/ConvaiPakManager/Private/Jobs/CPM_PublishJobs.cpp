@@ -481,10 +481,10 @@ void UCPM_CreateAssetJob::HandleCreated(const FCPM_CreatedAssets& Response)
 	}
 	else
 	{
-		UCPM_UtilityLibrary::CPM_LogMessage(
-			FString::Printf(TEXT("assets/upload minted no URL for version '%s'. The server said: %s"),
-				*RequestedVersion, *Published.RawResponse),
-			ECPM_LogLevel::Error);
+		// Same reason as assets/update: the answer holds pre-signed URLs, so its size is logged and
+		// its contents are not.
+		CPM_LOG(Error, TEXT("assets/upload minted no URL for version '%s' (the answer was %d bytes)."),
+			*RequestedVersion, Published.RawResponse.Len());
 	}
 
 	if (Published.AssetId.IsEmpty())
@@ -499,6 +499,12 @@ void UCPM_CreateAssetJob::HandleCreated(const FCPM_CreatedAssets& Response)
 
 void UCPM_CreateAssetJob::HandleCreateFailed(const FCPM_CreatedAssets& Response)
 {
+	// The status the UI shows cannot say more than "refused"; the log can say which backend refused
+	// and how big an answer it gave, which is what separates a rejection from an empty reply.
+	CPM_LOG(Error, TEXT("assets/upload refused chunk %d on %s (the answer was %d bytes)."),
+		Context->Request.ChunkId, *Context->Request.EnvironmentSlug,
+		CreateProxy ? CreateProxy->GetResponseString().Len() : 0);
+
 	Report(ECPM_PublishResult::Failed, TEXT("the server refused to create the asset"));
 }
 
@@ -519,6 +525,9 @@ void UCPM_CreateAssetJob::HandleUpdated(const FString& MintedUrl)
 
 void UCPM_CreateAssetJob::HandleUpdateFailed(const FString& ResponseString)
 {
+	CPM_LOG(Error, TEXT("assets/update refused asset %s on %s (the answer was %d bytes)."),
+		*ExistingAssetId, *Context->Request.EnvironmentSlug, ResponseString.Len());
+
 	Report(ECPM_PublishResult::Failed, TEXT("the server refused to update the asset"));
 }
 
@@ -694,6 +703,12 @@ void UCPM_UploadArtifactsJob::HandleUploadSucceeded(float Progress)
 	{
 		return;
 	}
+
+	// One line per artefact, not per progress tick - two or three a run, and the only record that a
+	// Version's bytes actually landed.
+	CPM_LOG(Log, TEXT("Uploaded version '%s' (%lld bytes)."),
+		*Pending[0].VersionSlot, IFileManager::Get().FileSize(*Pending[0].FilePath));
+
 	Pending.RemoveAt(0);
 	UploadNext();
 }

@@ -34,7 +34,7 @@ bool UCPM_CreateUpdatePakAssetBaseProxy::AddContentToRequest(CONVAI_HTTP_PAYLOAD
 {
 	if (URL.IsEmpty())
 	{
-		UE_LOG(LogTemp, Error, TEXT("Invalid file path or URL"));
+		CPM_LOG(Error, TEXT("Invalid file path or URL"));
 		return false;
 	}
 
@@ -188,9 +188,9 @@ void UCPM_UpdatePakAssetProxy::HandleSuccess()
 		return;
 	}
 
-	UCPM_UtilityLibrary::CPM_LogMessage(
-		FString::Printf(TEXT("assets/update minted no upload URL. The server said: %s"), *ResponseString),
-		ECPM_LogLevel::Error);
+	// The body is not logged. An assets/update answer carries pre-signed GCS URLs, and a creator
+	// pasting their log into a support ticket would be handing those out.
+	CPM_LOG(Error, TEXT("assets/update minted no upload URL (the answer was %d bytes)."), ResponseString.Len());
 	OnFailure.Broadcast(ResponseString);
 }
 
