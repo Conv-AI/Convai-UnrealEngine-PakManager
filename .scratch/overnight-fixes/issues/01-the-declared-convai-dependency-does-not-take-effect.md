@@ -1,7 +1,8 @@
 # The declared Convai dependency does not take effect in the running editor
 
-Status: `ready-for-agent` — **the reported bug does not reproduce.** The declaration works. What is
-left is the reporting gap and two related questions, scoped at the bottom.
+Status: `ready-for-agent` — **the reported bug does not reproduce.** The declaration works. The
+reporting gap is now closed and the two related questions are decided in the comments; nothing is
+waiting on Anmol.
 
 ## What was reported
 
@@ -52,12 +53,12 @@ it. The failing log has the second without the first.
 
 ## What is left to do
 
-1. **A failed declaration still reaches nobody.** `EnsureConvaiDependency` warns rather than refuses
-   by design, so its three failure messages (no plugin of that name mounted, Convai not enabled, the
-   `.uplugin` not writable) are Output Log only. At *pick* time the creator is standing right there
-   and the fix is one file — report it. `SetEntryPoint`'s `OutSetupNotes` deliberately does not carry
-   it today ([ConvaiPakEditorSubsystem.h:222](../../../Source/ConvaiPakManager/Public/ConvaiPakEditorSubsystem.h#L222)).
-   This is the reason the bug above looked like a silent failure even though it was not one.
+1. ~~**A failed declaration still reaches nobody.**~~ **Done.** `PrepareEntryPoint` now hands the
+   failure back through a new `OutDeclarationWarning`, and `SetEntryPoint` folds it into
+   `OutSetupNotes`, so the panel's existing setup-notes row says it at the pick. The Warning log
+   stays for the publish path, which runs the same check with nobody standing in front of it. Kept
+   out of `OutChanges` on purpose: that array is what decides whether the creator's blueprint is
+   re-saved, and a note about the descriptor must not save an asset nothing changed on.
 2. **The Dependencies window cannot show what the validator rejects.** `ListDependencies` stops its
    walk at `ContentEveryProductShips()`, so `/ConvAI/` references appear in neither bucket. Deliberate
    per [ADR-0011](../../../docs/adr/0011-a-pak-holds-only-its-own-mount.md), but it means a creator
@@ -71,6 +72,9 @@ it. The failing log has the second without the first.
    Log noise only; decide whether it is worth the trade.
 
 ## The ControlRig report, answered
+
+Moved to [issue 12](12-controlrig-references-a-mount-this-project-lacks.md); kept here because it is
+what the validation sweep above turned up.
 
 "Assets in the ControlRig module are not getting copied" — the same validation run found the
 project's only error, and it is this:
@@ -92,7 +96,29 @@ The reporting gap in (1) is closed: a creator whose descriptor could not be writ
 pick, not in the Output Log. (2) and (3) are decisions to record. `EnsureConvaiDependency` still has
 no automation coverage beyond `DeclareConvaiDependency`'s unit test.
 
+**What landed.** `PrepareEntryPoint` gained `OutDeclarationWarning`; `SetEntryPoint` appends it to
+`OutSetupNotes`; the header doc at `ConvaiPakEditorSubsystem.h:222` no longer says the descriptor
+write is unreported. Verified in the editor as M01 — with the descriptor stripped of its `ConvAI`
+entry and made read-only, a pick of `BP_Hana` returned the sentence and the panel drew it under the
+Selected asset row (`Saved/VibeUE/Captures/m01-setup-notes-row.png`, and the counts, in
+[issue 11](11-clear-the-editor-only-verification-debt.md)). Decisions (2) and (3) are below; the
+ControlRig report moved to [issue 12](12-controlrig-references-a-mount-this-project-lacks.md).
+
 ## Comments
+
+**(2) No third "referenced, not copied" bucket, for now.** The bucket would exist to help a creator
+debug a reference error, and the declaration is what stops those errors happening: the whole-project
+`-run=DataValidation` sweep above found none once it had landed. When the declaration cannot be
+written, item (1) now says so in the panel in the creator's own words, which is a better answer than
+a list of `/ConvAI/` paths they can do nothing about. Revisit only if a creator reports a reference
+error the declaration does not fix — that would be a case the bucket could actually explain.
+
+**(3) `FScopedDisableValidateOnSave` declined.** It would silence the 581-asset validation storm a
+pick triggers, and with it the validation of the very asset the tool just edited — the one save in
+the batch where an error would matter. The cost of keeping it is log noise; the cost of taking it is
+a genuine error on the creator's blueprint going unseen, plus a `DataValidation` module dependency.
+Not worth the trade. If the noise ever has to go, the narrow version is to scope the disable to the
+dependency copy's own saves and leave the entry point's save validated.
 
 Investigated 2026-09-04. Log A/B above, plus a fresh-process `-run=DataValidation` sweep of the whole
 project. Findings also recorded in

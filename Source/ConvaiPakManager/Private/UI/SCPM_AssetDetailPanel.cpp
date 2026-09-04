@@ -1042,14 +1042,19 @@ FReply SCPM_AssetDetailPanel::HandleRelocateEntryPoint()
 	}
 
 	FString NewPackage;
+	FString Notes;
 	FString Why;
-	if (!Subsystem->RelocateEntryPointIntoPlugin(Asset->ChunkId, OutsidePick, NewPackage, Why))
+	if (!Subsystem->RelocateEntryPointIntoPlugin(Asset->ChunkId, OutsidePick, NewPackage, Notes, Why))
 	{
+		// Notified as well as written into the row: the row is where the refusal that produced this
+		// button already sits, so swapping its text is a report a creator can miss entirely.
 		EntryPointError = FText::FromString(Why);
+		Notify(EntryPointError, SNotificationItem::CS_Fail);
 		return FReply::Handled();
 	}
 
 	EntryPointError = FText::GetEmpty();
+	SetupNotes = FText::FromString(Notes);
 	OutsidePick.Reset();
 	Asset->LoadFrom(*Subsystem);
 	Notify(FText::Format(LOCTEXT("RelocateDone", "Copied into the plugin as {0}, and picked it."),

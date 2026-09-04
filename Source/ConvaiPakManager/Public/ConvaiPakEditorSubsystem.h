@@ -41,8 +41,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_OnChunkStatusChangedDynamic, co
  * boundary here to justify serialising across - the panel is Slate in this process, and scripts,
  * automation tests and Blueprint all reach these through Unreal's own reflection. See docs/adr/0001.
  *
- * Asynchronous Commands answer with a Workflow Handle and run on the Convai Job System. Callers
- * watch OnChunkStatusChanged rather than the Job System's own events, so swapping the machinery
+ * Asynchronous Commands answer whether the request was accepted and run on a queue of Jobs. Callers
+ * watch OnChunkStatusChanged rather than the queue's own events, so swapping the machinery
  * underneath cannot change what a creator is told. See docs/adr/0008.
  */
 UCLASS()
@@ -222,9 +222,10 @@ public:
 	 *
 	 * @param OutSetupNotes  What was changed on the blueprint to make it usable, in one sentence.
 	 *                       Empty when nothing was: a pick edits the creator's own asset, and an
-	 *                       edit only the Output Log hears about is one nobody knows to undo. The
-	 *                       one exception is the Modding Plugin's `.uplugin`, which a pick also
-	 *                       amends to declare Convai; that edit is logged, not reported here.
+	 *                       edit only the Output Log hears about is one nobody knows to undo. A
+	 *                       pick also amends the Modding Plugin's `.uplugin` to declare Convai, and
+	 *                       when that write fails it is said here too - the references it legalises
+	 *                       are what asset validation rejects without it.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool SetEntryPoint(int32 ChunkId, const FString& PackageName, FString& OutSetupNotes);
@@ -319,6 +320,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool SetThumbnailFromFile(int32 ChunkId, const FString& ImagePath, FString& OutWhy);
 
+	/**
+	 * Adopts a UTexture2D the project already holds, written out as PNG. Refuses a blank one.
+	 *
+	 * Reads the texture's authored source rather than its cooked mips, so a creator's texture is
+	 * never re-encoded or re-flagged to make a thumbnail out of it - and a texture that has no
+	 * source to read says so instead of publishing a black card.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool SetThumbnailFromTexture(int32 ChunkId, const FString& PackageName, FString& OutWhy);
+
 	/** Where this Chunk's thumbnail lives, whether or not one has been captured. */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	FString GetThumbnailPath(int32 ChunkId) const;
@@ -329,7 +340,7 @@ public:
 	 * Takes a Chunk all the way to a usable Asset: package, archive, create, upload, record.
 	 *
 	 * Returns whether the request was ACCEPTED, not whether publishing succeeded - and deliberately
-	 * not a Workflow Handle, because there is no workflow yet when this returns. The Publish Policy
+	 * nothing to hold on to, because there is no queue yet when this returns. The Publish Policy
 	 * decides which Jobs exist and is read over the network, so the queue is built once it answers.
 	 * See docs/adr/0004.
 	 *

@@ -431,7 +431,8 @@ FString UConvaiPakEditorSubsystem::GetEntryPoint(const int32 ChunkId) const
 }
 
 bool UConvaiPakEditorSubsystem::PrepareEntryPoint(
-	const int32 ChunkId, const FString& PackageName, FString& OutWhy, bool& bOutIsLevel, TArray<FString>& OutChanges)
+	const int32 ChunkId, const FString& PackageName, FString& OutWhy, bool& bOutIsLevel, TArray<FString>& OutChanges,
+	FString& OutDeclarationWarning)
 {
 	if (PackageName.IsEmpty())
 	{
@@ -483,9 +484,12 @@ bool UConvaiPakEditorSubsystem::PrepareEntryPoint(
 	// is read-only should still be able to publish.
 	if (FString Why; !ConvaiPakManager::Chunk::EnsureConvaiDependency(Modding.PluginName, Why))
 	{
-		CPM_LOG(Warning, TEXT("Could not declare Convai as a dependency of the %s plugin (%s). Asset ")
-			TEXT("validation will report %s as illegally referencing Convai's content."),
+		OutDeclarationWarning = FString::Printf(
+			TEXT("Could not declare Convai as a dependency of the %s plugin (%s), so asset validation ")
+			TEXT("will report %s as illegally referencing Convai's content."),
 			*Modding.PluginName, *Why, *PackageName);
+		// Still logged: a publish runs this same check with nobody standing in front of the panel.
+		CPM_LOG(Warning, TEXT("%s"), *OutDeclarationWarning);
 	}
 
 	const bool bWantsLevel = Modding.AssetType.Equals(TEXT("Scene"), ESearchCase::IgnoreCase);
@@ -535,7 +539,8 @@ bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString
 	FString Why;
 	bool bIsLevel = false;
 	TArray<FString> Changes;
-	if (!PrepareEntryPoint(ChunkId, PackageName, Why, bIsLevel, Changes))
+	FString DeclarationWarning;
+	if (!PrepareEntryPoint(ChunkId, PackageName, Why, bIsLevel, Changes, DeclarationWarning))
 	{
 		SetStatus(ChunkId, ECPM_AssetManagerStatus::Update_Failed, Why);
 		return false;
@@ -545,6 +550,13 @@ bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString
 	{
 		OutSetupNotes = FString::Printf(TEXT("Set up %s for Convai: %s"),
 			*FPaths::GetCleanFilename(PackageName), *FString::Join(Changes, TEXT(", ")));
+	}
+
+	if (!DeclarationWarning.IsEmpty())
+	{
+		OutSetupNotes = OutSetupNotes.IsEmpty()
+			? DeclarationWarning
+			: FString::Printf(TEXT("%s. %s"), *OutSetupNotes, *DeclarationWarning);
 	}
 
 	// "/AGXRDJZ.../Maps/Landing" -> "/AGXRDJZ.../" : the mount point the package lives under.
@@ -579,7 +591,18 @@ bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString
 		Fields.Add(TEXT("blueprint_class_path"), PackageName);
 	}
 
-	return WriteDraftFields(ChunkId, Fields);
+	if (!WriteDraftFields(ChunkId, Fields))
+	{
+		// Every other refusal here leaves its reason in the status, and both callers report the
+		// status back to the creator. Without this one they report the *previous* refusal, which on
+		// the relocate path is the sentence already on screen - a failure that looks like nothing.
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Update_Failed,
+			FString::Printf(TEXT("could not write chunk %d's Draft, so %s was not recorded as its entry point"),
+				ChunkId, *PackageName));
+		return false;
+	}
+
+	return true;
 }
 
 bool UConvaiPakEditorSubsystem::PickEntryPointFromSelection(const int32 ChunkId, FString& OutSetupNotes)
@@ -597,44 +620,50 @@ bool UConvaiPakEditorSubsystem::IsInsideModdingPlugin(const int32 ChunkId, const
 }
 
 bool UConvaiPakEditorSubsystem::RelocateEntryPointIntoPlugin(
-	const int32 ChunkId, const FString& PackageName, FString& OutNewPackage, FString& OutWhy)
+	const int32 ChunkId, const FString& PackageName, FString& OutNewPackage, FString& OutSetupNotes, FString& OutWhy)
 {
+	// A refusal that says nothing is what a creator reads as the button having done nothing, so every
+	// one of them says so in the log as well as to them. Worded for both shapes: most run before the
+	// copy, the last one after it landed.
+	const auto Refuse = [&OutWhy, &PackageName](FString Why)
+	{
+		OutWhy = MoveTemp(Why);
+		CPM_LOG(Warning, TEXT("Copy into plugin refused for %s: %s."), *PackageName, *OutWhy);
+		return false;
+	};
+
 	FCPM_ModdingMetadata Modding;
 	UCPM_UtilityLibrary::GetModdingMetadataForChunk(ChunkId, Modding);
 	if (Modding.PluginName.IsEmpty())
 	{
-		OutWhy = TEXT("this project records no modding plugin to copy into");
-		return false;
+		return Refuse(TEXT("this project records no modding plugin to copy into"));
 	}
 
 	if (ConvaiPakManager::Chunk::IsUnderModdingPlugin(PackageName, Modding.PluginName))
 	{
-		OutWhy = FString::Printf(TEXT("%s is already inside the %s plugin"), *PackageName, *Modding.PluginName);
-		return false;
+		return Refuse(FString::Printf(TEXT("%s is already inside the %s plugin"), *PackageName, *Modding.PluginName));
 	}
 
 	const IAssetRegistry* AssetRegistry = IAssetRegistry::Get();
 	if (!AssetRegistry)
 	{
-		OutWhy = TEXT("the asset registry is unavailable");
-		return false;
+		return Refuse(TEXT("the asset registry is unavailable"));
 	}
 
 	TArray<FAssetData> Assets;
 	AssetRegistry->GetAssetsByPackageName(FName(*PackageName), Assets);
 	if (Assets.IsEmpty())
 	{
-		OutWhy = FString::Printf(TEXT("nothing exists at %s"), *PackageName);
-		return false;
+		return Refuse(FString::Printf(TEXT("nothing exists at %s"), *PackageName));
 	}
 
 	// Before the copy, not after it: SetEntryPoint refuses the same mismatch at the end of this
 	// function, by which time the whole dependency closure is under the plugin mount and staying -
 	// which is content the chunk's label would then cook into the Pak.
-	if (!ConvaiPakManager::Chunk::EntryPointSuitsAssetType(
-		Assets[0].AssetClassPath, PackageName, Modding.AssetType, OutWhy))
+	if (FString Mismatch; !ConvaiPakManager::Chunk::EntryPointSuitsAssetType(
+		Assets[0].AssetClassPath, PackageName, Modding.AssetType, Mismatch))
 	{
-		return false;
+		return Refuse(Mismatch);
 	}
 
 	const FCPM_DependencyCopyOptions Options = GatherOptions();
@@ -645,8 +674,7 @@ bool UConvaiPakEditorSubsystem::RelocateEntryPointIntoPlugin(
 		FCPM_DependencyCopyAPI::CopyPackageWithDependencies(Source, DestinationRoot, Options);
 	if (!Report.bSuccess)
 	{
-		OutWhy = WhyCopyFailed(Report);
-		return false;
+		return Refuse(WhyCopyFailed(Report));
 	}
 
 	const FName* Copied = Report.Remap.Find(Source);
@@ -657,13 +685,17 @@ bool UConvaiPakEditorSubsystem::RelocateEntryPointIntoPlugin(
 	CPM_LOG(Display, TEXT("Copied %d packages into %s (%d skipped); %s is this chunk's entry point now."),
 		Report.CopiedCount, *DestinationRoot, Report.SkippedCount, *OutNewPackage);
 
-	FString Notes;
-	if (!SetEntryPoint(ChunkId, OutNewPackage, Notes))
+	// The copy is set up for Convai like any other pick, and the declaration warning applies to it
+	// just the same - carried back rather than left in the log, for the same reason the pick does.
+	if (!SetEntryPoint(ChunkId, OutNewPackage, OutSetupNotes))
 	{
 		// The copies stay. Deleting them would throw away the one part that worked, and the creator
 		// can now pick the copy by hand once whatever SetEntryPoint objected to is fixed.
-		OutWhy = GetChunkStatus(ChunkId).Message;
-		return false;
+		const FString Message = GetChunkStatus(ChunkId).Message;
+		return Refuse(Message.IsEmpty()
+			? FString::Printf(TEXT("%s was copied to %s, which was then refused as an entry point"),
+				*PackageName, *OutNewPackage)
+			: Message);
 	}
 	return true;
 }
@@ -1200,7 +1232,8 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 		FString Why;
 		bool bIsLevel = false;
 		TArray<FString> Changes;
-		if (!PrepareEntryPoint(ChunkId, EntryPoint, Why, bIsLevel, Changes))
+		FString DeclarationWarning;
+		if (!PrepareEntryPoint(ChunkId, EntryPoint, Why, bIsLevel, Changes, DeclarationWarning))
 		{
 			SetStatus(ChunkId, Refusal, Why);
 			return false;
