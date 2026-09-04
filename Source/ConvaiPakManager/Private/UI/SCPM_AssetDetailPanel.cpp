@@ -1206,6 +1206,12 @@ FReply SCPM_AssetDetailPanel::HandleRelocateEntryPoint()
 	Asset->LoadFrom(*Subsystem);
 	Notify(FText::Format(LOCTEXT("RelocateDone", "Copied into the plugin as {0}, and picked it."),
 		FText::FromString(NewPackage)), SNotificationItem::CS_Success);
+
+	// Asked after a copy as well as after a pick, so both ways of choosing an Entry Point end with
+	// the same question. The copy walked the closure of the ORIGINAL package; SetEntryPoint then
+	// prepared the copy - an Avatar gains components - and whatever that added was not in the walk.
+	// It costs nothing when there is nothing outside: the offer returns without asking.
+	OfferToGatherDependencies(Asset->EntryPoint);
 	return FReply::Handled();
 }
 
