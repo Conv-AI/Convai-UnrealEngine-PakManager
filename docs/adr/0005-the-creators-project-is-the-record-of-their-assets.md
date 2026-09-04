@@ -1,5 +1,9 @@
 # The creator's project is the record of their Assets
 
+**Superseded by [ADR-0013](0013-the-server-is-the-record-of-what-an-asset-holds.md).** The second
+writer this ADR names as the condition for its own reversal exists; the read it declines is taken.
+What a creator types still wins the fields they type, which is the half of this decision that stood.
+
 An Asset's name, description, type and thumbnail are authoritative in the creator's project and
 pushed to Convai on Publish. The Pak Manager does not fetch them back, and there is no reconciliation
 between the two copies.

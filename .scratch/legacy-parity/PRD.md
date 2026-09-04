@@ -338,7 +338,8 @@ Named here so the next pass does not have to rediscover them:
    document's key set already matched exactly. Four form/update rows did not: `tags` and
    `visibility` are fixed and tested, `<Platform>_PakSize` and the `raw` Version slot moved to
    overnight-fixes issues 13 and 14. The table is in overnight-fixes issue 08.
-3. **`assets/get` is dead — closed, deleted.** Nothing goes stale: legacy re-read the server's echo
+3. **`assets/get` is back — reopened.** The "only writer" premise was wrong; see issue 10 and ADR-0013. Originally recorded as:
+   **`assets/get` is dead — closed, deleted.** Nothing goes stale: legacy re-read the server's echo
    because `GetUpdateMetaData` composed the next publish *from* it, where this tool re-composes from
    the Draft every time. The proxy and its parsing were removed. See overnight-fixes issue 10.
 4. **Dead-helper census — done.** The set was the fingerprint it looked like, and walking it finished

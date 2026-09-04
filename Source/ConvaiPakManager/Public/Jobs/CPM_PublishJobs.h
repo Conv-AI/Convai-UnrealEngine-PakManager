@@ -11,6 +11,7 @@
 class UCPM_PublishRunner;
 class UCPM_CreatePakAssetProxy;
 class UCPM_UpdatePakAssetProxy;
+class UCPM_GetAssetProxy;
 class UCPM_UploadPakAssetProxy;
 
 namespace ConvaiPakManager::Publish
@@ -169,6 +170,16 @@ public:
 	virtual void Cancel(bool bForce) override;
 
 private:
+	/**
+	 * Composes the document and sends it. Split from Execute because an update asks the server what
+	 * it holds first, and that answer lands in a callback.
+	 */
+	void ComposeAndSend();
+
+	/** Either outcome of the pre-flight read continues the publish; a refresh is not a gate. */
+	UFUNCTION()
+	void HandlePreflightFinished(const FString& Unused);
+
 	UFUNCTION()
 	void HandleCreated(const FCPM_CreatedAssets& Response);
 
@@ -186,6 +197,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UCPM_UpdatePakAssetProxy> UpdateProxy;
+
+	UPROPERTY()
+	TObjectPtr<UCPM_GetAssetProxy> PreflightProxy;
 
 	FString ExistingAssetId;
 

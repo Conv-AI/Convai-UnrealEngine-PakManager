@@ -340,6 +340,40 @@ void UCPM_CreateAssetJob::Execute()
 {
 	const FCPM_PublishRequest& Request = Context->Request;
 
+	ExistingAssetId = ConvaiPakManager::Chunk::ReadAssetId(Request.ChunkId, Request.EnvironmentSlug);
+
+	// Read back before composing, not after: composing lays the Draft over this Chunk's cached copy
+	// of the server's document, and another tool may have edited the Asset since that copy was
+	// written. Best effort - the publish carries on either way, because a backend that cannot answer
+	// is not a reason to refuse to publish to it.
+	if (!ExistingAssetId.IsEmpty())
+	{
+		ReportProgress(TEXT("Checking asset"), 0.0f);
+		PreflightProxy = UCPM_GetAssetProxy::GetAssetProxy(
+			ExistingAssetId, Request.ChunkId, Request.EnvironmentSlug);
+		PreflightProxy->OnSuccess.AddDynamic(this, &UCPM_CreateAssetJob::HandlePreflightFinished);
+		PreflightProxy->OnFailure.AddDynamic(this, &UCPM_CreateAssetJob::HandlePreflightFinished);
+		PreflightProxy->Activate();
+		return;
+	}
+
+	ComposeAndSend();
+}
+
+void UCPM_CreateAssetJob::HandlePreflightFinished(const FString&)
+{
+	if (bCancelled || bReported)
+	{
+		return;
+	}
+
+	ComposeAndSend();
+}
+
+void UCPM_CreateAssetJob::ComposeAndSend()
+{
+	const FCPM_PublishRequest& Request = Context->Request;
+
 	FCPM_ModdingMetadata Modding;
 	UCPM_UtilityLibrary::GetModdingMetadataForChunk(Request.ChunkId, Modding);
 
@@ -380,8 +414,6 @@ void UCPM_CreateAssetJob::Execute()
 		Report(ECPM_PublishResult::Failed, TEXT("this Chunk has no asset metadata to publish"));
 		return;
 	}
-
-	ExistingAssetId = ConvaiPakManager::Chunk::ReadAssetId(Request.ChunkId, Request.EnvironmentSlug);
 
 	// What the archive Job left behind, not the setting it was built from: the tag has to say what
 	// UCPM_UploadArtifactsJob is about to send, and that Job reads the same field.

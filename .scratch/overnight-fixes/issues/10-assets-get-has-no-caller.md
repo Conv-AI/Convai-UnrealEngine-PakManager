@@ -1,34 +1,57 @@
 # `assets/get` has no caller
 
-Status: `wontfix`
+Status: `ready-for-agent` — reopened. The premise the `wontfix` rested on was wrong.
 
-Carried from [#263](https://github.com/ar-convai/ConvaiTask/issues/263), register item 3.
+`GetAssetProxy` was deleted as dead code because nothing called it, and because the Pak Manager was
+believed to be the only writer of an Asset. It is not: other tooling edits the same records, so the
+server is the record of what an Asset currently holds and the per-Environment cache goes stale
+behind this tool. Restored, with the two callers it never had.
 
-`GetAssetProxy` was dead — nothing called it. Legacy used the endpoint to refresh the local echo of
-the record after every create, update and raw upload.
+## What went stale, after all
 
-## What goes stale: nothing
+The four reasons the `wontfix` gave are answered by one fact each:
 
-The refresh is unnecessary, not deferred. Four independent reasons, each checked against the code:
+1. ~~The Pak Manager is the only writer of an Asset.~~ **False.** A second writer exists. This was
+   the load-bearing reason and every other one rested on it.
+2. The create response is the server's own words — still true, and still only true *at the moment of
+   the create*. It says nothing about what the Asset holds a week later.
+3. The composer re-composes before every update — from the cache, which is the thing that went
+   stale. Re-composing a stale document does not make it fresh.
+4. A delete needs no record — still true. Delete is untouched.
 
-- **The Pak Manager is the only writer of an Asset.** `CONTEXT.md:145` — a creator has no dashboard
-  and no web editor, so nothing changes an Asset's name, description, type or thumbnail behind this
-  tool's back. There is no second author for a GET to discover.
-- **The local echo is written from the server's own words.** `UCPM_CreatePakAssetProxy::HandleSuccess`
-  (`CPM_Proxy.cpp:133-149`) writes `PakMetaData` straight out of the create response. A GET would ask
-  for the string it was just handed.
-- **Every update re-composes the echo before sending.** `UCPM_CreateAssetJob::IExecute_Implementation`
-  (`CPM_PublishJobs.cpp:410`) calls `ComposePakMetadata` — this Chunk's Draft laid over what this
-  backend last echoed — and fails the Publish if it cannot. What the server holds is what this tool
-  last sent, so the composed document is the refresh.
-- **Delete deliberately needs no record.** `DeleteVersion`'s contract
-  (`ConvaiPakEditorSubsystem.h:383-393`) is that a fresh clone, a second machine or a lost marker
-  must not lock an operator out; the request simply changes nothing when there is nothing there. It
-  never reads a record, so it cannot read a stale one. The raw-archive marker is local by design
-  (`HandleWorkflowFinished`).
+`CONTEXT.md` and `docs/adr/0005` carried the same premise and are corrected;
+`docs/adr/0013` supersedes 0005 and records what did and did not change.
 
-And a fresh clone has no AssetID to GET with in the first place — the AssetID lives only in the
-record the create wrote.
+## Restored
+
+- `UCPM_GetAssetProxy` (`CPM_Proxy.h/.cpp`) — today's idiom, not the deleted one: no `WorldContext`,
+  `const FString&`, and it writes the Chunk's cache itself the way the create proxy does.
+- `assets/get` in the URL namespace.
+
+Deliberately NOT restored: `FCPM_AssetData` / `FCPM_AssetResponse` and
+`ExtractAssetListFromResponseString`. That parser read a flat envelope (`assets[N].asset_id`) and
+appended two unrelated animation shapes into the same array. `GetCreatedAssetsFromJSON` already
+parses the create envelope (`assets[N].asset.*`) and already yields the `MetadataString` the cache
+wants, so it is reused.
+
+## Open — the wire shape
+
+**Nobody has captured a real `assets/get` response.** The restore assumes it matches the create
+envelope. If it does not, the parse yields nothing, and that path is deliberately safe: it logs the
+body at Warning, leaves the cache exactly as it was, and lets the caller carry on. So a mismatch
+costs a log line, not a failed publish — and the log line contains the shape needed to fix it.
+
+## Callers
+
+- **Editor start-up.** `FConvaiPakManagerModule::RefreshPublishedAssets`, after the state-layout
+  reconcile, which is already behind the Asset Registry scan that `Discover` needs. Asks nothing
+  without an API key, and nothing for a Chunk that has not published to the current backend.
+- **Before an update.** `UCPM_CreateAssetJob::Execute` reads the AssetID first and, when there is
+  one, asks the server before composing. Best effort: either outcome continues to
+  `ComposeAndSend()`, because a backend that cannot answer is not a reason to refuse to publish.
+
+Not added to `UCPM_UploadArtifactsJob::MintUrlForNext`, which posts `assets/update` carrying only a
+Version and an AssetID by design.
 
 ## Deleted
 

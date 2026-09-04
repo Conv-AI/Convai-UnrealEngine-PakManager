@@ -73,7 +73,7 @@ left in the tree.
 decided), 02 (relocate fixed and driven in the editor; the gather's reference fixup is diagnosed, not
 fixed), 03 (`wontfix`, closed by 01), 04, 05, 06, 07 (the runner swap, with a test written against
 the Job System first), 08 (two literal rows fixed and tested), 09 (the Scene audit, gaps 35–40 in the
-register), 10 (`wontfix` — `assets/get` refreshes nothing that can go stale), 11 (register closed).
+register), 10 (reopened — `assets/get` refreshes the server's half of the document, which does go stale), 11 (register closed).
 
 **Not taken, and why:**
 

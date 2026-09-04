@@ -153,9 +153,11 @@ _Avoid_: category, entity type
 - A **Draft** belongs to a **Chunk**, not to an **Environment**
 - An **Asset** has exactly one **Asset Type**, decided before the creator ever opens the Pak Manager
 
-- The Pak Manager is the ONLY thing that edits an **Asset**'s name, description, type or thumbnail.
-  A creator has no other way in — no dashboard, no web editor — so what the creator's project says
-  is authoritative and the server never disagrees with it on its own
+- The Pak Manager is not the only thing that edits an **Asset**. Other tooling writes the same
+  records, so the server is the record of what an Asset currently holds, and the per-**Environment**
+  metadata cache is refreshed from it — at editor start-up, and before an update composes. What a
+  creator typed still wins the fields they typed: a **Draft** is laid over the server's document,
+  never under it. See [docs/adr/0013](docs/adr/0013-the-server-is-the-record-of-what-an-asset-holds.md)
 
 - A creator's project settings may make a **Publish** do LESS than the **Publish Policy** asks —
   build no **Pak** that is already on disk, send no **Raw Project Archive** the **Asset** already

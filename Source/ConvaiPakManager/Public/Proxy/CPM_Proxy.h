@@ -141,6 +141,54 @@ private:
 };
 
 
+//---------------------------------------------Get Asset---------------------------------------------
+
+/**
+ * Reads an Asset back from the backend that holds it, and refreshes that Chunk's cached copy of the
+ * server's document with what came back.
+ *
+ * The Pak Manager is not the only writer of an Asset - other tools edit the same records - so the
+ * server, not the creator's project, is the record of what an Asset currently holds. What the
+ * creator typed still wins at compose time; this only refreshes the half they did not type.
+ *
+ * A failure changes nothing. The cache keeps whatever it held, which is the last thing this backend
+ * is known to have said, and every caller is free to carry on with it.
+ */
+UCLASS()
+class CONVAIPAKMANAGER_API UCPM_GetAssetProxy : public UConvaiAPIBaseProxy
+{
+	GENERATED_BODY()
+public:
+	/** The server's metadata document for the Asset, verbatim. */
+	UPROPERTY(BlueprintAssignable)
+	FCPM_StringResponseDelegate OnSuccess;
+
+	/** The body the server sent, or empty when there was none. */
+	UPROPERTY(BlueprintAssignable)
+	FCPM_StringResponseDelegate OnFailure;
+
+	/**
+	 * @param AssetID          Must be non-empty; the caller checks, because a proxy that refuses
+	 *                         inside its own body-builder still sends the request.
+	 * @param ChunkId          Whose cache the answer refreshes.
+	 * @param EnvironmentSlug  The backend being asked, resolved now rather than when the response
+	 *                         lands - by then the creator may have changed the URL.
+	 */
+	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", DisplayName = "Convai Get Pak Asset"), Category = "Convai|PakManager")
+	static UCPM_GetAssetProxy* GetAssetProxy(const FString& AssetID, int32 ChunkId, const FString& EnvironmentSlug);
+
+protected:
+	virtual bool ConfigureRequest(TSharedRef<CONVAI_HTTP_REQUEST_INTERFACE> Request, const TCHAR* Verb) override;
+	virtual bool AddContentToRequest(CONVAI_HTTP_PAYLOAD_ARRAY_TYPE& DataToSend, const FString& Boundary) override { return false; }
+	virtual bool AddContentToRequestAsString(TSharedPtr<FJsonObject>& ObjectToSend) override;
+	virtual void HandleSuccess() override;
+	virtual void HandleFailure() override;
+
+	FString AssociatedAssetId;
+	int32 RecordChunkId = INDEX_NONE;
+	FString RecordEnvironmentSlug;
+};
+
 //-------------------------------------------Delete Asset-------------------------------------------
 
 /** Delete Asset*/

@@ -4,7 +4,10 @@
 
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Chunk/CPM_Chunk.h"
+#include "ConvaiUtils.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Proxy/CPM_Proxy.h"
+#include "Utility/CPM_Log.h"
 #include "Framework/Docking/TabManager.h"
 #include "ToolMenus.h"
 #include "UI/CPM_PakManagerStyle.h"
@@ -124,6 +127,41 @@ void FConvaiPakManagerModule::OpenPakManager()
 void FConvaiPakManagerModule::MigrateChunkStateLayout()
 {
 	ConvaiPakManager::Chunk::ReconcileStateLayout();
+	RefreshPublishedAssets();
+}
+
+void FConvaiPakManagerModule::RefreshPublishedAssets()
+{
+	// Gated on the key rather than left to fail per Chunk: without one every request refuses in the
+	// SDK before it is sent, and a project with a hundred Chunks would log a hundred failures at
+	// every launch for a creator who simply has not pasted their key in yet.
+	if (!UConvaiFormValidation::ValidateAuthKey(UConvaiUtils::GetAuthHeaderAndKey().Value))
+	{
+		return;
+	}
+
+	// Resolved once. Asking again inside a response callback would file the answer under whichever
+	// backend the creator had switched to by then.
+	const FString EnvironmentSlug = ConvaiPakManager::Chunk::CurrentEnvironmentSlug();
+
+	int32 Asked = 0;
+	for (const FCPM_Chunk& Chunk : ConvaiPakManager::Chunk::Discover())
+	{
+		const FString AssetId = ConvaiPakManager::Chunk::ReadAssetId(Chunk.Id, EnvironmentSlug);
+		if (AssetId.IsEmpty())
+		{
+			// Never published to this backend, so there is nothing to disagree with.
+			continue;
+		}
+
+		UCPM_GetAssetProxy::GetAssetProxy(AssetId, Chunk.Id, EnvironmentSlug)->Activate();
+		++Asked;
+	}
+
+	if (Asked > 0)
+	{
+		CPM_LOG(Log, TEXT("Refreshing %d published asset(s) from %s."), Asked, *EnvironmentSlug);
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

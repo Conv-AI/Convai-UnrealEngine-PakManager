@@ -7,6 +7,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Engine/Texture2D.h"
+#include "Utility/CPM_Log.h"
 #include "Utility/CPM_UtilityLibrary.h"
 #include "ConvaiUtils.h"
 
@@ -15,6 +16,7 @@ namespace
     static FString CreatePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/upload"), false); }
     static FString UpdatePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/update"), false); }
     static FString DeletePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/delete"), false); }
+    static FString GetPakAssetURL()    { return UConvaiURL::GetFullURL(TEXT("assets/get"), false); }
 }
 
 
@@ -298,6 +300,65 @@ void UCPM_UploadPakAssetProxy::HandleFailure()
 	OnFailure.Broadcast(0.f);
 }
 
+
+// Get asset
+UCPM_GetAssetProxy* UCPM_GetAssetProxy::GetAssetProxy(
+	const FString& AssetID, const int32 ChunkId, const FString& EnvironmentSlug)
+{
+	UCPM_GetAssetProxy* Proxy = NewObject<UCPM_GetAssetProxy>();
+	Proxy->URL = GetPakAssetURL();
+	Proxy->AssociatedAssetId = AssetID;
+	Proxy->RecordChunkId = ChunkId;
+	Proxy->RecordEnvironmentSlug = EnvironmentSlug;
+	return Proxy;
+}
+
+bool UCPM_GetAssetProxy::ConfigureRequest(TSharedRef<CONVAI_HTTP_REQUEST_INTERFACE> Request, const TCHAR* Verb)
+{
+	return Super::ConfigureRequest(Request, ConvaiHttpConstants::POST);
+}
+
+bool UCPM_GetAssetProxy::AddContentToRequestAsString(TSharedPtr<FJsonObject>& ObjectToSend)
+{
+	Super::AddContentToRequestAsString(ObjectToSend);
+
+	// Not validated here: returning false from this override does not stop the request, it only
+	// sends it without a body. The caller is the one that refuses an empty id.
+	ObjectToSend->SetStringField(TEXT("asset_id"), AssociatedAssetId);
+	return true;
+}
+
+void UCPM_GetAssetProxy::HandleSuccess()
+{
+	Super::HandleSuccess();
+
+	FCPM_CreatedAssets Fetched;
+	const FString Document = UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(ResponseString, Fetched)
+			&& Fetched.Assets.IsValidIndex(0)
+		? Fetched.Assets[0].Asset.MetadataString
+		: FString();
+
+	if (Document.IsEmpty())
+	{
+		// Left exactly as it was. An answer this cannot read is not evidence the Asset changed, and
+		// overwriting the cache with nothing would make every later compose refuse to parse it.
+		CPM_LOG(Warning, TEXT("assets/get returned nothing this version can read for asset %s; ")
+			TEXT("chunk %d keeps the document it had. The server said: %s"),
+			*AssociatedAssetId, RecordChunkId, *ResponseString);
+		OnFailure.Broadcast(ResponseString);
+		return;
+	}
+
+	ConvaiPakManager::Chunk::WritePakMetadata(RecordChunkId, RecordEnvironmentSlug, Document);
+	OnSuccess.Broadcast(Document);
+}
+
+void UCPM_GetAssetProxy::HandleFailure()
+{
+	Super::HandleFailure();
+	OnFailure.Broadcast(ResponseString);
+}
+// END Get asset
 
 // Delete asset
 UCPM_DeleteAssetProxy* UCPM_DeleteAssetProxy::DeleteAssetProxy(const FString& AssetID, const FString& Version)

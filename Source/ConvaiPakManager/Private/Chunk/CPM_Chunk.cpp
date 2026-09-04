@@ -1254,8 +1254,8 @@ bool ComposePakMetadataAt(
 		Root = Parsed;
 	}
 
-	// The Draft wins every field it names. What a creator typed is the record of their Asset, and
-	// the server's echo is only the last thing it was told. See docs/adr/0005.
+	// The Draft wins every field it names. What a creator typed is the record of the fields they
+	// type; the server owns the rest, and is read back rather than assumed. See docs/adr/0013.
 	FString DraftContents;
 	if (FFileHelper::LoadFileToString(DraftContents, *DraftPath))
 	{

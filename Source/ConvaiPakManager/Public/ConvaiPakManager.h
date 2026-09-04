@@ -30,6 +30,17 @@ private:
 	 */
 	void MigrateChunkStateLayout();
 
+	/**
+	 * Asks each Chunk's backend what its Asset holds now, and refreshes that Chunk's cached copy of
+	 * the server's document.
+	 *
+	 * The Pak Manager is not the only writer of an Asset, so the cache goes stale behind it. Runs
+	 * with the migration, which is already behind the Asset Registry's scan - Discover cannot name a
+	 * Chunk before then. Asks nothing when the project holds no API key, and nothing for a Chunk
+	 * that has never published to the current backend.
+	 */
+	void RefreshPublishedAssets();
+
 	/** Adds the Tools menu entry. Deferred by ToolMenus until menus exist. */
 	void RegisterMenuEntry();
 	void BuildMenuEntry();
