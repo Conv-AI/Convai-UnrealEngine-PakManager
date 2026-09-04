@@ -63,3 +63,54 @@ its board item stays In progress rather than Sync for the same reason.
 One correction #263 asked about and never got an answer on: its comment labels the dead-helper
 census "§B.3". That census is register item 4; §3 is the `assets/get` item, which is **not** done.
 Fix that line on the issue while you are there.
+
+## Comments
+
+**2026-09-04 — the run is done.** Eleven issues in the order above, as six serial waves; the work is
+left in the tree.
+
+**Landed:** 01 (the bug does not reproduce — the reporting gap is closed and both open questions are
+decided), 02 (relocate fixed and driven in the editor; the gather's reference fixup is diagnosed, not
+fixed), 03 (`wontfix`, closed by 01), 04, 05, 06, 07 (the runner swap, with a test written against
+the Job System first), 08 (two literal rows fixed and tested), 09 (the Scene audit, gaps 35–40 in the
+register), 10 (`wontfix` — `assets/get` refreshes nothing that can go stale), 11 (register closed).
+
+**Not taken, and why:**
+
+- **The gather's reference fixup** ([02](issues/02-copy-into-plugin-copies-nothing.md)) — diagnosed
+  and left. It is a fix to `FCPM_DependencyCopyAPI`, and the night ran out on the diagnosis.
+- **The compatibility banner's visual pass**
+  ([11](issues/11-clear-the-editor-only-verification-debt.md)) — nothing in this project is outdated,
+  so the banner never draws. It needs a version mismatch staged first.
+- **The once-per-session Ambiguous warning** (11) — `Dev_CPM_58` has no flat `ConvaiEssentials/`
+  layout, so the branch that raises it is unreachable here. Needs a project that does.
+- **Live Coding restored after a cook** (11, M08c) — Live Coding is off for this session, so the
+  Job's park/restore pair is never entered. Forcing it means starting a Live Coding session, which
+  this brief forbids outright.
+- **#263's seven small follow-ups** — flagged optional at sign-off; the night went on the eleven.
+
+**Five new issue files came out of the run:**
+[12](issues/12-controlrig-references-a-mount-this-project-lacks.md),
+[13](issues/13-nothing-writes-the-per-platform-pak-size.md),
+[14](issues/14-the-raw-version-slot-was-renamed-on-the-wire.md),
+[15](issues/15-a-pak-carries-more-than-its-own-mount.md) and
+[16](issues/16-the-scene-capture-writes-jpeg-bytes-into-a-png.md) — 15 is the one to read first: a Pak cooked
+by the final binary carries 597 files from outside the plugin's mount, which is not what
+[ADR-0011](../../docs/adr/0011-a-pak-holds-only-its-own-mount.md) was measured to say.
+
+**Where it ends:**
+
+```
+Build.bat Dev_CPM_58Editor Win64 Development -Project=.../Dev_CPM_58.uproject
+  Result: Succeeded   (editor closed, "Target is up to date", 0 actions — the DLL in the tree is the
+                       build of the current source. One pre-existing warning: plugin 'ConvAI' does
+                       not list 'ConvaiHTTP' as a dependency.)
+
+UnrealEditor-Cmd.exe Dev_CPM_58.uproject -ExecCmds="Automation RunTests ConvaiPakManager;Quit" -unattended -nullrhi
+  65 "Test Completed", 65 Result={Success}, 0 anything else.
+  55 baseline + 1 thumbnail + 3 metadata + 6 Publish.Runner.
+```
+
+**Nothing was committed.** The brief said to leave the work in the tree, so `git status` on
+`feat/legacy-parity` is the changelist — the ground rule at the top of this file about a branch per
+issue and a commit per sub-task is superseded by that. Nothing pushed, no PR.

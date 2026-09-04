@@ -37,7 +37,7 @@ holds the measurement. Take a fresh listing yourself before building anything el
 |---|---|
 | It compiles | `Build.bat Dev_CPM_58Editor Win64 Development` → `Result: Succeeded`, no new warnings |
 | Tests pass | `UnrealEditor-Cmd … -ExecCmds="Automation RunTests ConvaiPakManager;Quit"` → 55/55 |
-| The gather works | **Not verified.** Nobody has clicked it |
+| The gather works | Clicked since — half of it works. See *What the overnight run verified* below |
 
 The third row is the one that matters. There is no automation test for the copy or the repoint —
 they need a real Asset Registry and packages on disk. To verify by hand: open the editor, pick a
@@ -106,3 +106,27 @@ gather cannot fix that one — it needs a decision, not a bug fix.
 
 Skills worth loading next session: `diagnose` if the hand verification finds the gather misbehaving,
 `triage` for the open issue files, `code-review` before anything else lands on this code.
+
+## What the overnight run verified
+
+Added 2026-09-04, at the end of the run briefed in `.scratch/overnight-fixes/`. The third row above
+has been clicked since, in a real editor on a binary built from this branch.
+
+- **The relocate half works.** A `/Game/` asset picked, refused as outside, then copied in landed at
+  `/JBILN5CDNI4TRYELD6CS/CPM_CopyTest/BP_CopyTest` with `Draft_10.json` recording the new path.
+- **The gather is not idempotent.** Picking `BP_Hana`, accepting the gather, then picking it again
+  still offers a second one: 737 packages reachable, 157 of them outside the plugin. The copies are
+  on disk; the references were not rewritten, so the closure walks back out through ten edges from
+  four in-plugin packages. Diagnosed in
+  [overnight-fixes issue 02](../../.scratch/overnight-fixes/issues/02-copy-into-plugin-copies-nothing.md);
+  the tenth edge is the `/CharacterParts/` soft reference, now
+  [issue 12](../../.scratch/overnight-fixes/issues/12-controlrig-references-a-mount-this-project-lacks.md).
+- **The listing this file tells you to re-run was re-run, and it came back different.** A Pak cooked
+  on 2026-09-04 from the same chunk lists `mount point "../../../"` and 1921 files, of which 597 are
+  outside the plugin — 421 Convai SDK, 166 engine ControlRig, 10 `/Game/`. The 4-file listing at the
+  top of this file was taken before the Entry Point was in the label, so the two are not the same
+  experiment and neither settles what the recursive rule does. Written up as
+  [issue 15](../../.scratch/overnight-fixes/issues/15-a-pak-carries-more-than-its-own-mount.md).
+
+So the warning at the top of this file was the right one: that listing was the entire evidential
+basis for ADR 0011, and it does not reproduce.

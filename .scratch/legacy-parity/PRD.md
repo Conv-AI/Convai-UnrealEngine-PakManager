@@ -1,8 +1,9 @@
 # Legacy parity: what the Blueprint uploader did that the Slate tool does not
 
-Status: `ready-for-agent` — for **Still unexamined** items 1–3 only. Every numbered gap below is
-closed, declined or registered for later. Two things still produce new entries: the Scene-path audit
-(item 1), and what building a real Pak teaches — gaps 32–34 came from listing one.
+Status: `needs-triage` — **Still unexamined** is empty: items 1–4 are all closed. Every numbered gap
+below is closed, declined or registered for later. One thing still produces new entries: what
+building a real Pak teaches — gaps 32–34 came from listing one. The Scene-path audit is done and
+produced 35–40.
 
 The Slate rewrite (`3526d98 refactor!: delete the Blueprint tool and collapse to one editor module`)
 dropped the Editor Utility Widget `Content/Editor/AssetUploader.uasset` and, with it, a set of
@@ -171,10 +172,10 @@ Registry.
 ## Gap register
 
 29 confirmed, plus 30 and 31 which the dead-helper census surfaced afterwards, plus 32–34 which
-listing a built Pak surfaced. Severity is "does a creator get a broken Asset or a dead tool"
-(blocker), "the tool is materially worse than the one it replaced" (major), or "polish" (minor).
-**Landed** names the commit that closed the gap; `declined` and `registered` rows are explained
-under **Notes on the closures**.
+listing a built Pak surfaced, plus 35–40 from the Scene-path audit. Severity is "does a creator get
+a broken Asset or a dead tool" (blocker), "the tool is materially worse than the one it replaced"
+(major), or "polish" (minor). **Landed** names the commit that closed the gap; `declined` and
+`registered` rows are explained under **Notes on the closures**.
 
 | Commit | |
 |---|---|
@@ -246,6 +247,22 @@ under **Notes on the closures**.
 | 30 | Capture the thumbnail at a forced quality instead of whatever scalability the editor happens to be on — legacy set Epic/Cinematic and captured in PIE (`CPM_SetPlayMode` / `CPM_SetEngineScalability` were its fingerprint) | minor | **registered** |
 | 31 | Show the upload size before a Publish (`CPM_GetFileSize` was its fingerprint) | minor | **registered** |
 
+### Scene path
+
+Audited 2026-09-04 the same way the Avatar half was — the legacy widget's graphs read out of a
+running editor. The node-level evidence, and the two pin values the graph reader cannot expose, are
+in [overnight-fixes issue 09](../overnight-fixes/issues/09-audit-the-scene-path-against-legacy.md).
+Nothing below is built.
+
+| # | Gap | Sev | Landed |
+|---|---|---|---|
+| 35 | `AssetIsScene` loaded the picked asset and asked whether its class display name contains "world"; `EntryPointSuitsAssetType` matches the `FAssetData` class path and loads nothing. No behavioural gap — registered so the difference is on the record rather than rediscovered | minor | **registered** |
+| 36 | Refuse a Scene whose level holds no actor tagged `editorspawn` — legacy's `SceneIsValid` made it an Error and cleared the pick. `ValidationMessages` never asks, so a Scene with nowhere to put the player badges "Ready to publish" | major | **registered** |
+| 37 | Refuse a Scene whose level holds no `NavMeshBoundsVolume` — the second half of `SceneIsValid`, same Error, same cleared pick. Nothing here looks for one | major | **registered** |
+| 38 | Count spawn points in the level that was *picked*, not in whatever map the editor happens to have open — `GetSpawnPointStatus` iterates `GEditor`'s world, so both the panel's spawn-point row and its "Add spawn point" button describe and edit the wrong world whenever the picked Scene is not the open map | major | **registered** |
+| 39 | `GetNumSubobjectInAsset` refused an Avatar whose subobject walk found more than two components deriving from `UConvaiChatbotComponent`. Gap 15 covers the intent with a stricter rule, so what is left is only that a *duplicate* chatbot component is not refused | minor | **registered** |
+| 40 | Name the asset in an Entry Point refusal — legacy said "`<leaf>` is not an actor" / "`<leaf>` is not a level"; `EntryPointSuitsAssetType` names the class instead | minor | **registered** |
+
 ### Notes on the closures
 
 - **11 declined** (`wontfix`). The only history legacy carried is the create response's `versions`
@@ -311,14 +328,19 @@ under **Notes on the closures**.
 
 Named here so the next pass does not have to rediscover them:
 
-1. **The Scene path is entirely unaudited.** Every gap above is Avatar-only. Legacy `AssetIsScene`,
-   `SceneIsValid` (which required a tagged spawn point in the loaded level) and `GetNumSubobjectInAsset`
-   have no counterpart in this register.
-2. **The wire payload was never diffed field-for-field.** Legacy `GetCreateMetaData` (97 nodes) and
-   `GetUpdateMetaData` (67 nodes) versus `FillRequiredMetadataFields` / `ComposePakMetadataAt`
-   (`CPM_Chunk.cpp:700-895`). A silent mismatch here corrupts every published record.
-3. **`assets/get` is dead.** `UCPM_GetAssetMetaDataProxy::GetAssetProxy` (`CPM_Proxy.cpp:303`) has no
-   caller; legacy refreshed the local echo after every create/update/raw upload. What goes stale?
+1. **The Scene path — audited 2026-09-04, done.** Legacy `AssetIsScene`, `SceneIsValid` (which
+   required a tagged spawn point *and* a nav mesh bounds volume in the loaded level) and
+   `GetNumSubobjectInAsset` are gaps 35–40 above, all `registered`. The Scene half of the pick did
+   validation and nothing else — no setup step was dropped, only refusals.
+2. **The wire payload — diffed 2026-09-04, done.** Legacy `GetCreateMetaData` (97 nodes) and
+   `GetUpdateMetaData` (67 nodes) read out of a running legacy editor and matched field for field
+   against `FillRequiredMetadataFields` / `ComposePakMetadataAt` and the multipart form. The create
+   document's key set already matched exactly. Four form/update rows did not: `tags` and
+   `visibility` are fixed and tested, `<Platform>_PakSize` and the `raw` Version slot moved to
+   overnight-fixes issues 13 and 14. The table is in overnight-fixes issue 08.
+3. **`assets/get` is dead — closed, deleted.** Nothing goes stale: legacy re-read the server's echo
+   because `GetUpdateMetaData` composed the next publish *from* it, where this tool re-composes from
+   the Draft every time. The proxy and its parsing were removed. See overnight-fixes issue 10.
 4. **Dead-helper census — done.** The set was the fingerprint it looked like, and walking it finished
    the register. *Wired up:* `OpenFileDialog` (gap 22), `GetPackageDependencies` (gaps 20/26).
    *Replaced:* `CPM_IsThumbnailValid` by `Thumbnail::HasContent` — it read `Texture->Source`, which a
@@ -333,8 +355,10 @@ Named here so the next pass does not have to rediscover them:
 5. **`PickedAssetIsValid` (38 nodes) is half closed.** Its Avatar half is covered: the asset-is-actor
    branch is `PrepareAvatarBlueprint` refusing anything that is not an Actor blueprint (`8439065`),
    and `CPM_LoadClassByPath` / `CPM_LoadAssetByPath` / `CPM_LoadAssetDataByPath` were the fingerprint
-   of the graph that called it — deleted with the census. The subobject count check and the two
-   path-split checks are Scene-side and belong to item 1's audit.
+   of the graph that called it — deleted with the census. Item 1's audit closed the rest: the
+   subobject count check is gap 39, and the two "path-split checks" turned out not to be checks at
+   all — the `Split` nodes only take the leaf of the picked path to name it in the two refusal
+   messages, which is gap 40.
 6. **`CPM_ChunkMigrationTest.cpp` passed because it never reached the decision.** Every case called
    `MigrateLegacyLayoutIn(Path, ChunkId, …)` with the Chunk ID *supplied by the test* — including the
    `INDEX_NONE` case, which asserts the refusal. Nothing under `Tests/` referenced `GetSoleChunkId`,
