@@ -22,6 +22,7 @@
 #include "Styling/CoreStyle.h"
 #include "Thumbnail/CPM_Thumbnail.h"
 #include "UI/CPM_PakManagerStyle.h"
+#include "Utility/CPM_Log.h"
 #include "Utility/CPM_UtilityLibrary.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
@@ -1123,8 +1124,17 @@ FReply SCPM_AssetDetailPanel::HandleUseSelectedAsset()
 FReply SCPM_AssetDetailPanel::HandleRelocateEntryPoint()
 {
 	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+
+	// Logged on EVERY path, including the ones that do nothing. Two of the exits below draw nothing
+	// at all, and a click that neither acts nor says why is indistinguishable from a dead button -
+	// which is exactly how this was reported. The subsystem side already logs every refusal; this
+	// handler logged none, so the whole gap between the click and the copy was invisible.
+	CPM_LOG(Display, TEXT("Copy into plugin clicked: pick='%s', asset=%s."),
+		*OutsidePick, Asset.IsValid() ? TEXT("valid") : TEXT("INVALID"));
+
 	if (!Subsystem || !Asset.IsValid() || OutsidePick.IsEmpty())
 	{
+		CPM_LOG(Warning, TEXT("Copy into plugin did nothing: no subsystem, no asset, or no pick recorded."));
 		return FReply::Handled();
 	}
 
@@ -1136,9 +1146,10 @@ FReply SCPM_AssetDetailPanel::HandleRelocateEntryPoint()
 	{
 		// Into the row as well as the toast. This is the one exit from this handler that shows no
 		// dialog, so a toast alone is a click that appears to do nothing at all.
-		EntryPointError = LOCTEXT("DependenciesUnreadable",
+		EntryPointError = LOCTEXT("RelocateDependenciesUnreadable",
 			"Could not read this asset's dependencies, so it was not copied. The Asset Registry may still be scanning.");
 		Notify(EntryPointError, SNotificationItem::CS_Fail);
+		CPM_LOG(Warning, TEXT("Copy into plugin stopped: could not read %s's dependencies."), *OutsidePick);
 		return FReply::Handled();
 	}
 
@@ -1153,8 +1164,16 @@ FReply SCPM_AssetDetailPanel::HandleRelocateEntryPoint()
 		FText::FromString(FPaths::GetCleanFilename(OutsidePick)),
 		FText::AsNumber(Inside.Num() + Outside.Num()),
 		FText::FromString(Modding.PluginName));
-	if (FMessageDialog::Open(EAppMsgType::YesNo, Question) != EAppReturnType::Yes)
+	// The one step between the click and the work that can answer for the creator without drawing
+	// anything: FMessageDialog returns its default, unprompted, when the editor cannot show a modal
+	// - an unattended session, or a suppressed dialog. The answer is logged so "the button does
+	// nothing" can never again be indistinguishable from "something silently said No".
+	const EAppReturnType::Type Answer = FMessageDialog::Open(EAppMsgType::YesNo, Question);
+	if (Answer != EAppReturnType::Yes)
 	{
+		CPM_LOG(Warning, TEXT("Copy into plugin stopped: the confirmation answered %d, not Yes%s."),
+			static_cast<int32>(Answer),
+			FApp::IsUnattended() ? TEXT(" (this editor is unattended, so no dialog was shown)") : TEXT(""));
 		return FReply::Handled();
 	}
 
