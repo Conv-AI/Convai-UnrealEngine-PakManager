@@ -174,7 +174,7 @@ struct CONVAIPAKMANAGER_API FCPM_PublishOptions
 };
 
 /**
- * What the caller supplies to a Publish, placed in the Workflow Context before the first Job.
+ * What the caller supplies to a Publish, placed in the Publish Context before the first Job.
  *
  * The Policy travels with it rather than being fetched by a Job, so every Job reads the same
  * decision the queue was built from.
@@ -296,11 +296,50 @@ struct CONVAIPAKMANAGER_API FCPM_PublishedAsset
 	FString RawResponse;
 };
 
+/** How a Job of a Publish, and the Publish itself, ended. */
+UENUM()
+enum class ECPM_PublishResult : uint8
+{
+	Success,
+	Failed,
+	/** The creator stopped it. Never Failed: the two are different words to whoever reads them. */
+	Cancelled
+};
+
+/**
+ * Everything the Jobs of one Publish share, in the order they fill it.
+ *
+ * One struct that Jobs read and write in place, rather than a type-keyed channel: five Jobs whose
+ * shape is fixed at compile time do not need runtime type matching to find each other's values, and
+ * the compiler catches a Job reading something nothing produces for free.
+ */
+USTRUCT()
+struct CONVAIPAKMANAGER_API FCPM_PublishContext
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FCPM_PublishRequest Request;
+
+	UPROPERTY()
+	TArray<FCPM_PakArtifact> Paks;
+
+	/** Whether the archive Job ran and RawArchive means anything. A path alone cannot say. */
+	UPROPERTY()
+	bool bHasRawArchive = false;
+
+	UPROPERTY()
+	FCPM_RawArchive RawArchive;
+
+	UPROPERTY()
+	FCPM_PublishedAsset Published;
+};
+
 /**
  * What a Chunk is doing, in the Pak Manager's own words.
  *
- * The UI watches this and never subscribes to the Job System - what a creator is told should not
- * change shape because the machinery underneath was swapped. See docs/adr/0008.
+ * The UI watches this and never subscribes to the Publish's own events - what a creator is told
+ * should not change shape because the machinery underneath was swapped. See docs/adr/0008.
  */
 USTRUCT(BlueprintType)
 struct CONVAIPAKMANAGER_API FCPM_ChunkStatus

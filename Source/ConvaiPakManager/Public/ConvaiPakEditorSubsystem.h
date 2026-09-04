@@ -6,10 +6,11 @@
 #include "EditorSubsystem.h"
 #include "Publish/CPM_Compatibility.h"
 #include "Publish/CPM_PublishTypes.h"
-#include "Type/JS_Definations.h"
 #include "ConvaiPakEditorSubsystem.generated.h"
 
 class UCPM_DeleteAssetProxy;
+class UCPM_PublishJobBase;
+class UCPM_PublishRunner;
 
 /**
  * Where a Scene's spawn point stands in the currently open level.
@@ -249,10 +250,14 @@ public:
 	 * content uses, so a level built from engine shapes needs copies of them. Only the Convai SDK's
 	 * content is left where it is, because every product ships it.
 	 *
+	 * @param OutSetupNotes  What `SetEntryPoint` changed on the copy, and any warning it raised.
+	 *                       Same sentence a pick reports, for the same reason: the copy is a
+	 *                       blueprint this edits, and the descriptor write can fail here too.
 	 * @param OutWhy  Why nothing was copied, phrased for the creator. Untouched on success.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
-	bool RelocateEntryPointIntoPlugin(int32 ChunkId, const FString& PackageName, FString& OutNewPackage, FString& OutWhy);
+	bool RelocateEntryPointIntoPlugin(
+		int32 ChunkId, const FString& PackageName, FString& OutNewPackage, FString& OutSetupNotes, FString& OutWhy);
 
 	/**
 	 * Copies everything an Entry Point inside the Modding Plugin needs from outside it in, and
@@ -458,9 +463,12 @@ private:
 	 * @param bOutIsLevel  Whether the package is a level, which is how the Draft records it.
 	 * @param OutChanges   What it had to change on the blueprint, so a caller can say so. Empty
 	 *                     when it changed nothing, which is the usual case.
+	 * @param OutDeclarationWarning  Why Convai could not be declared in the descriptor, phrased for
+	 *                     the creator. Kept apart from OutChanges because nothing on the asset
+	 *                     changed, and OutChanges is what decides whether it is saved.
 	 */
 	bool PrepareEntryPoint(int32 ChunkId, const FString& PackageName, FString& OutWhy, bool& bOutIsLevel,
-		TArray<FString>& OutChanges);
+		TArray<FString>& OutChanges, FString& OutDeclarationWarning);
 
 	/** Reads the Publish Policy, from disk when a project overrides it and from the repository otherwise. */
 	void ResolvePolicy(int32 ChunkId, TFunction<void(bool bSucceeded, const FCPM_PublishPolicy&, const FString& Error)> OnResolved);
@@ -469,7 +477,7 @@ private:
 	bool BeginPolicyRun(int32 ChunkId, bool bPackageOnly, const FCPM_PublishOptions& Options);
 
 	/** Builds the Job Queue this Policy asks for and starts it. A package-only queue stops after the Paks. */
-	FWorkflowHandle StartPublishWorkflow(int32 ChunkId, const FCPM_PublishPolicy& Policy, bool bPackageOnly,
+	void StartPublishRun(int32 ChunkId, const FCPM_PublishPolicy& Policy, bool bPackageOnly,
 		const FCPM_PublishOptions& Options);
 
 	/** Records what a Policy read answered, for the display cache, and tells the UI. */
@@ -499,36 +507,23 @@ private:
 	void SetStatus(int32 ChunkId, ECPM_AssetManagerStatus Status, const FString& Message = FString(),
 		float Progress = 0.0f, const FString& StepName = FString());
 
-	void HandleWorkflowProgress(int32 ChunkId, const FWorkflowStatusInfo& Info);
+	void HandleRunProgress(int32 ChunkId, UCPM_PublishJobBase* Job, int32 JobIndex, float Progress, const FString& Step);
 	/**
 	 * bArchivedRaw is what the queue was built to do, so success can record that the archive landed.
 	 * EnvironmentSlug is the one the run started under, so that marker lands where the run published.
 	 */
-	void HandleWorkflowFinished(int32 ChunkId, const FWorkflowStatusInfo& Info, bool bPackageOnly, bool bArchivedRaw,
-		const FString& EnvironmentSlug);
+	void HandleRunFinished(int32 ChunkId, ECPM_PublishResult Result, const FString& Error, float Progress,
+		bool bPackageOnly, bool bArchivedRaw, const FString& EnvironmentSlug);
 
 	/** Latest status per Chunk. Absent means never touched this session. */
 	TMap<int32, FCPM_ChunkStatus> StatusByChunk;
 
 	/** The Publish in flight for a Chunk, so it can be cancelled and so a second one is refused. */
-	TMap<int32, FWorkflowHandle> ActivePublishes;
+	UPROPERTY()
+	TMap<int32, TObjectPtr<UCPM_PublishRunner>> ActivePublishes;
 
-	/** Chunks whose Publish Policy is still being read: accepted and busy, but with no Workflow to cancel yet. */
+	/** Chunks whose Publish Policy is still being read: accepted and busy, but with no run to cancel yet. */
 	TSet<int32> PendingPolicyRuns;
-
-	/**
-	 * The Chunk whose Workflow is being created right now, and whether it finished before the call
-	 * that created it returned.
-	 *
-	 * ICreateWorkflow both creates AND runs the queue, so a queue whose every Job completes
-	 * synchronously - a single packaging Job that reuses the Pak already on disk - runs to
-	 * completion inside it. HandleWorkflowFinished then removes the Chunk from ActivePublishes
-	 * before it was ever added, and the add that follows registers a Workflow that is already over:
-	 * the Chunk reads as publishing forever and every later command is refused with "this chunk is
-	 * already publishing".
-	 */
-	int32 StartingChunkId = INDEX_NONE;
-	bool bStartingWorkflowFinished = false;
 
 	/** Cancels asked for during that read, honoured the moment the Policy answers. */
 	TSet<int32> CancelledDuringPolicyRead;

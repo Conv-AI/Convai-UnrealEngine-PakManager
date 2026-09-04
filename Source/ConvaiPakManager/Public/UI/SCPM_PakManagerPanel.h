@@ -18,7 +18,7 @@ class UConvaiPakEditorSubsystem;
  * The Pak Manager tab's root: header, asset list / detail split, sticky bottom action bar.
  *
  * Owns the project view model and the subsystem subscription; the child panels borrow views into
- * it. Shows state and sends Commands - no publishing logic of its own, no Job System subscription.
+ * it. Shows state and sends Commands - no publishing logic of its own, no subscription to the queue.
  * See docs/adr/0001, 0008 and 0009, and .scratch/slate-ui-rebuild/design.md.
  */
 class CONVAIPAKMANAGER_API SCPM_PakManagerPanel : public SCompoundWidget

@@ -1,5 +1,8 @@
 # The Job System ships alongside; the Helper Library cannot
 
+**Superseded by [0012](0012-the-publish-runs-on-its-own-runner.md) for the Job System half.** The
+Helper Library half stands.
+
 Asynchronous work runs on the Convai Job System, distributed as a sibling plugin bundled with the
 Pak Manager's own release rather than vendored into this repository — a vendored copy had already
 drifted behind the real one and would again.

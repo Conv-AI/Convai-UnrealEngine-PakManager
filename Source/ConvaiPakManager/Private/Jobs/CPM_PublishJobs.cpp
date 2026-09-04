@@ -3,13 +3,11 @@
 #include "Jobs/CPM_PublishJobs.h"
 
 #include "CPM_Defination.h"
-#include "CPM_PakManagerSettings.h"
 #include "Chunk/CPM_Chunk.h"
 #include "ConvaiPakManagerEditorUtils.h"
-#include "Core/WorkflowContext.h"
 #include "HAL/FileManager.h"
 #include "ILiveCodingModule.h"
-#include "Interface/WorkflowInterface.h"
+#include "Jobs/CPM_PublishRunner.h"
 #include "Misc/EngineVersion.h"
 #include "Misc/FileHelper.h"
 #include "Proxy/CPM_Proxy.h"
@@ -34,107 +32,97 @@ namespace
 			return FString();
 		}
 	}
+}
 
-	/** What every Asset published from here is: a Pak, and the kind of thing it holds. */
-	TArray<FString> PakTagsFor(const FString& AssetType)
+namespace ConvaiPakManager::Publish
+{
+void FillPublishFormFields(
+	const FString& AssetType,
+	const FCPM_PublishPolicy& Policy,
+	const bool bIncludesRawArchive,
+	const bool bIsUpdate,
+	FCPM_CreatePakAssetParams& OutParams)
+{
+	const bool bIsScene = AssetType.Equals(TEXT("Scene"), ESearchCase::IgnoreCase);
+
+	// The upload endpoint rejects a request with no tags, and these are the sets products search by:
+	// a Scene without ConvaiSim and Background3D publishes fine and is then invisible to the very
+	// product it was made for. Taken verbatim from the legacy uploader, whose Assets are the ones
+	// already on the server.
+	OutParams.Tags = bIsScene
+		? TArray<FString>{ TEXT("Pak"), TEXT("ConvaiSim"), TEXT("Background3D"), TEXT("Scene") }
+		: TArray<FString>{ TEXT("Pak"), TEXT("Avatar") };
+	if (bIncludesRawArchive)
 	{
-		return { TEXT("Pak"),
-			AssetType.Equals(TEXT("Scene"), ESearchCase::IgnoreCase) ? TEXT("Scene") : TEXT("Avatar") };
+		OutParams.Tags.Add(TEXT("Raw"));
 	}
+
+	OutParams.Entity_Type = AssetType.ToLower();
+
+	OutParams.Version = FCPM_PakArtifact::VersionSlotFor(
+		Policy.PlatformsToPackage().IsEmpty() ? ECPM_Platform::Windows : Policy.PlatformsToPackage()[0]);
+
+	// Create only. Legacy pinned every new Asset private and never sent the field again, so an
+	// update leaves it alone: whoever opened an Asset up on the website did that after the create,
+	// and re-sending "private" every publish would quietly shut it again.
+	OutParams.Visiblity = bIsUpdate ? FString() : TEXT("private");
+}
 }
 
 // ---------------------------------------------------------------------------------------------
 // UCPM_PublishJobBase
 // ---------------------------------------------------------------------------------------------
 
-void UCPM_PublishJobBase::IInitialize_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow)
+void UCPM_PublishJobBase::Initialize(UCPM_PublishRunner* InRunner, FCPM_PublishContext* InContext)
 {
-	CachedWorkflow = Workflow;
+	Runner = InRunner;
+	Context = InContext;
 }
 
-void UCPM_PublishJobBase::ICancel_Implementation(const bool bForce)
+void UCPM_PublishJobBase::Cancel(const bool bForce)
 {
 	bCancelled = true;
 
-	// Reported as Cancelled, never Failed: a workflow counts Cancelling as still running, so a job
-	// that reports Failed with retries left is retried - re-issuing the very request being cancelled.
-	Report(EJobResult::Cancelled, TEXT("cancelled"));
+	// Reported as Cancelled, never Failed: this report is what the run's outcome is taken from, and
+	// a creator who stopped a publish must not be shown one that broke.
+	Report(ECPM_PublishResult::Cancelled, TEXT("cancelled"));
 }
 
-bool UCPM_PublishJobBase::TryGetRequest(FCPM_PublishRequest& OutRequest) const
+void UCPM_PublishJobBase::Report(const ECPM_PublishResult Result, const FString& Error)
 {
-	UWorkflowContext* Context = CachedWorkflow.GetInterface() ? CachedWorkflow->IGetContext() : nullptr;
-	return Context && Context->TryGet(OutRequest);
-}
-
-void UCPM_PublishJobBase::Report(const EJobResult Result, const FString& Error, TArray<FInstancedStruct>&& Outputs)
-{
-	if (bReported || !CachedWorkflow.GetInterface())
+	if (bReported || !Runner)
 	{
 		return;
 	}
 	bReported = true;
 
-	FJobCompletionInfo Info;
-	Info.Job = this;
-	Info.Result = Result;
-	Info.ErrorMessage = Error;
-	Info.Outputs = MoveTemp(Outputs);
-	CachedWorkflow->IOnJobCompleted(Info);
+	Runner->ReportJobFinished(this, Result, Error);
 }
 
 void UCPM_PublishJobBase::ReportProgress(const FString& Step, const float Percent)
 {
-	if (!CachedWorkflow.GetInterface())
+	if (!Runner)
 	{
 		return;
 	}
 
-	FJobProgressInfo Info;
-	Info.Job = this;
-	Info.Progress = FMath::Clamp(Percent, 0.0f, 1.0f);
-	Info.ProgressText = FText::FromString(Step);
-	CachedWorkflow->IReportJobProgress(Info);
+	Runner->ReportJobProgress(this, Step, Percent);
 }
 
 // ---------------------------------------------------------------------------------------------
 // UCPM_PackagePaksJob
 // ---------------------------------------------------------------------------------------------
 
-FJobConfig UCPM_PackagePaksJob::IGetJobConfig_Implementation() const
+// No deadline. A cook is minutes to tens of minutes on a large project and any number we picked
+// would be wrong for somebody - TimeoutSeconds stays 0, as the base leaves it.
+void UCPM_PackagePaksJob::Execute()
 {
-	FJobConfig Config;
-	Config.Name = TEXT("Packaging");
-	Config.Description = TEXT("Cooks and packages this Chunk into a Pak for each platform the policy asks for.");
-
-	// No timeout and no retries. A cook is minutes to tens of minutes on a large project and any
-	// number we picked would be wrong for somebody; a retry would silently start the whole thing
-	// again, which is worse than reporting the failure UAT already explained.
-	Config.TimeoutSeconds = 0.0f;
-	Config.MaxRetries = 0;
-	return Config;
-}
-
-FJobIOSpec UCPM_PackagePaksJob::IDeclareIO_Implementation() const
-{
-	FJobIOSpec Spec;
-	Spec.Requires<FCPM_PublishRequest>();
-	Spec.ProducesMany<FCPM_PakArtifact>();
-	return Spec;
-}
-
-void UCPM_PackagePaksJob::IExecute_Implementation()
-{
-	if (!TryGetRequest(Request))
-	{
-		ReportAndRestore(EJobResult::Failed, TEXT("no publish request in the workflow context"));
-		return;
-	}
+	Request = Context->Request;
 
 	Remaining = Request.Policy.PlatformsToPackage();
 	if (Remaining.IsEmpty())
 	{
-		ReportAndRestore(EJobResult::Failed, TEXT("the publish policy asks for no platforms"));
+		ReportAndRestore(ECPM_PublishResult::Failed, TEXT("the publish policy asks for no platforms"));
 		return;
 	}
 
@@ -159,13 +147,8 @@ void UCPM_PackagePaksJob::PackageNextPlatform()
 
 	if (Remaining.IsEmpty())
 	{
-		TArray<FInstancedStruct> Outputs;
-		Outputs.Reserve(Built.Num());
-		for (const FCPM_PakArtifact& Artifact : Built)
-		{
-			Outputs.Add(FInstancedStruct::Make(Artifact));
-		}
-		ReportAndRestore(EJobResult::Success, FString(), MoveTemp(Outputs));
+		Context->Paks = Built;
+		ReportAndRestore(ECPM_PublishResult::Success, FString());
 		return;
 	}
 
@@ -200,7 +183,7 @@ void UCPM_PackagePaksJob::PackageNextPlatform()
 	const FCPM_PlatformPolicy* Policy = Request.Policy.Find(Platform);
 	if (!Policy)
 	{
-		ReportAndRestore(EJobResult::Failed,
+		ReportAndRestore(ECPM_PublishResult::Failed,
 			FString::Printf(TEXT("no policy for platform %s"), *PlatformName(Platform)));
 		return;
 	}
@@ -209,7 +192,7 @@ void UCPM_PackagePaksJob::PackageNextPlatform()
 	// it started: a stale Pak surviving a cook that produced nothing is the very case it exists for.
 	if (!IFileManager::Get().Delete(*Existing.PakPath, /*RequireExists=*/false, /*EvenReadOnly=*/true))
 	{
-		ReportAndRestore(EJobResult::Failed,
+		ReportAndRestore(ECPM_PublishResult::Failed,
 			FString::Printf(TEXT("could not remove the previous %s Pak at %s before packaging; it may be open ")
 				TEXT("in another program"), *PlatformName(Platform), *Existing.PakPath));
 		return;
@@ -255,13 +238,13 @@ void UCPM_PackagePaksJob::HandlePackageFinished(const FString& Result, double Ru
 
 	if (Result == UatCanceled || bCancelled)
 	{
-		ReportAndRestore(EJobResult::Cancelled, TEXT("packaging was cancelled"));
+		ReportAndRestore(ECPM_PublishResult::Cancelled, TEXT("packaging was cancelled"));
 		return;
 	}
 
 	if (Result != UatCompleted)
 	{
-		ReportAndRestore(EJobResult::Failed,
+		ReportAndRestore(ECPM_PublishResult::Failed,
 			FString::Printf(TEXT("packaging %s reported '%s' after %.0fs"), *PlatformName(Platform), *Result, Runtime));
 		return;
 	}
@@ -272,7 +255,7 @@ void UCPM_PackagePaksJob::HandlePackageFinished(const FString& Result, double Ru
 	// Chunk means the label did not take, and saying so now names the step that actually went wrong.
 	if (!FPaths::FileExists(Artifact.PakPath))
 	{
-		ReportAndRestore(EJobResult::Failed,
+		ReportAndRestore(ECPM_PublishResult::Failed,
 			FString::Printf(TEXT("packaging %s completed but no Pak exists at %s"),
 				*PlatformName(Platform), *Artifact.PakPath));
 		return;
@@ -282,16 +265,16 @@ void UCPM_PackagePaksJob::HandlePackageFinished(const FString& Result, double Ru
 	PackageNextPlatform();
 }
 
-void UCPM_PackagePaksJob::ICancel_Implementation(const bool bForce)
+void UCPM_PackagePaksJob::Cancel(const bool bForce)
 {
 	RestoreLiveCoding();
-	Super::ICancel_Implementation(bForce);
+	Super::Cancel(bForce);
 }
 
-void UCPM_PackagePaksJob::ReportAndRestore(const EJobResult Result, const FString& Error, TArray<FInstancedStruct>&& Outputs)
+void UCPM_PackagePaksJob::ReportAndRestore(const ECPM_PublishResult Result, const FString& Error)
 {
 	RestoreLiveCoding();
-	Report(Result, Error, MoveTemp(Outputs));
+	Report(Result, Error);
 }
 
 void UCPM_PackagePaksJob::RestoreLiveCoding()
@@ -312,24 +295,7 @@ void UCPM_PackagePaksJob::RestoreLiveCoding()
 // UCPM_ArchiveRawProjectJob
 // ---------------------------------------------------------------------------------------------
 
-FJobConfig UCPM_ArchiveRawProjectJob::IGetJobConfig_Implementation() const
-{
-	FJobConfig Config;
-	Config.Name = TEXT("Archiving project");
-	Config.Description = TEXT("Archives the creator's project for the raw Version.");
-	Config.TimeoutSeconds = 0.0f;
-	Config.MaxRetries = 0;
-	return Config;
-}
-
-FJobIOSpec UCPM_ArchiveRawProjectJob::IDeclareIO_Implementation() const
-{
-	FJobIOSpec Spec;
-	Spec.Produces<FCPM_RawArchive>();
-	return Spec;
-}
-
-void UCPM_ArchiveRawProjectJob::IExecute_Implementation()
+void UCPM_ArchiveRawProjectJob::Execute()
 {
 	ZipPath = UCPM_UtilityLibrary::CPM_GetRawProjectZipPath();
 
@@ -348,58 +314,31 @@ void UCPM_ArchiveRawProjectJob::HandleArchiveFinished(const FString& Result, dou
 {
 	if (bCancelled)
 	{
-		Report(EJobResult::Cancelled, TEXT("archiving was cancelled"));
+		Report(ECPM_PublishResult::Cancelled, TEXT("archiving was cancelled"));
 		return;
 	}
 
 	if (Result != TEXT("Success"))
 	{
-		Report(EJobResult::Failed, FString::Printf(TEXT("archiving the project reported '%s'"), *Result));
+		Report(ECPM_PublishResult::Failed, FString::Printf(TEXT("archiving the project reported '%s'"), *Result));
 		return;
 	}
 
-	FCPM_RawArchive Archive;
-	Archive.ZipPath = ZipPath;
-
-	TArray<FInstancedStruct> Outputs;
-	Outputs.Add(FInstancedStruct::Make(Archive));
-	Report(EJobResult::Success, FString(), MoveTemp(Outputs));
+	Context->RawArchive.ZipPath = ZipPath;
+	Context->bHasRawArchive = true;
+	Report(ECPM_PublishResult::Success, FString());
 }
 
 // ---------------------------------------------------------------------------------------------
 // UCPM_CreateAssetJob
 // ---------------------------------------------------------------------------------------------
 
-FJobConfig UCPM_CreateAssetJob::IGetJobConfig_Implementation() const
+// Never re-run on its own. This either creates an Asset or updates one, and a second attempt after a
+// response that was sent but not received would create a second Asset for the same Chunk - leaving
+// the first orphaned, because a Chunk records only one AssetID.
+void UCPM_CreateAssetJob::Execute()
 {
-	FJobConfig Config;
-	Config.Name = TEXT("Creating asset");
-	Config.Description = TEXT("Creates or updates this Chunk's Asset on Convai and takes back its upload URLs.");
-	Config.TimeoutSeconds = 120.0f;
-
-	// Not retried. This either creates an Asset or updates one, and a retry after a response that
-	// was sent but not received would create a second Asset for the same Chunk - leaving the first
-	// orphaned, because a Chunk records only one AssetID.
-	Config.MaxRetries = 0;
-	return Config;
-}
-
-FJobIOSpec UCPM_CreateAssetJob::IDeclareIO_Implementation() const
-{
-	FJobIOSpec Spec;
-	Spec.Requires<FCPM_PublishRequest>();
-	Spec.Produces<FCPM_PublishedAsset>();
-	return Spec;
-}
-
-void UCPM_CreateAssetJob::IExecute_Implementation()
-{
-	FCPM_PublishRequest Request;
-	if (!TryGetRequest(Request))
-	{
-		Report(EJobResult::Failed, TEXT("no publish request in the workflow context"));
-		return;
-	}
+	const FCPM_PublishRequest& Request = Context->Request;
 
 	FCPM_ModdingMetadata Modding;
 	UCPM_UtilityLibrary::GetModdingMetadataForChunk(Request.ChunkId, Modding);
@@ -409,7 +348,7 @@ void UCPM_CreateAssetJob::IExecute_Implementation()
 	// than logged, here where nothing has been sent yet and so nothing can be orphaned.
 	if (!ConvaiPakManager::Chunk::ComposePakMetadata(Request.ChunkId, Request.EnvironmentSlug))
 	{
-		Report(EJobResult::Failed, TEXT("this Chunk's asset metadata could not be composed; see the log for which file"));
+		Report(ECPM_PublishResult::Failed, TEXT("this Chunk's asset metadata could not be composed; see the log for which file"));
 		return;
 	}
 
@@ -418,21 +357,19 @@ void UCPM_CreateAssetJob::IExecute_Implementation()
 		*ConvaiPakManager::Chunk::GetPakMetadataPath(Request.ChunkId, Request.EnvironmentSlug));
 	if (Params.MetaData.IsEmpty())
 	{
-		Report(EJobResult::Failed, TEXT("this Chunk has no asset metadata to publish"));
+		Report(ECPM_PublishResult::Failed, TEXT("this Chunk has no asset metadata to publish"));
 		return;
 	}
 
-	Params.Entity_Type = Modding.AssetType.ToLower();
+	ExistingAssetId = ConvaiPakManager::Chunk::ReadAssetId(Request.ChunkId, Request.EnvironmentSlug);
 
-	// The upload endpoint rejects a request with no tags.
-	Params.Tags = PakTagsFor(Modding.AssetType);
-	Params.Version = FCPM_PakArtifact::VersionSlotFor(
-		Request.Policy.PlatformsToPackage().IsEmpty() ? ECPM_Platform::Windows : Request.Policy.PlatformsToPackage()[0]);
+	// What the archive Job left behind, not the setting it was built from: the tag has to say what
+	// UCPM_UploadArtifactsJob is about to send, and that Job reads the same field.
+	ConvaiPakManager::Publish::FillPublishFormFields(
+		Modding.AssetType, Request.Policy, Context->bHasRawArchive, !ExistingAssetId.IsEmpty(), Params);
 	RequestedVersion = Params.Version;
 	Params.Thumbnail = UCPM_UtilityLibrary::CPM_LoadTexture2DFromDisk(
 		ConvaiPakManager::Chunk::GetThumbnailPath(Request.ChunkId));
-
-	ExistingAssetId = ConvaiPakManager::Chunk::ReadAssetId(Request.ChunkId, Request.EnvironmentSlug);
 
 	ReportProgress(ExistingAssetId.IsEmpty() ? TEXT("Creating asset") : TEXT("Updating asset"), 0.0f);
 
@@ -442,7 +379,7 @@ void UCPM_CreateAssetJob::IExecute_Implementation()
 			Params, Request.ChunkId, Request.EnvironmentSlug);
 		if (!CreateProxy)
 		{
-			Report(EJobResult::Failed, TEXT("could not build the create-asset request"));
+			Report(ECPM_PublishResult::Failed, TEXT("could not build the create-asset request"));
 			return;
 		}
 		CreateProxy->OnSuccess.AddDynamic(this, &UCPM_CreateAssetJob::HandleCreated);
@@ -454,7 +391,7 @@ void UCPM_CreateAssetJob::IExecute_Implementation()
 		UpdateProxy = UCPM_UpdatePakAssetProxy::UpdatePakAssetProxy(ExistingAssetId, Params);
 		if (!UpdateProxy)
 		{
-			Report(EJobResult::Failed, TEXT("could not build the update-asset request"));
+			Report(ECPM_PublishResult::Failed, TEXT("could not build the update-asset request"));
 			return;
 		}
 		UpdateProxy->OnSuccess.AddDynamic(this, &UCPM_CreateAssetJob::HandleUpdated);
@@ -463,17 +400,17 @@ void UCPM_CreateAssetJob::IExecute_Implementation()
 	}
 }
 
-void UCPM_CreateAssetJob::ICancel_Implementation(const bool bForce)
+void UCPM_CreateAssetJob::Cancel(const bool bForce)
 {
 	bCancelled = true;
-	Report(EJobResult::Cancelled, TEXT("cancelled"));
+	Report(ECPM_PublishResult::Cancelled, TEXT("cancelled"));
 }
 
 void UCPM_CreateAssetJob::HandleCreated(const FCPM_CreatedAssets& Response)
 {
 	if (Response.Assets.IsEmpty())
 	{
-		Report(EJobResult::Failed, TEXT("the server created no asset"));
+		Report(ECPM_PublishResult::Failed, TEXT("the server created no asset"));
 		return;
 	}
 
@@ -500,18 +437,17 @@ void UCPM_CreateAssetJob::HandleCreated(const FCPM_CreatedAssets& Response)
 
 	if (Published.AssetId.IsEmpty())
 	{
-		Report(EJobResult::Failed, TEXT("the server returned an asset with no id"));
+		Report(ECPM_PublishResult::Failed, TEXT("the server returned an asset with no id"));
 		return;
 	}
 
-	TArray<FInstancedStruct> Outputs;
-	Outputs.Add(FInstancedStruct::Make(Published));
-	Report(EJobResult::Success, FString(), MoveTemp(Outputs));
+	Context->Published = Published;
+	Report(ECPM_PublishResult::Success, FString());
 }
 
 void UCPM_CreateAssetJob::HandleCreateFailed(const FCPM_CreatedAssets& Response)
 {
-	Report(EJobResult::Failed, TEXT("the server refused to create the asset"));
+	Report(ECPM_PublishResult::Failed, TEXT("the server refused to create the asset"));
 }
 
 void UCPM_CreateAssetJob::HandleUpdated(const FString& MintedUrl)
@@ -525,14 +461,13 @@ void UCPM_CreateAssetJob::HandleUpdated(const FString& MintedUrl)
 	Published.AssetId = ExistingAssetId;
 	Published.UploadUrlsByVersion.Add(RequestedVersion, MintedUrl);
 
-	TArray<FInstancedStruct> Outputs;
-	Outputs.Add(FInstancedStruct::Make(Published));
-	Report(EJobResult::Success, FString(), MoveTemp(Outputs));
+	Context->Published = Published;
+	Report(ECPM_PublishResult::Success, FString());
 }
 
 void UCPM_CreateAssetJob::HandleUpdateFailed(const FString& ResponseString)
 {
-	Report(EJobResult::Failed, TEXT("the server refused to update the asset"));
+	Report(ECPM_PublishResult::Failed, TEXT("the server refused to update the asset"));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -545,72 +480,26 @@ void UCPM_UploadArtifactsJob::Configure(const bool bInExpectPaks, const bool bIn
 	bExpectRawArchive = bInExpectRawArchive;
 }
 
-FJobConfig UCPM_UploadArtifactsJob::IGetJobConfig_Implementation() const
+void UCPM_UploadArtifactsJob::Execute()
 {
-	FJobConfig Config;
-	Config.Name = TEXT("Uploading");
-	Config.Description = TEXT("Sends every built artefact to the URL minted for its Version.");
-
-	// No timeout: a Pak is hundreds of megabytes and an upload's honest duration depends on the
-	// creator's connection, not on anything we can predict.
-	Config.TimeoutSeconds = 0.0f;
-	Config.MaxRetries = 0;
-	return Config;
-}
-
-FJobIOSpec UCPM_UploadArtifactsJob::IDeclareIO_Implementation() const
-{
-	FJobIOSpec Spec;
-	Spec.Requires<FCPM_PublishedAsset>();
-	if (bExpectPaks)
-	{
-		Spec.RequiresMany<FCPM_PakArtifact>();
-	}
-	if (bExpectRawArchive)
-	{
-		Spec.Requires<FCPM_RawArchive>();
-	}
-	return Spec;
-}
-
-void UCPM_UploadArtifactsJob::IExecute_Implementation()
-{
-	UWorkflowContext* Context = CachedWorkflow.GetInterface() ? CachedWorkflow->IGetContext() : nullptr;
-	if (!Context)
-	{
-		Report(EJobResult::Failed, TEXT("no workflow context"));
-		return;
-	}
-
-	FCPM_PublishedAsset Published;
-	if (!Context->TryGet(Published))
-	{
-		Report(EJobResult::Failed, TEXT("no published asset in the workflow context"));
-		return;
-	}
+	const FCPM_PublishedAsset& Published = Context->Published;
 
 	if (bExpectPaks)
 	{
-		TArray<FCPM_PakArtifact> Paks;
-		Context->TryGetMany(Paks);
-		for (const FCPM_PakArtifact& Pak : Paks)
+		for (const FCPM_PakArtifact& Pak : Context->Paks)
 		{
 			Pending.Add({ Pak.VersionSlot, Pak.PakPath });
 		}
 	}
 
-	if (bExpectRawArchive)
+	if (bExpectRawArchive && Context->bHasRawArchive)
 	{
-		FCPM_RawArchive Archive;
-		if (Context->TryGet(Archive))
-		{
-			Pending.Add({ FCPM_PakArtifact::VersionSlotFor(ECPM_Platform::Raw), Archive.ZipPath });
-		}
+		Pending.Add({ FCPM_PakArtifact::VersionSlotFor(ECPM_Platform::Raw), Context->RawArchive.ZipPath });
 	}
 
 	if (Pending.IsEmpty())
 	{
-		Report(EJobResult::Failed, TEXT("nothing was built to upload"));
+		Report(ECPM_PublishResult::Failed, TEXT("nothing was built to upload"));
 		return;
 	}
 
@@ -619,7 +508,7 @@ void UCPM_UploadArtifactsJob::IExecute_Implementation()
 	// for its own when its turn comes. Only the AssetID is needed to ask.
 	if (Published.AssetId.IsEmpty())
 	{
-		Report(EJobResult::Failed, TEXT("no asset id to mint upload URLs against"));
+		Report(ECPM_PublishResult::Failed, TEXT("no asset id to mint upload URLs against"));
 		return;
 	}
 
@@ -628,7 +517,7 @@ void UCPM_UploadArtifactsJob::IExecute_Implementation()
 	UploadNext();
 }
 
-void UCPM_UploadArtifactsJob::ICancel_Implementation(const bool bForce)
+void UCPM_UploadArtifactsJob::Cancel(const bool bForce)
 {
 	bCancelled = true;
 
@@ -639,7 +528,7 @@ void UCPM_UploadArtifactsJob::ICancel_Implementation(const bool bForce)
 		UploadProxy->CancelRequest();
 	}
 
-	Report(EJobResult::Cancelled, TEXT("cancelled"));
+	Report(ECPM_PublishResult::Cancelled, TEXT("cancelled"));
 }
 
 void UCPM_UploadArtifactsJob::UploadNext()
@@ -651,7 +540,7 @@ void UCPM_UploadArtifactsJob::UploadNext()
 
 	if (Pending.IsEmpty())
 	{
-		Report(EJobResult::Success, FString());
+		Report(ECPM_PublishResult::Success, FString());
 		return;
 	}
 
@@ -667,7 +556,7 @@ void UCPM_UploadArtifactsJob::UploadNext()
 	UploadProxy = UCPM_UploadPakAssetProxy::UploadPakAssetProxy(*Url, Next.FilePath, Out);
 	if (!UploadProxy)
 	{
-		Report(EJobResult::Failed, FString::Printf(TEXT("could not start the upload of %s"), *Next.FilePath));
+		Report(ECPM_PublishResult::Failed, FString::Printf(TEXT("could not start the upload of %s"), *Next.FilePath));
 		return;
 	}
 
@@ -689,7 +578,7 @@ void UCPM_UploadArtifactsJob::MintUrlForNext()
 	MintProxy = UCPM_UpdatePakAssetProxy::UpdatePakAssetProxy(PublishedForUpload.AssetId, Params);
 	if (!MintProxy)
 	{
-		Report(EJobResult::Failed,
+		Report(ECPM_PublishResult::Failed,
 			FString::Printf(TEXT("could not ask for an upload URL for version '%s'"), *VersionSlot));
 		return;
 	}
@@ -711,7 +600,7 @@ void UCPM_UploadArtifactsJob::HandleMinted(const FString& MintedUrl)
 
 	if (!MintedUrl.StartsWith(TEXT("http")))
 	{
-		Report(EJobResult::Failed,
+		Report(ECPM_PublishResult::Failed,
 			FString::Printf(TEXT("the server minted no upload URL for version '%s'; it answered: %s"),
 				*Pending[0].VersionSlot, *MintedUrl));
 		return;
@@ -728,7 +617,7 @@ void UCPM_UploadArtifactsJob::HandleMintFailed(const FString& ResponseString)
 		return;
 	}
 
-	Report(EJobResult::Failed,
+	Report(ECPM_PublishResult::Failed,
 		FString::Printf(TEXT("the server minted no upload URL for version '%s'; it answered: %s"),
 			Pending.IsEmpty() ? TEXT("unknown") : *Pending[0].VersionSlot, *ResponseString));
 }
@@ -760,58 +649,37 @@ void UCPM_UploadArtifactsJob::HandleUploadSucceeded(float Progress)
 void UCPM_UploadArtifactsJob::HandleUploadFailed(float Progress)
 {
 	const FString Version = Pending.IsEmpty() ? FString(TEXT("unknown")) : Pending[0].VersionSlot;
-	Report(EJobResult::Failed, FString::Printf(TEXT("uploading version '%s' failed"), *Version));
+	Report(ECPM_PublishResult::Failed, FString::Printf(TEXT("uploading version '%s' failed"), *Version));
 }
 
 // ---------------------------------------------------------------------------------------------
 // UCPM_PersistChunkStateJob
 // ---------------------------------------------------------------------------------------------
 
-FJobConfig UCPM_PersistChunkStateJob::IGetJobConfig_Implementation() const
+void UCPM_PersistChunkStateJob::Execute()
 {
-	FJobConfig Config;
-	Config.Name = TEXT("Recording asset");
-	Config.Description = TEXT("Writes this Chunk's record of the Asset it was published as.");
-	Config.TimeoutSeconds = 30.0f;
-	Config.MaxRetries = 1;
-	return Config;
-}
-
-FJobIOSpec UCPM_PersistChunkStateJob::IDeclareIO_Implementation() const
-{
-	FJobIOSpec Spec;
-	Spec.Requires<FCPM_PublishRequest>();
-	Spec.Requires<FCPM_PublishedAsset>();
-	return Spec;
-}
-
-void UCPM_PersistChunkStateJob::IExecute_Implementation()
-{
-	UWorkflowContext* Context = CachedWorkflow.GetInterface() ? CachedWorkflow->IGetContext() : nullptr;
-	FCPM_PublishRequest Request;
-	FCPM_PublishedAsset Published;
-	if (!Context || !Context->TryGet(Request) || !Context->TryGet(Published))
-	{
-		Report(EJobResult::Failed, TEXT("no published asset to record"));
-		return;
-	}
+	const FCPM_PublishRequest& Request = Context->Request;
+	const FCPM_PublishedAsset& Published = Context->Published;
 
 	if (Published.RawResponse.IsEmpty())
 	{
 		// Nothing to write for an update that answered with a URL rather than a body - the Chunk
 		// already records the AssetID it was updating.
-		Report(EJobResult::Success, FString());
+		Report(ECPM_PublishResult::Success, FString());
 		return;
 	}
 
-	if (!ConvaiPakManager::Chunk::WriteCreateAssetData(
-		Request.ChunkId, Request.EnvironmentSlug, Published.RawResponse))
+	// Attempted twice, immediately. This file holds the only copy of the AssetID anywhere in the
+	// creator's world and the Asset it names already exists on Convai, so a transient lock on it is
+	// worth one more try before the run is failed over it.
+	if (!ConvaiPakManager::Chunk::WriteCreateAssetData(Request.ChunkId, Request.EnvironmentSlug, Published.RawResponse)
+		&& !ConvaiPakManager::Chunk::WriteCreateAssetData(Request.ChunkId, Request.EnvironmentSlug, Published.RawResponse))
 	{
 		CPM_LOG(Error, TEXT("Published asset %s but could not record it in the project. ")
 			TEXT("Without that record the asset cannot be updated or deleted."), *Published.AssetId);
-		Report(EJobResult::Failed, TEXT("could not record the published asset in this project"));
+		Report(ECPM_PublishResult::Failed, TEXT("could not record the published asset in this project"));
 		return;
 	}
 
-	Report(EJobResult::Success, FString());
+	Report(ECPM_PublishResult::Success, FString());
 }

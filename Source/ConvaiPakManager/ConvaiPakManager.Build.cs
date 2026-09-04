@@ -26,7 +26,6 @@ public class ConvaiPakManager : ModuleRules
 				"ImageWrapper",
 				"AssetRegistry",
 				"Convai",
-				"ConvaiJobSystem",
 				// UCPM_PakManagerSettings derives from UDeveloperSettings in a public header.
 				"DeveloperSettings",
 			}
@@ -49,6 +48,8 @@ public class ConvaiPakManager : ModuleRules
 				"UATHelper",
 				"LiveCoding",
 				"RenderCore",
+				// FImage::ChangeFormat, for reading a texture's authored source pixels.
+				"ImageCore",
 				"FileUtilities",
 				"ToolMenus",
 				"Json",

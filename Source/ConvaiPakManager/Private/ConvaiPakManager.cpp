@@ -25,7 +25,7 @@ void FConvaiPakManagerModule::StartupModule()
 	FCPM_PakManagerStyle::Initialize();
 
 	// A nomad tab of this plugin's own, not a page in the SDK's shell: it docks beside the Content
-	// Browser, which the pick-the-selection workflow depends on. See docs/adr/0009.
+	// Browser, which picking the Entry Point from the selection depends on. See docs/adr/0009.
 	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(PakManagerTabId,
 		FOnSpawnTab::CreateRaw(this, &FConvaiPakManagerModule::SpawnPakManagerTab))
 		.SetDisplayName(LOCTEXT("PakManagerTabTitle", "Convai Pak Manager"))

@@ -8,7 +8,6 @@
 #include "Avatar/CPM_AvatarBlueprint.h"
 #include "Chunk/CPM_Chunk.h"
 #include "ConvaiPakManagerEditorUtils.h"
-#include "Core/WorkflowManagerSubsystem.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "ContentBrowserModule.h"
 #include "Editor.h"
@@ -28,6 +27,7 @@
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "Jobs/CPM_PublishJobs.h"
+#include "Jobs/CPM_PublishRunner.h"
 #include "Misc/EngineVersion.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
@@ -42,15 +42,19 @@
 
 void UConvaiPakEditorSubsystem::Deinitialize()
 {
-	// Workflows outlive this subsystem otherwise, and their jobs hold raw callbacks back into it.
-	for (const TPair<int32, FWorkflowHandle>& Active : ActivePublishes)
+	// Runs outlive this subsystem otherwise, and their Jobs hold raw callbacks back into it. Emptied
+	// BEFORE cancelling, because each cancel finishes a run that removes itself from this map.
+	TArray<TObjectPtr<UCPM_PublishRunner>> Running;
+	ActivePublishes.GenerateValueArray(Running);
+	ActivePublishes.Reset();
+
+	for (UCPM_PublishRunner* Runner : Running)
 	{
-		if (UWorkflowManagerSubsystem* Manager = UWorkflowManagerSubsystem::Get())
+		if (Runner)
 		{
-			Manager->ICancelWorkflow(Active.Value, /*bForce=*/true);
+			Runner->Cancel(/*bForce=*/true);
 		}
 	}
-	ActivePublishes.Reset();
 
 	Super::Deinitialize();
 }
@@ -1308,7 +1312,7 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 
 	// Deliberately NOT a Job of the publish queue. The policy decides which Jobs exist, and a queue's
 	// shape may depend only on what the caller knew before building it - so it is resolved first and
-	// the queue is built from the answer. See docs/adr/0004 and the Job System's docs/adr/0009.
+	// the queue is built from the answer. See docs/adr/0004.
 	TWeakObjectPtr<UConvaiPakEditorSubsystem> WeakThis(this);
 	ResolvePolicy(ChunkId, [WeakThis, ChunkId, bPackageOnly, Options](const bool bSucceeded, const FCPM_PublishPolicy& Policy, const FString& Error)
 	{
@@ -1341,23 +1345,16 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 		const FCPM_PublishPolicy Effective =
 			Options.bOverridePlatforms ? Policy.WithPlatforms(Options.Platforms) : Policy;
 
-		Self->StartPublishWorkflow(ChunkId, Effective, bPackageOnly, Options);
+		Self->StartPublishRun(ChunkId, Effective, bPackageOnly, Options);
 	});
 
 	// Accepted. Whether it succeeds arrives later, as this Chunk's status.
 	return true;
 }
 
-FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(
+void UConvaiPakEditorSubsystem::StartPublishRun(
 	const int32 ChunkId, const FCPM_PublishPolicy& Policy, const bool bPackageOnly, const FCPM_PublishOptions& Options)
 {
-	UWorkflowManagerSubsystem* Manager = UWorkflowManagerSubsystem::Get();
-	if (!Manager)
-	{
-		SetStatus(ChunkId, ECPM_AssetManagerStatus::Packaging_Failed, TEXT("the job system is unavailable"));
-		return FWorkflowHandle::Invalid();
-	}
-
 	const bool bHasPaks = !Policy.PlatformsToPackage().IsEmpty();
 
 	if (bPackageOnly && !bHasPaks)
@@ -1368,7 +1365,7 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(
 			Options.bOverridePlatforms
 				? TEXT("no platform was selected to package")
 				: TEXT("the publish policy asks for no platforms"));
-		return FWorkflowHandle::Invalid();
+		return;
 	}
 
 	// Decided here rather than by a Job's Precheck, although ADR-0004 points at one for re-running a
@@ -1383,7 +1380,7 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(
 		// names neither the Policy nor the setting the creator would have to change.
 		SetStatus(ChunkId, ECPM_AssetManagerStatus::Create_Failed,
 			TEXT("this publish would send nothing: the policy asks only for the project archive, and its upload is turned off"));
-		return FWorkflowHandle::Invalid();
+		return;
 	}
 
 	if (!bPackageOnly && Policy.bUploadRawProject && !bArchiveRaw)
@@ -1396,33 +1393,35 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(
 			ECPM_LogLevel::Warning);
 	}
 
-	FWorkflowRequest Request;
+	UCPM_PublishRunner* Runner = NewObject<UCPM_PublishRunner>(this);
+
+	TArray<UCPM_PublishJobBase*> Jobs;
 
 	if (bHasPaks)
 	{
-		Request.Jobs.Add(NewObject<UCPM_PackagePaksJob>(this));
+		Jobs.Add(NewObject<UCPM_PackagePaksJob>(Runner));
 	}
 
 	if (!bPackageOnly)
 	{
 		if (bArchiveRaw)
 		{
-			Request.Jobs.Add(NewObject<UCPM_ArchiveRawProjectJob>(this));
+			Jobs.Add(NewObject<UCPM_ArchiveRawProjectJob>(Runner));
 		}
 
-		Request.Jobs.Add(NewObject<UCPM_CreateAssetJob>(this));
+		Jobs.Add(NewObject<UCPM_CreateAssetJob>(Runner));
 
-		UCPM_UploadArtifactsJob* Upload = NewObject<UCPM_UploadArtifactsJob>(this);
-		// Configured before it joins the queue: IDeclareIO is asked once, at queue build, and must
-		// already know whether to require Paks and a raw archive. One bool with the Job above, or the
-		// queue either requires an archive nothing produces or zips a project it never sends.
+		UCPM_UploadArtifactsJob* Upload = NewObject<UCPM_UploadArtifactsJob>(Runner);
+		// Told what this run built, from the same two decisions the queue was built from, rather than
+		// left to infer it from what it finds: a run asked for no Pak must not upload one left on disk.
 		Upload->Configure(bHasPaks, bArchiveRaw);
-		Request.Jobs.Add(Upload);
+		Jobs.Add(Upload);
 
-		Request.Jobs.Add(NewObject<UCPM_PersistChunkStateJob>(this));
+		Jobs.Add(NewObject<UCPM_PersistChunkStateJob>(Runner));
 	}
 
-	FCPM_PublishRequest PublishRequest;
+	FCPM_PublishContext RunContext;
+	FCPM_PublishRequest& PublishRequest = RunContext.Request;
 	PublishRequest.ChunkId = ChunkId;
 	// Resolved once, here, and read by every Job and by the archive marker below. Asking again later
 	// would file this run under whichever backend the creator had switched to by then.
@@ -1432,106 +1431,67 @@ FWorkflowHandle UConvaiPakEditorSubsystem::StartPublishWorkflow(
 	// or "Package now" finishes instantly having built nothing.
 	PublishRequest.bReuseExistingPaks = FCPM_PublishOptions::ShouldReuseExistingPaks(
 		bPackageOnly, Options.bReuseExistingPaks, UCPM_PakManagerSettings::Get().bUseExistingPakFile);
-	Request.Inputs.Add(FInstancedStruct::Make(PublishRequest));
 
 	TWeakObjectPtr<UConvaiPakEditorSubsystem> WeakThis(this);
-	Request.OnProgressNative.BindLambda([WeakThis, ChunkId](const FWorkflowStatusInfo& Info)
+
+	FCPM_OnPublishProgress OnProgress;
+	OnProgress.BindLambda([WeakThis, ChunkId](UCPM_PublishJobBase* Job, int32 JobIndex, float Progress, const FString& Step)
 	{
 		if (UConvaiPakEditorSubsystem* Self = WeakThis.Get())
 		{
-			Self->HandleWorkflowProgress(ChunkId, Info);
-		}
-	});
-	Request.OnFinishedNative.BindLambda([WeakThis, ChunkId, bPackageOnly, bArchiveRaw, EnvironmentSlug = PublishRequest.EnvironmentSlug](const FWorkflowStatusInfo& Info, const FWorkflowResult&)
-	{
-		if (UConvaiPakEditorSubsystem* Self = WeakThis.Get())
-		{
-			Self->HandleWorkflowFinished(ChunkId, Info, bPackageOnly, bArchiveRaw, EnvironmentSlug);
+			Self->HandleRunProgress(ChunkId, Job, JobIndex, Progress, Step);
 		}
 	});
 
-	// One planned step per queued Job, named as the Job names itself, filled BEFORE the workflow
-	// starts so the first progress broadcast already carries them. Upload stays one step: the job
-	// reports one progress stream, and the tracker must not claim granularity it cannot report.
+	FCPM_OnPublishFinished OnFinished;
+	OnFinished.BindLambda([WeakThis, ChunkId, bPackageOnly, bArchiveRaw, EnvironmentSlug = PublishRequest.EnvironmentSlug](ECPM_PublishResult Result, const FString& Error, float Progress)
+	{
+		if (UConvaiPakEditorSubsystem* Self = WeakThis.Get())
+		{
+			Self->HandleRunFinished(ChunkId, Result, Error, Progress, bPackageOnly, bArchiveRaw, EnvironmentSlug);
+		}
+	});
+
+	// One planned step per queued Job, named as the Job names itself, filled BEFORE the run starts so
+	// the first progress broadcast already carries them. Upload stays one step: the job reports one
+	// progress stream, and the tracker must not claim granularity it cannot report.
 	{
 		FCPM_ChunkStatus& Stored = StatusByChunk.FindOrAdd(ChunkId);
 		Stored.ChunkId = ChunkId;
 		Stored.PlannedSteps.Reset();
-		for (const TScriptInterface<IJobInterface>& Job : Request.Jobs)
+		for (const UCPM_PublishJobBase* Job : Jobs)
 		{
-			Stored.PlannedSteps.Add(IJobInterface::Execute_IGetJobConfig(Job.GetObject()).Name);
+			Stored.PlannedSteps.Add(Job->Name());
 		}
 		Stored.CurrentStepIndex = INDEX_NONE;
 	}
 
-	// Watched across the call, because ICreateWorkflow runs the queue as well as building it: a
-	// queue that finishes inside it reports finished before there is a handle to register.
-	StartingChunkId = ChunkId;
-	bStartingWorkflowFinished = false;
-
-	const FWorkflowHandle Handle = Manager->ICreateWorkflow(Request);
-
-	const bool bFinishedWhileStarting = bStartingWorkflowFinished;
-	StartingChunkId = INDEX_NONE;
-	bStartingWorkflowFinished = false;
-
-	if (!Handle.IsValid())
-	{
-		if (FCPM_ChunkStatus* Stored = StatusByChunk.Find(ChunkId))
-		{
-			Stored->PlannedSteps.Reset();
-			Stored->CurrentStepIndex = INDEX_NONE;
-		}
-
-		// The queue was rejected before anything ran - a Job requiring something no earlier Job
-		// produces. Worth surfacing as-is rather than as a generic failure: it is a wiring bug, and
-		// the job system has already logged which type went unsatisfied.
-		SetStatus(ChunkId, ECPM_AssetManagerStatus::Packaging_Failed,
-			TEXT("the publish steps did not fit together; see the log for which value went unsatisfied"));
-		return FWorkflowHandle::Invalid();
-	}
-
-	// Registering a Workflow that has already reported finished would leave this Chunk publishing
-	// for the rest of the session: nothing else ever removes it, and every command is refused.
-	if (!bFinishedWhileStarting)
-	{
-		ActivePublishes.Add(ChunkId, Handle);
-	}
-
-	return Handle;
+	// Registered before Start, which is safe precisely because the runner defers its first Job by a
+	// tick: nothing can finish inside the call, so nothing removes this entry before it is added.
+	ActivePublishes.Add(ChunkId, Runner);
+	Runner->Start(Jobs, RunContext, MoveTemp(OnProgress), MoveTemp(OnFinished));
 }
 
-void UConvaiPakEditorSubsystem::HandleWorkflowProgress(const int32 ChunkId, const FWorkflowStatusInfo& Info)
+void UConvaiPakEditorSubsystem::HandleRunProgress(
+	const int32 ChunkId, UCPM_PublishJobBase* Job, const int32 JobIndex, const float Progress, const FString& Step)
 {
 	// Taken from the running Job itself rather than mapped from its display name, so improving the
 	// wording cannot silently change what the UI thinks is happening.
-	ECPM_AssetManagerStatus Phase = ECPM_AssetManagerStatus::Max;
-	if (const UCPM_PublishJobBase* Job = Cast<UCPM_PublishJobBase>(Info.CurrentJob.JobObject.GetObject()))
-	{
-		Phase = Job->GetPhaseStatus();
-	}
+	const ECPM_AssetManagerStatus Phase = Job ? Job->GetPhaseStatus() : ECPM_AssetManagerStatus::Max;
 
 	{
-		// Queue position maps 1:1 onto PlannedSteps - no groups here, one planned step per Job.
+		// Queue position maps 1:1 onto PlannedSteps - one planned step per Job.
 		FCPM_ChunkStatus& Stored = StatusByChunk.FindOrAdd(ChunkId);
-		Stored.CurrentStepIndex =
-			Stored.PlannedSteps.IsValidIndex(Info.CurrentJob.Index) ? Info.CurrentJob.Index : INDEX_NONE;
+		Stored.CurrentStepIndex = Stored.PlannedSteps.IsValidIndex(JobIndex) ? JobIndex : INDEX_NONE;
 	}
 
-	SetStatus(ChunkId, Phase, FString(), Info.Progress, Info.CurrentJob.ProgressText.ToString());
+	SetStatus(ChunkId, Phase, FString(), Progress, Step);
 }
 
-void UConvaiPakEditorSubsystem::HandleWorkflowFinished(
-	const int32 ChunkId, const FWorkflowStatusInfo& Info, const bool bPackageOnly, const bool bArchivedRaw,
-	const FString& EnvironmentSlug)
+void UConvaiPakEditorSubsystem::HandleRunFinished(
+	const int32 ChunkId, const ECPM_PublishResult Result, const FString& Error, const float Progress,
+	const bool bPackageOnly, const bool bArchivedRaw, const FString& EnvironmentSlug)
 {
-	// Reported from inside ICreateWorkflow, before the handle exists to be registered. The Remove
-	// below is a no-op in that case; this is what stops the caller registering it afterwards.
-	if (StartingChunkId == ChunkId)
-	{
-		bStartingWorkflowFinished = true;
-	}
-
 	ActivePublishes.Remove(ChunkId);
 
 	if (FCPM_ChunkStatus* Stored = StatusByChunk.Find(ChunkId))
@@ -1540,9 +1500,9 @@ void UConvaiPakEditorSubsystem::HandleWorkflowFinished(
 		Stored->CurrentStepIndex = INDEX_NONE;
 	}
 
-	switch (Info.Status)
+	switch (Result)
 	{
-	case EWorkflowStatus::Completed:
+	case ECPM_PublishResult::Success:
 		// Recorded from here rather than from the Job that writes the Asset's record, because what
 		// makes it true is the whole queue having finished: the create step writes the AssetID
 		// before a byte of the archive is sent, so a Publish cancelled mid-upload leaves an Asset
@@ -1560,16 +1520,16 @@ void UConvaiPakEditorSubsystem::HandleWorkflowFinished(
 			FString(), 1.0f);
 		break;
 
-	case EWorkflowStatus::Cancelled:
-		SetStatus(ChunkId, ECPM_AssetManagerStatus::Publish_Cancelled, FString(), Info.Progress);
+	case ECPM_PublishResult::Cancelled:
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Publish_Cancelled, FString(), Progress);
 		break;
 
 	default:
 		SetStatus(ChunkId,
 			bPackageOnly ? ECPM_AssetManagerStatus::Packaging_Failed : ECPM_AssetManagerStatus::UploadPak_Failed,
-			Info.ErrorMessage.IsEmpty()
+			Error.IsEmpty()
 				? (bPackageOnly ? TEXT("packaging failed") : TEXT("publishing failed"))
-				: *Info.ErrorMessage, Info.Progress);
+				: *Error, Progress);
 		break;
 	}
 }
@@ -1581,8 +1541,9 @@ bool UConvaiPakEditorSubsystem::IsRunInFlight(const int32 ChunkId) const
 
 bool UConvaiPakEditorSubsystem::CancelPublish(const int32 ChunkId)
 {
-	const FWorkflowHandle* Handle = ActivePublishes.Find(ChunkId);
-	if (!Handle)
+	// Taken by value, because cancelling finishes the run and the run removes itself from this map.
+	UCPM_PublishRunner* Runner = ActivePublishes.FindRef(ChunkId);
+	if (!Runner)
 	{
 		// Still reading the Policy: nothing runs yet, so the cancel is kept and honoured when it answers.
 		if (PendingPolicyRuns.Contains(ChunkId))
@@ -1593,10 +1554,10 @@ bool UConvaiPakEditorSubsystem::CancelPublish(const int32 ChunkId)
 		return false;
 	}
 
-	UWorkflowManagerSubsystem* Manager = UWorkflowManagerSubsystem::Get();
 	// Not forced: the running Job is allowed to finish reporting, so an upload in flight unhooks its
 	// request rather than being abandoned mid-transfer.
-	return Manager && Manager->ICancelWorkflow(*Handle, /*bForce=*/false);
+	Runner->Cancel(/*bForce=*/false);
+	return true;
 }
 
 bool UConvaiPakEditorSubsystem::DeleteAsset(const int32 ChunkId, const FString& Version, const bool bAlsoDeletePluginContent)

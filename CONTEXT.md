@@ -5,12 +5,20 @@ Convai so that Convai products can load it.
 
 ## Language
 
-### Inherited
+### The work
 
-This repo runs its work on the Convai Job System and uses that glossary unchanged: **Workflow**,
-**Job Queue**, **Job**, **Workflow Handle**, **Workflow Context**, **Workflow Input**, **Declared
-Output**, **Precheck**, **Skip**, **Cancel**, **Force Cancel**, **All-group**, **Any-group**.
-Defined in that plugin's `CONTEXT.md`; never redefined here.
+**Job**:
+One step of a **Publish**: package, archive, create, upload, record. A Job runs only once the one
+before it has reported, and reports exactly once itself — Success, Failed, or Cancelled. Which Jobs
+exist is decided by the **Publish Policy** before the first of them runs.
+_Avoid_: task, step, stage — "step" is what the UI calls a Job to a creator, and the two must not
+be used interchangeably in code.
+
+**Job Queue**:
+The Jobs of one **Publish**, in order. Sequential, one at a time, and stopped by the first Job that
+reports anything but Success. See [docs/adr/0012](docs/adr/0012-the-publish-runs-on-its-own-runner.md).
+_Avoid_: workflow, pipeline — "workflow" was this repo's word while the Job System ran the queue
+and no longer names anything here.
 
 ### The interface
 
@@ -19,9 +27,9 @@ One named thing a caller asks the Pak Manager to do. The caller may be the edito
 a test, and the Command is identical whichever it is — that interchangeability is the whole reason
 the concept exists.
 Distinct from **Job**: a Command is what was *asked for*; a Job is one step of the work that answers
-it. Answering one Command may take a Workflow of several Jobs, or no Job at all.
-_Avoid_: action, operation, request — the first two are the Job System's reserved words, and the
-third names the Job System's own start-a-workflow type.
+it. Answering one Command may take a **Job Queue** of several Jobs, or no Job at all.
+_Avoid_: action, operation — they name a Command and a Job interchangeably, which is the distinction
+this pair exists to keep.
 
 ### The thing being published
 
@@ -128,9 +136,10 @@ _Avoid_: category, entity type
 
 ## Relationships
 
-- A **Command** is invoked by exactly one caller and may start at most one **Workflow**
-- A **Workflow** started by a **Command** is identified to that caller by its **Workflow Handle**
-- A **Command** that needs no asynchronous work starts no **Workflow** and answers immediately
+- A **Command** is invoked by exactly one caller and may start at most one **Job Queue**
+- A **Job Queue** started by a **Command** is not handed back to it: the caller watches the
+  **Chunk**'s status instead, which is the one thing it has to watch anyway
+- A **Command** that needs no asynchronous work starts no **Job Queue** and answers immediately
 - A **Modding Plugin** holds many **Source Packages** and exactly one Primary Asset Label
 - That label gathers every **Source Package** in the plugin into one **Chunk**
 - A **Chunk** builds to one **Pak** per platform

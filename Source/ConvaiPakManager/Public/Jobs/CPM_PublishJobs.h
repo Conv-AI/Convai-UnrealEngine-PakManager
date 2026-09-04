@@ -3,32 +3,61 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Interface/JobInterface.h"
 #include "Publish/CPM_PublishTypes.h"
-#include "Type/JS_Definations.h"
 #include "UObject/Object.h"
 
 #include "CPM_PublishJobs.generated.h"
 
+class UCPM_PublishRunner;
 class UCPM_CreatePakAssetProxy;
 class UCPM_UpdatePakAssetProxy;
 class UCPM_UploadPakAssetProxy;
 
+namespace ConvaiPakManager::Publish
+{
+	/**
+	 * The form fields a create or an update carries alongside the metadata document.
+	 *
+	 * None of this is visible in the composed document, and all of it decides what the server files
+	 * the Asset under - so it is pure and separate from the Job, where a test can read the values
+	 * that actually go on the wire rather than trust the Job that fills them.
+	 *
+	 * MetaData and Thumbnail are not here: both are read off disk and belong with the Job that knows
+	 * the Chunk's paths.
+	 */
+	CONVAIPAKMANAGER_API void FillPublishFormFields(
+		const FString& AssetType,
+		const FCPM_PublishPolicy& Policy,
+		bool bIncludesRawArchive,
+		bool bIsUpdate,
+		FCPM_CreatePakAssetParams& OutParams);
+}
+
 /**
  * Shared plumbing for the Jobs of a Publish.
  *
- * Holds the workflow, reports exactly once, and turns the two-part cancel into something a subclass
- * cannot get subtly wrong: a Job that reports Failed when it was cancelled is retried by a workflow
- * that is trying to stop, re-issuing the request the creator just cancelled.
+ * Holds the runner and the run's shared state, reports exactly once, and turns the two-part cancel
+ * into something a subclass cannot get subtly wrong: a Job that reports Failed when it was cancelled
+ * tells the creator their publish broke rather than that they stopped it.
  */
 UCLASS(Abstract)
-class CONVAIPAKMANAGER_API UCPM_PublishJobBase : public UObject, public IJobInterface
+class CONVAIPAKMANAGER_API UCPM_PublishJobBase : public UObject
 {
 	GENERATED_BODY()
 
 public:
-	virtual void IInitialize_Implementation(const TScriptInterface<IWorkflowInterface>& Workflow) override;
-	virtual void ICancel_Implementation(bool bForce) override;
+	void Initialize(UCPM_PublishRunner* InRunner, FCPM_PublishContext* InContext);
+
+	virtual void Execute() {}
+
+	/** Overriding this means still reporting Cancelled from it - the runner waits for that report. */
+	virtual void Cancel(bool bForce);
+
+	/** Shown to the creator as this Publish's step, and used as the planned step's name. */
+	virtual FString Name() const { return FString(); }
+
+	/** 0 for no deadline, which is the honest answer for a cook and an upload. */
+	virtual float TimeoutSeconds() const { return 0.0f; }
 
 	/**
 	 * What a creator is told while this Job runs.
@@ -39,29 +68,28 @@ public:
 	virtual ECPM_AssetManagerStatus GetPhaseStatus() const { return ECPM_AssetManagerStatus::Max; }
 
 protected:
-	/** Reads the caller's request off the context. Every Job needs it; none of them owns it. */
-	bool TryGetRequest(FCPM_PublishRequest& OutRequest) const;
-
-	void Report(EJobResult Result, const FString& Error, TArray<FInstancedStruct>&& Outputs = {});
+	void Report(ECPM_PublishResult Result, const FString& Error);
 	void ReportProgress(const FString& Step, float Percent);
 
 	UPROPERTY()
-	TScriptInterface<IWorkflowInterface> CachedWorkflow;
+	TObjectPtr<UCPM_PublishRunner> Runner;
+
+	/** The run's shared state, owned by the runner. Jobs read what came before and write their own. */
+	FCPM_PublishContext* Context = nullptr;
 
 	/** Set once reported, so a late callback from a cancelled request cannot report a second time. */
 	bool bReported = false;
 
-	/** Set by ICancel, so work already in flight resolves as Cancelled rather than Failed. */
+	/** Set by Cancel, so work already in flight resolves as Cancelled rather than Failed. */
 	bool bCancelled = false;
 };
 
 /**
  * Builds one Pak per platform the Publish Policy asks for.
  *
- * ONE Job for every platform rather than one per platform, for two reasons: the packaging runs
- * sequentially anyway (two UAT invocations against one project would fight over the same
- * intermediate directories), and the Workflow Context is keyed by type - two Jobs each producing a
- * single FCPM_PakArtifact would have the second overwrite the first.
+ * ONE Job for every platform rather than one per platform: the packaging runs sequentially anyway,
+ * because two UAT invocations against one project would fight over the same intermediate
+ * directories.
  */
 UCLASS()
 class CONVAIPAKMANAGER_API UCPM_PackagePaksJob : public UCPM_PublishJobBase
@@ -71,10 +99,10 @@ class CONVAIPAKMANAGER_API UCPM_PackagePaksJob : public UCPM_PublishJobBase
 public:
 	virtual ECPM_AssetManagerStatus GetPhaseStatus() const override { return ECPM_AssetManagerStatus::Packaging_Begin; }
 
-	virtual void IExecute_Implementation() override;
-	virtual void ICancel_Implementation(bool bForce) override;
-	virtual FJobConfig IGetJobConfig_Implementation() const override;
-	virtual FJobIOSpec IDeclareIO_Implementation() const override;
+	virtual FString Name() const override { return TEXT("Packaging"); }
+
+	virtual void Execute() override;
+	virtual void Cancel(bool bForce) override;
 
 private:
 	void PackageNextPlatform();
@@ -83,7 +111,7 @@ private:
 	FCPM_PakArtifact ArtifactFor(ECPM_Platform Platform) const;
 
 	/** Report, with Live Coding put back first. Every terminal path of this Job goes through it. */
-	void ReportAndRestore(EJobResult Result, const FString& Error, TArray<FInstancedStruct>&& Outputs = {});
+	void ReportAndRestore(ECPM_PublishResult Result, const FString& Error);
 
 	void RestoreLiveCoding();
 
@@ -107,9 +135,9 @@ class CONVAIPAKMANAGER_API UCPM_ArchiveRawProjectJob : public UCPM_PublishJobBas
 public:
 	virtual ECPM_AssetManagerStatus GetPhaseStatus() const override { return ECPM_AssetManagerStatus::Archiving_Begin; }
 
-	virtual void IExecute_Implementation() override;
-	virtual FJobConfig IGetJobConfig_Implementation() const override;
-	virtual FJobIOSpec IDeclareIO_Implementation() const override;
+	virtual FString Name() const override { return TEXT("Archiving project"); }
+
+	virtual void Execute() override;
 
 private:
 	UFUNCTION()
@@ -133,10 +161,12 @@ class CONVAIPAKMANAGER_API UCPM_CreateAssetJob : public UCPM_PublishJobBase
 public:
 	virtual ECPM_AssetManagerStatus GetPhaseStatus() const override { return ECPM_AssetManagerStatus::Create_Begin; }
 
-	virtual void IExecute_Implementation() override;
-	virtual void ICancel_Implementation(bool bForce) override;
-	virtual FJobConfig IGetJobConfig_Implementation() const override;
-	virtual FJobIOSpec IDeclareIO_Implementation() const override;
+	virtual FString Name() const override { return TEXT("Creating asset"); }
+
+	virtual float TimeoutSeconds() const override { return 120.0f; }
+
+	virtual void Execute() override;
+	virtual void Cancel(bool bForce) override;
 
 private:
 	UFUNCTION()
@@ -166,9 +196,8 @@ private:
 /**
  * PUTs every built artefact to the URL minted for its Version.
  *
- * Declares what it needs from how it was constructed, never from what it finds in the context: a
- * queue built from a Policy with no Linux must not be rejected for a Linux Pak nobody asked for.
- * See docs/adr/0009.
+ * Sends what it was CONSTRUCTED to send, never whatever it finds in the context: a run asked for no
+ * Pak must not start uploading one an earlier run left on disk.
  */
 UCLASS()
 class CONVAIPAKMANAGER_API UCPM_UploadArtifactsJob : public UCPM_PublishJobBase
@@ -178,13 +207,19 @@ class CONVAIPAKMANAGER_API UCPM_UploadArtifactsJob : public UCPM_PublishJobBase
 public:
 	virtual ECPM_AssetManagerStatus GetPhaseStatus() const override { return ECPM_AssetManagerStatus::UploadPak_Begin; }
 
-	/** Must be called before the Job joins a queue - IDeclareIO is asked once, at queue build. */
+	/**
+	 * What this run built and so what to send. Set from the same two decisions the queue was built
+	 * from, before the Job runs.
+	 *
+	 * No timeout on this Job: a Pak is hundreds of megabytes and an upload's honest duration depends
+	 * on the creator's connection, not on anything we can predict.
+	 */
 	void Configure(bool bInExpectPaks, bool bInExpectRawArchive);
 
-	virtual void IExecute_Implementation() override;
-	virtual void ICancel_Implementation(bool bForce) override;
-	virtual FJobConfig IGetJobConfig_Implementation() const override;
-	virtual FJobIOSpec IDeclareIO_Implementation() const override;
+	virtual FString Name() const override { return TEXT("Uploading"); }
+
+	virtual void Execute() override;
+	virtual void Cancel(bool bForce) override;
 
 private:
 	/** One artefact still to send, paired with the Version it belongs to. */
@@ -220,7 +255,7 @@ private:
 	UPROPERTY()
 	TObjectPtr<UCPM_UpdatePakAssetProxy> MintProxy;
 
-	/** Read once in IExecute; the context is not re-read per file. */
+	/** Read once when the Job starts; the context is not re-read per file. */
 	FCPM_PublishedAsset PublishedForUpload;
 
 	TArray<FPendingUpload> Pending;
@@ -243,7 +278,9 @@ class CONVAIPAKMANAGER_API UCPM_PersistChunkStateJob : public UCPM_PublishJobBas
 public:
 	virtual ECPM_AssetManagerStatus GetPhaseStatus() const override { return ECPM_AssetManagerStatus::Update_Begin; }
 
-	virtual void IExecute_Implementation() override;
-	virtual FJobConfig IGetJobConfig_Implementation() const override;
-	virtual FJobIOSpec IDeclareIO_Implementation() const override;
+	virtual FString Name() const override { return TEXT("Recording asset"); }
+
+	virtual float TimeoutSeconds() const override { return 30.0f; }
+
+	virtual void Execute() override;
 };
