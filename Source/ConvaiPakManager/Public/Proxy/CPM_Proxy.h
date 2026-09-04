@@ -10,7 +10,6 @@
 struct FCPM_CreatedAssets;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_AssetCreateDelegate, const FCPM_CreatedAssets&, Response);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FCPM_GetAssetsHttpResponseCallbackDelegate, const FCPM_AssetResponse&, AssetData, const FString&, ResponseString);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_AssetUploadDelegate, float, Progress);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCPM_StringResponseDelegate, const FString&, ResponseString);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCPM_OnCancelledDelegate);
@@ -141,40 +140,6 @@ private:
 	bool bIsInProgress = false;
 };
 
-
-
-
-//-------------------------------------------Get Asset-------------------------------------------
-
-/** Get Asset */
-UCLASS()
-class CONVAIPAKMANAGER_API UCPM_GetAssetMetaDataProxy : public UConvaiAPIBaseProxy
-{
-	GENERATED_BODY()
-
-public:
-	UPROPERTY(BlueprintAssignable)
-	FCPM_GetAssetsHttpResponseCallbackDelegate OnSuccess;
-
-	UPROPERTY(BlueprintAssignable)
-	FCPM_GetAssetsHttpResponseCallbackDelegate OnFailure;
-
-	UFUNCTION(BlueprintCallable, meta = (BlueprintInternalUseOnly = "true", DisplayName = "Convai Get Asset Metadata" , WorldContext = "WorldContextObject"), Category = "Convai|PakManager")
-	static UCPM_GetAssetMetaDataProxy* GetAssetProxy(UObject* WorldContextObject, FString AssetID);
-
-protected:
-	virtual bool ConfigureRequest(TSharedRef<CONVAI_HTTP_REQUEST_INTERFACE> Request, const TCHAR* Verb) override;
-	virtual bool AddContentToRequest(CONVAI_HTTP_PAYLOAD_ARRAY_TYPE& DataToSend, const FString& Boundary)  override { return false; }
-	virtual bool AddContentToRequestAsString(TSharedPtr<FJsonObject>& ObjectToSend) override;
-	virtual void HandleSuccess() override;
-	virtual void HandleFailure() override;
-
-public:
-	FString AssociatedAssetIdD;
-	FCPM_AssetResponse AssetResponse;
-};
-
-//--------------------------------------------------------------------------------------------------
 
 //-------------------------------------------Delete Asset-------------------------------------------
 

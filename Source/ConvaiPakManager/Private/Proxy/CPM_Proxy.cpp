@@ -14,7 +14,6 @@ namespace
 {
     static FString CreatePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/upload"), false); }
     static FString UpdatePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/update"), false); }
-    static FString GetPakAssetURL()    { return UConvaiURL::GetFullURL(TEXT("assets/get"), false); }
     static FString DeletePakAssetURL() { return UConvaiURL::GetFullURL(TEXT("assets/delete"), false); }
 }
 
@@ -297,65 +296,6 @@ void UCPM_UploadPakAssetProxy::HandleFailure()
 	
 	Super::HandleFailure();
 	OnFailure.Broadcast(0.f);
-}
-
-
-UCPM_GetAssetMetaDataProxy* UCPM_GetAssetMetaDataProxy::GetAssetProxy(UObject* WorldContextObject , FString AssetID)
-{
-    UCPM_GetAssetMetaDataProxy* Proxy = NewObject<UCPM_GetAssetMetaDataProxy>();
-	Proxy->URL = GetPakAssetURL();
-    Proxy->AssociatedAssetIdD = AssetID;
-    return Proxy;
-}
-
-bool UCPM_GetAssetMetaDataProxy::ConfigureRequest(TSharedRef<CONVAI_HTTP_REQUEST_INTERFACE> Request, const TCHAR* Verb)
-{
-    if (!Super::ConfigureRequest(Request, ConvaiHttpConstants::POST))
-    {
-        return false;
-    }
-
-    return true;
-} 
-
-bool UCPM_GetAssetMetaDataProxy::AddContentToRequestAsString(TSharedPtr<FJsonObject>& ObjectToSend) 
-{
-	const TPair<FString, FString> AuthHeaderAndKey = UConvaiUtils::GetAuthHeaderAndKey();
-	const FString AuthKey = AuthHeaderAndKey.Value;
-
-	if (!UConvaiFormValidation::ValidateAuthKey(AuthKey) || !UConvaiFormValidation::ValidateInputText(AssociatedAssetIdD))
-	{
-		HandleFailure();
-		return false;
-	}
-
-	if (AuthHeaderAndKey.Key == ConvaiConstants::Auth_Token_Header)
-		ObjectToSend->SetStringField(TEXT("experience_session_id"), AuthKey);
-	
-	ObjectToSend->SetStringField(TEXT("asset_id"), AssociatedAssetIdD);
-	
-    return true;
-}
-
-void UCPM_GetAssetMetaDataProxy::HandleSuccess()
-{
-    Super::HandleSuccess();
-    
-    if (UCPM_UtilityLibrary::ExtractAssetListFromResponseString(ResponseString, AssetResponse))
-    {
-        OnSuccess.Broadcast(AssetResponse, ResponseString);
-    }
-    else
-    {
-    	UCPM_UtilityLibrary::CPM_LogMessage(TEXT("Failed to parse response"), ECPM_LogLevel::Error);
-        HandleFailure();
-    }
-}
-
-void UCPM_GetAssetMetaDataProxy::HandleFailure()
-{
-    Super::HandleFailure();
-    OnFailure.Broadcast(FCPM_AssetResponse(), ResponseString);
 }
 
 
