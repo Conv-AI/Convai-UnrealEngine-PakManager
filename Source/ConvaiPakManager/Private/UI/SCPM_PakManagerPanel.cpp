@@ -155,7 +155,12 @@ void SCPM_PakManagerPanel::Construct(const FArguments& InArgs)
 			this, &SCPM_PakManagerPanel::HandleChunkStatusChanged);
 		CompatibilityChangedHandle = Subsystem->OnCompatibilityChanged.AddSP(
 			this, &SCPM_PakManagerPanel::HandleCompatibilityChanged);
+		PolicyChangedHandle = Subsystem->OnPolicyChanged.AddSP(
+			this, &SCPM_PakManagerPanel::HandlePolicyChanged);
 		Subsystem->RefreshCompatibility();
+		// Read once up front as well: the Policy may already be cached from an earlier tab, in which
+		// case nothing would broadcast and the banner would stay silent about a real problem.
+		HandlePolicyChanged();
 	}
 
 	// A tab restored by the saved layout constructs while the registry is still scanning, when no
@@ -184,6 +189,10 @@ void SCPM_PakManagerPanel::Construct(const FArguments& InArgs)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
 				BuildCompatibilityBanner()
+			]
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				BuildToolchainBanner()
 			]
 			+ SVerticalBox::Slot().FillHeight(1.0f)
 			[
@@ -223,12 +232,13 @@ SCPM_PakManagerPanel::~SCPM_PakManagerPanel()
 {
 	// Unsubscribed explicitly: the subsystem outlives this widget, and a delegate left bound to a
 	// destroyed panel is a crash on the next status change.
-	if (StatusChangedHandle.IsValid() || CompatibilityChangedHandle.IsValid())
+	if (StatusChangedHandle.IsValid() || CompatibilityChangedHandle.IsValid() || PolicyChangedHandle.IsValid())
 	{
 		if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
 		{
 			Subsystem->OnChunkStatusChanged.Remove(StatusChangedHandle);
 			Subsystem->OnCompatibilityChanged.Remove(CompatibilityChangedHandle);
+			Subsystem->OnPolicyChanged.Remove(PolicyChangedHandle);
 		}
 	}
 	if (FilesLoadedHandle.IsValid())
@@ -256,6 +266,27 @@ void SCPM_PakManagerPanel::HandleCompatibilityChanged()
 	{
 		Subsystem->GetCompatibility(Compatibility);
 	}
+}
+
+void SCPM_PakManagerPanel::HandlePolicyChanged()
+{
+	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+	if (!Subsystem)
+	{
+		return;
+	}
+
+	FCPM_PublishPolicy Policy;
+	FDateTime ReadAt;
+	ECPM_PolicyReadState State = ECPM_PolicyReadState::Unread;
+	bPolicyPackagesLinux = Subsystem->GetPublishPolicy(Policy, ReadAt, State)
+		&& Policy.PlatformsToPackage().Contains(ECPM_Platform::Linux);
+
+	// Only when it could matter. The read stats the disk, and a Windows-only project has no reason
+	// to pay for it or to be told the answer.
+	LinuxToolchain = bPolicyPackagesLinux
+		? ConvaiPakManager::Preconditions::InspectLinuxToolchain()
+		: ConvaiPakManager::Preconditions::FLinuxToolchain();
 }
 
 void SCPM_PakManagerPanel::RefreshProject()
@@ -424,6 +455,43 @@ TSharedRef<SWidget> SCPM_PakManagerPanel::BuildCompatibilityBanner()
 							FText::FromString(Compatibility.TargetEngineVersion)));
 					}
 					return FText::Join(FText::FromString(TEXT("\n")), Sentences);
+				})
+			]
+		];
+}
+
+TSharedRef<SWidget> SCPM_PakManagerPanel::BuildToolchainBanner()
+{
+	using FPalette = FCPM_PakManagerStyle::FPalette;
+
+	// Error, not Warning: the two banners above tell a creator something, this one names why the
+	// publish is going to refuse. Colouring it like the advisory ones would understate it.
+	return SNew(SBorder)
+		.BorderImage(FCPM_PakManagerStyle::Get().GetBrush("CPM.Panel"))
+		.Padding(FMargin(12.0f, 8.0f))
+		.Visibility_Lambda([this]
+		{
+			return bPolicyPackagesLinux && !LinuxToolchain.bUsable ? EVisibility::Visible : EVisibility::Collapsed;
+		})
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+			[
+				SNew(SImage)
+				.Image(FAppStyle::Get().GetBrush("Icons.Error"))
+				.ColorAndOpacity(FSlateColor(FPalette::Error))
+			]
+			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock)
+				.AutoWrapText(true)
+				.ColorAndOpacity(FSlateColor(FPalette::Error))
+				// The refusal's own words, so the banner and the failed publish cannot disagree
+				// about what is wrong or about what to do next.
+				.Text_Lambda([this]
+				{
+					return FText::FromString(
+						ConvaiPakManager::Preconditions::WhyLinuxCannotPackage(LinuxToolchain));
 				})
 			]
 		];

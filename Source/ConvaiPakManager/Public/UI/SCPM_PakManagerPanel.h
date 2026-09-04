@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Publish/CPM_Compatibility.h"
+#include "Publish/CPM_Preconditions.h"
 #include "UI/CPM_PakManagerViewModels.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
@@ -45,6 +46,14 @@ private:
 	/** The outdated-tool / wrong-engine warning. Says so and gates nothing - see the comment on it. */
 	TSharedRef<SWidget> BuildCompatibilityBanner();
 
+	/**
+	 * The missing-Linux-toolchain warning. Unlike the one above, the publish DOES refuse over this.
+	 *
+	 * It is here so the refusal is not the creator's first news of it: the condition is knowable the
+	 * moment the panel opens, and finding out at the click is the dead end this panel avoids.
+	 */
+	TSharedRef<SWidget> BuildToolchainBanner();
+
 	TSharedRef<SWidget> BuildActionBar();
 	TSharedRef<SWidget> BuildMoreMenu();
 
@@ -74,6 +83,9 @@ private:
 
 	void HandleCompatibilityChanged();
 
+	/** Re-reads the toolchain and whether the Policy wants Linux. Both only change with the Policy. */
+	void HandlePolicyChanged();
+
 	FReply HandleSaveClicked();
 	FReply HandlePrimaryClicked();
 	FReply HandleDeleteClicked();
@@ -101,6 +113,12 @@ private:
 	/** What the version check last answered, cached because the banner reads it on every paint. */
 	FCPM_CompatibilityStatus Compatibility;
 
+	/** Cached for the same reason: reading it stats the disk, which a paint path must not do. */
+	ConvaiPakManager::Preconditions::FLinuxToolchain LinuxToolchain;
+
+	/** Whether the cached Policy asks for Linux at all. Without it the banner nags Windows-only projects. */
+	bool bPolicyPackagesLinux = false;
+
 	TSharedPtr<SCPM_AssetListPanel> ListPanel;
 	TSharedPtr<SCPM_AssetDetailPanel> DetailPanel;
 	TSharedPtr<SComboBox<TSharedPtr<FCPM_AssetViewModel>>> ChunkCombo;
@@ -109,4 +127,5 @@ private:
 	FDelegateHandle StatusChangedHandle;
 	FDelegateHandle FilesLoadedHandle;
 	FDelegateHandle CompatibilityChangedHandle;
+	FDelegateHandle PolicyChangedHandle;
 };

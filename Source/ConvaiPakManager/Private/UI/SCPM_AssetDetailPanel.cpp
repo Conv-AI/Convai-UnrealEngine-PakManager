@@ -1134,8 +1134,11 @@ FReply SCPM_AssetDetailPanel::HandleRelocateEntryPoint()
 	// question below, and a confirmed "0 dependencies" is a different copy than the one that runs.
 	if (!Subsystem->ListDependencies(Asset->ChunkId, OutsidePick, Inside, Outside))
 	{
-		Notify(LOCTEXT("DependenciesUnreadable", "Could not read this asset's dependencies."),
-			SNotificationItem::CS_Fail);
+		// Into the row as well as the toast. This is the one exit from this handler that shows no
+		// dialog, so a toast alone is a click that appears to do nothing at all.
+		EntryPointError = LOCTEXT("DependenciesUnreadable",
+			"Could not read this asset's dependencies, so it was not copied. The Asset Registry may still be scanning.");
+		Notify(EntryPointError, SNotificationItem::CS_Fail);
 		return FReply::Handled();
 	}
 
