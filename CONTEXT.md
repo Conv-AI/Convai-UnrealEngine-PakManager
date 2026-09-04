@@ -97,11 +97,13 @@ metadata cache the server echoes back.
 **Raw Project Archive**:
 The creator's project source, archived and published alongside the Paks so the Chunk can be rebuilt
 later from what made it. Not a build artefact — the inputs, not the output.
-_Avoid_: raw zip, source zip, backup — though `raw` is what it is called on the wire
+_Avoid_: raw zip, source zip, backup
 
 **Version**:
-One named slot of an Asset that holds one uploaded artefact, named for what produced it — an engine
-and platform for a Pak, `raw` for the **Raw Project Archive**. One Asset holds several, which is how
+One named slot of an Asset that holds one uploaded artefact, named for the engine and the thing that
+filled it — `ue-5.8-Windows` for a Pak, `ue-5.8-Raw` for the **Raw Project Archive**. The archive
+serves every engine, yet still carries one: one naming rule for every Version is worth more than a
+name that argues otherwise. One Asset holds several, which is how
 a single Asset serves more than one engine version and platform at once, and is what makes deleting
 one artefact without deleting the Asset possible.
 _Avoid_: revision, release, build number — a Version names a *variant*, not a point in time

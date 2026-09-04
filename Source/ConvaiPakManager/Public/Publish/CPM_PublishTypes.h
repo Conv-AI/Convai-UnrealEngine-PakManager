@@ -224,8 +224,8 @@ struct CONVAIPAKMANAGER_API FCPM_PakArtifact
 	FString VersionSlot;
 
 	/**
-	 * The Version slot a platform occupies, e.g. "ue-5.8-Windows", or "raw" for the Raw Project
-	 * Archive. Empty for a platform that has no Version.
+	 * The Version slot a platform occupies, e.g. "ue-5.8-Windows", or "ue-5.8-Raw" for the Raw
+	 * Project Archive. Empty for a platform that has no Version.
 	 *
 	 * Built from the RUNNING engine rather than a stored value: a Pak is only loadable by the engine
 	 * that cooked it, so the two can never legitimately differ, and reading it from anywhere else is
@@ -264,7 +264,7 @@ struct CONVAIPAKMANAGER_API FCPM_PakPlatformStatus
 	FDateTime LastPackagedTime;
 };
 
-/** The creator's project, archived for the `raw` Version. */
+/** The creator's project, archived for the `ue-<engine>-Raw` Version. */
 USTRUCT()
 struct CONVAIPAKMANAGER_API FCPM_RawArchive
 {

@@ -1702,7 +1702,7 @@ void UConvaiPakEditorSubsystem::HandleDeleteSucceeded(const FString& ResponseStr
 		// every backend, including the one they publish to next.
 		ConvaiPakManager::Chunk::ClearAssetRecords(ChunkId, EnvironmentSlug, Undeleted);
 	}
-	else if (Version.Equals(TEXT("raw"), ESearchCase::IgnoreCase))
+	else if (Version.Equals(FCPM_PakArtifact::VersionSlotFor(ECPM_Platform::Raw), ESearchCase::IgnoreCase))
 	{
 		// Only the archive record, because only the archive is gone. The Asset survives a Version
 		// delete, so this file is the one thing that would otherwise keep authorising a reuse.

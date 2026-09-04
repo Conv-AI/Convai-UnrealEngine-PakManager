@@ -32,16 +32,13 @@ namespace
 
 FString FCPM_PakArtifact::VersionSlotFor(const ECPM_Platform Platform)
 {
-	// Named on the wire rather than by engine and platform: one archive of the creator's project
-	// serves every engine version, which is the whole point of holding it.
-	if (Platform == ECPM_Platform::Raw)
-	{
-		return TEXT("raw");
-	}
-
+	// Raw carries an engine version despite serving every engine: the backend already holds
+	// `ue-<engine>-Raw` slots from the tool this one replaced, and one naming rule for every
+	// Version is worth more than a name that argues the archive is engine-independent.
 	const TCHAR* Name =
 		Platform == ECPM_Platform::Windows ? TEXT("Windows") :
-		Platform == ECPM_Platform::Linux ? TEXT("Linux") : nullptr;
+		Platform == ECPM_Platform::Linux ? TEXT("Linux") :
+		Platform == ECPM_Platform::Raw ? TEXT("Raw") : nullptr;
 	if (!Name)
 	{
 		return FString();

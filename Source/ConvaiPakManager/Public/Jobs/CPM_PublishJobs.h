@@ -126,7 +126,7 @@ private:
 	bool bParkedLiveCoding = false;
 };
 
-/** Archives the creator's project for the `raw` Version. Constructed only when the Policy asks for it. */
+/** Archives the creator's project for its Version. Constructed only when the Policy asks for it. */
 UCLASS()
 class CONVAIPAKMANAGER_API UCPM_ArchiveRawProjectJob : public UCPM_PublishJobBase
 {

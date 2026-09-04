@@ -539,7 +539,7 @@ private:
 
 	/**
 	 * Which Version that delete names, empty for the whole Asset. Kept rather than reduced to a
-	 * bool: deleting the `raw` Version alone leaves the Asset, so only the version tells the record
+	 * bool: deleting the archive Version alone leaves the Asset, so only the version tells the record
 	 * of the archive from the record of the Asset apart.
 	 */
 	FString DeletingVersion;

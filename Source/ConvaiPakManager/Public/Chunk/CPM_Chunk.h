@@ -177,7 +177,7 @@ CONVAIPAKMANAGER_API FString GetModdingMetadataPathIn(const FString& EssentialsD
  * Existence is the whole record and the file's own timestamp is when - nothing here is parsed, so
  * there is no schema to keep. Written only after a Publish that sent one completed, and read to
  * decide whether the creator may reuse it; the Asset's own record cannot answer, because the
- * Versions it lists are the ones the create call named and `raw` is minted after it.
+ * Versions it lists are the ones the create call named and the archive Version is minted after it.
  */
 CONVAIPAKMANAGER_API FString GetRawArchiveRecordPath(int32 ChunkId, const FString& EnvironmentSlug);
 

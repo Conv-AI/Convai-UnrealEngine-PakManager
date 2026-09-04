@@ -5,6 +5,7 @@
 #include "HAL/FileManager.h"
 #include "Jobs/CPM_PublishJobs.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/EngineVersion.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
@@ -351,6 +352,39 @@ bool FCPMAssetMetadataPinsANewAssetPrivate::RunTest(const FString&)
 	// visibility fix would be easiest to break by accident.
 	TestEqual(TEXT("the Version slot is the first platform the policy packages"), Created.Version,
 		FCPM_PakArtifact::VersionSlotFor(ECPM_Platform::Windows));
+
+	return true;
+}
+
+/**
+ * The Raw Project Archive is named like every other Version. It is engine-independent and its slot
+ * says otherwise, which is the trade: the backend already holds `ue-<engine>-Raw` slots, and a slot
+ * that spells itself differently from its siblings is one every caller has to special-case.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMAssetMetadataNamesEveryVersionSlotTheSameWay,
+	"ConvaiPakManager.Publish.Metadata.NamesEveryVersionSlotTheSameWay",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMAssetMetadataNamesEveryVersionSlotTheSameWay::RunTest(const FString&)
+{
+	const FEngineVersion& Engine = FEngineVersion::Current();
+	const FString Prefix = FString::Printf(TEXT("ue-%d.%d-"), Engine.GetMajor(), Engine.GetMinor());
+
+	TestEqual(TEXT("the archive slot carries the engine like a Pak's does"),
+		FCPM_PakArtifact::VersionSlotFor(ECPM_Platform::Raw), Prefix + TEXT("Raw"));
+	TestEqual(TEXT("Windows is unchanged"),
+		FCPM_PakArtifact::VersionSlotFor(ECPM_Platform::Windows), Prefix + TEXT("Windows"));
+	TestEqual(TEXT("Linux is unchanged"),
+		FCPM_PakArtifact::VersionSlotFor(ECPM_Platform::Linux), Prefix + TEXT("Linux"));
+
+	// The name this replaced. Pinned because the delete path once compared against it by hand, and a
+	// silent return to it would stop that comparison matching anything.
+	TestNotEqual(TEXT("the bare name legacy never sent is gone"),
+		FCPM_PakArtifact::VersionSlotFor(ECPM_Platform::Raw), FString(TEXT("raw")));
+
+	TestTrue(TEXT("a platform with no Version still has no slot"),
+		FCPM_PakArtifact::VersionSlotFor(ECPM_Platform::None).IsEmpty());
 
 	return true;
 }
