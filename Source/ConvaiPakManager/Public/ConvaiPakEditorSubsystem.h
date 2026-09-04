@@ -174,6 +174,9 @@ public:
 	 * changes under a running session, and migration that had nothing to attribute a pre-Chunk layout
 	 * to when the editor opened can attribute it the moment the project gains its first Chunk.
 	 *
+	 * Gives a project with no Chunk at all its first one, so a creator whose project the Modding Tool
+	 * generated never meets the empty panel - see EnsureDefaultChunk.
+	 *
 	 * Does nothing while the Asset Registry is still scanning - see Chunk::ReconcileStateLayout.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
@@ -462,6 +465,26 @@ public:
 	FCPM_OnCompatibilityChanged OnCompatibilityChanged;
 
 private:
+	/**
+	 * Mints Chunk::DefaultChunkId for a project that has no Chunk at all.
+	 *
+	 * The Modding Tool generates the plugin and writes `ChunkId_10/ModdingMetaData_10.json` but no
+	 * Primary Asset Label, so every generated project opened the Pak Manager on an empty panel with
+	 * a button on it. Nothing about that label is the creator's decision - which Chunk, where it
+	 * goes and what rules it carries all follow from the metadata the tool already wrote - so asking
+	 * was asking them to confirm the one concept this tool exists to hide.
+	 *
+	 * Attempted once per session, whatever the outcome: a project that cannot be given a label
+	 * (unmounted plugin, no recorded plugin name) must not re-mint on every panel refresh, and a
+	 * creator who deletes their label deliberately must not have it grow back under them. The empty
+	 * panel and its button remain for the projects this cannot help: pressing it reports the same
+	 * refusal in words, where this one only logs it.
+	 */
+	void EnsureDefaultChunk();
+
+	/** Whether EnsureDefaultChunk has had its one go this session. */
+	bool bDefaultChunkAttempted = false;
+
 	/** CaptureThumbnail's body. Split out so its every refusal is logged in one place, not eight. */
 	bool CaptureThumbnailInto(int32 ChunkId, FString& OutWhy);
 

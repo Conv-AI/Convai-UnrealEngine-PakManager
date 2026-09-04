@@ -144,12 +144,13 @@ bool UConvaiPakEditorSubsystem::CreateChunk(FString& OutError)
 		return false;
 	}
 
-	// 10 for the first, which is what the Modding Tool has always written: a creator whose project it
-	// generated and one minted here name their Paks the same, so nothing downstream has two cases.
-	// GetChunkIds is sorted, so the last is the highest.
+	// The default for the first, which is what the Modding Tool has always written: a creator whose
+	// project it generated and one minted here name their Paks the same, so nothing downstream has
+	// two cases. GetChunkIds is sorted, so the last is the highest.
 	const TArray<int32> Existing = GetChunkIds();
 	// Not const: a label that already declares a Chunk keeps it, and EnsureLabel says which.
-	int32 ChunkId = Existing.IsEmpty() ? 10 : Existing.Last() + 1;
+	int32 ChunkId = Existing.IsEmpty()
+		? ConvaiPakManager::Chunk::DefaultChunkId : Existing.Last() + 1;
 
 	const FString MountRoot = TEXT("/") + Modding.PluginName;
 	const int32 Requested = ChunkId;
@@ -185,6 +186,39 @@ bool UConvaiPakEditorSubsystem::CreateChunk(FString& OutError)
 void UConvaiPakEditorSubsystem::ReconcileChunkState()
 {
 	ConvaiPakManager::Chunk::ReconcileStateLayout();
+	EnsureDefaultChunk();
+}
+
+void UConvaiPakEditorSubsystem::EnsureDefaultChunk()
+{
+	if (bDefaultChunkAttempted)
+	{
+		return;
+	}
+
+	// Mid-scan "no Chunks" is an undercount, and minting on one would give a project a second label
+	// claiming a Chunk it already has. Every caller runs this again once the scan completes.
+	const IAssetRegistry* AssetRegistry = IAssetRegistry::Get();
+	if (!AssetRegistry || AssetRegistry->IsLoadingAssets())
+	{
+		return;
+	}
+
+	// Set before CreateChunk, which reconciles again on success and would otherwise re-enter here.
+	bDefaultChunkAttempted = true;
+
+	if (!GetChunkIds().IsEmpty())
+	{
+		return;
+	}
+
+	FString Error;
+	if (!CreateChunk(Error))
+	{
+		// Warning, not Error: the panel says the same thing in words the creator can act on, and a
+		// project that genuinely wants no Chunk is not broken.
+		CPM_LOG(Warning, TEXT("This project has no chunk and one could not be created for it: %s."), *Error);
+	}
 }
 
 bool UConvaiPakEditorSubsystem::HasUnmigratedLegacyLayout() const

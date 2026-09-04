@@ -26,6 +26,15 @@ struct CONVAIPAKMANAGER_API FCPM_Chunk
 namespace ConvaiPakManager::Chunk
 {
 /**
+ * The Chunk a project gets when nothing says otherwise.
+ *
+ * 10 is what the Modding Tool has always written, both into the label it used to author and into the
+ * `ChunkId_10/` state it writes today - so a project it generated and one bootstrapped here name
+ * their Paks and their state directories the same, and nothing downstream has two cases.
+ */
+inline constexpr int32 DefaultChunkId = 10;
+
+/**
  * Every Chunk in this project, found by asking the Asset Registry for Primary Asset Labels.
  *
  * Discovered rather than configured, which is what lets one build serve a creator's project
@@ -165,6 +174,10 @@ CONVAIPAKMANAGER_API bool WritePakMetadata(int32 ChunkId, const FString& Environ
  * where its plugin_name is, which is the one thing EnsureLabel needs to give it a Chunk. Without the
  * fallback the whole layer resolves `ChunkId_-1/ModdingMetaData_-1.json`, reads nothing, and reports
  * a project with no Asset Type.
+ *
+ * DefaultChunkId's copy answers for INDEX_NONE last. A project the Modding Tool generated today has
+ * `ChunkId_10/ModdingMetaData_10.json` and no label at all, so it has no Chunk to ask with and no
+ * flat file either - the same dead end, reached from the other side.
  */
 CONVAIPAKMANAGER_API FString GetModdingMetadataPath(int32 ChunkId);
 

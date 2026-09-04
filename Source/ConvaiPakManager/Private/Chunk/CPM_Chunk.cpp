@@ -511,7 +511,25 @@ FString GetModdingMetadataPathIn(const FString& EssentialsDirectory, const int32
 	// The un-migrated project, which has no Chunk and therefore no per-Chunk path to resolve. Its
 	// plugin_name is here and nowhere else, and that is what minting its Chunk needs.
 	const FString FlatPath = FPaths::Combine(EssentialsDirectory, StateFiles[2].LegacyName());
-	return IFileManager::Get().FileExists(*FlatPath) ? FlatPath : Path;
+	if (IFileManager::Get().FileExists(*FlatPath))
+	{
+		return FlatPath;
+	}
+
+	// A project the Modding Tool generated today: it writes ChunkId_10's metadata but no label, so
+	// the project has no Chunk to ask with and its plugin_name is only under the Chunk it assumed.
+	if (ChunkId == INDEX_NONE)
+	{
+		const FString DefaultPath = FPaths::Combine(
+			StateDirectoryIn(EssentialsDirectory, DefaultChunkId),
+			FString::Printf(TEXT("ModdingMetaData_%d.json"), DefaultChunkId));
+		if (IFileManager::Get().FileExists(*DefaultPath))
+		{
+			return DefaultPath;
+		}
+	}
+
+	return Path;
 }
 
 FString GetModdingMetadataPath(const int32 ChunkId)

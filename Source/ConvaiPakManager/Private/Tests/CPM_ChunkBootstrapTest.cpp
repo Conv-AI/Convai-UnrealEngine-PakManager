@@ -80,6 +80,45 @@ bool FCPMChunkBootstrapReadsTheFlatModdingMetadata::RunTest(const FString&)
 }
 
 /**
+ * The project the Modding Tool generates today: it writes `ChunkId_10/ModdingMetaData_10.json` and
+ * no Primary Asset Label, so the project has no Chunk to ask with AND no flat file to fall back to.
+ * Without this it resolves `ChunkId_-1/ModdingMetaData_-1.json`, reads nothing, and reports a
+ * project with no modding plugin - which is the one thing minting its Chunk needs.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMChunkBootstrapReadsTheDefaultChunksModdingMetadata,
+	"ConvaiPakManager.Chunk.Bootstrap.ReadsTheDefaultChunksModdingMetadata",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMChunkBootstrapReadsTheDefaultChunksModdingMetadata::RunTest(const FString&)
+{
+	const FScratchBootstrapEssentials Scratch(TEXT("ReadsTheDefaultChunksModdingMetadata"));
+
+	const FString DefaultDirectory = FString::Printf(TEXT("ChunkId_%d"), DefaultChunkId);
+	const FString DefaultName = FString::Printf(TEXT("ModdingMetaData_%d.json"), DefaultChunkId);
+	Scratch.Write(FPaths::Combine(DefaultDirectory, DefaultName), TEXT("{\"plugin_name\":\"P\"}"));
+
+	TestEqual(TEXT("a project with no Chunk reads the default Chunk's metadata"),
+		GetModdingMetadataPathIn(Scratch.Path, INDEX_NONE),
+		FPaths::Combine(Scratch.Path, DefaultDirectory, DefaultName));
+
+	// A named Chunk is a fact about the project, so it is never answered with another Chunk's file.
+	TestEqual(TEXT("a named Chunk still resolves its own path"),
+		GetModdingMetadataPathIn(Scratch.Path, 11),
+		FPaths::Combine(Scratch.Path, TEXT("ChunkId_11"), TEXT("ModdingMetaData_11.json")));
+
+	// The un-migrated project keeps its flat file, which is the older layout and the more specific
+	// answer: a default-Chunk copy beside it would have been written by a tool that also wrote a
+	// label, and then there would be a Chunk to ask with.
+	Scratch.Write(TEXT("ModdingMetaData.txt"), TEXT("{\"plugin_name\":\"Q\"}"));
+	TestEqual(TEXT("the flat file still outranks the default Chunk's copy"),
+		GetModdingMetadataPathIn(Scratch.Path, INDEX_NONE),
+		FPaths::Combine(Scratch.Path, TEXT("ModdingMetaData.txt")));
+
+	return true;
+}
+
+/**
  * An Entry Point outside the Modding Plugin is not in what the label gathers, so it cooks into no
  * Pak and the published Asset opens nothing - and nothing between here and a Convai product would
  * notice. Contains() rather than StartsWith() is how the legacy check let a creator's own
