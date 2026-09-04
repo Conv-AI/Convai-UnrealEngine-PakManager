@@ -19,12 +19,17 @@ UnrealPak.exe pakchunk10-Windows.pak -List
   → Map.umap, Map.uexp, NewMap.umap, NewMap.uexp     (nothing else)
 ```
 
-Only the plugin's own packages, despite `bApplyRecursively = true` on the label. So the real failure
-is the opposite and quieter: nothing grows, nothing warns, and the creator finds out when a Convai
-product opens their Asset and draws none of it.
+**That measurement was wrong, and it is the one thing in this handoff to read twice.** The Pak was
+stale — cooked before `BP_Hana` was the Entry Point, so nothing in it reached outside the mount to
+begin with. Re-listed on 2026-09-04 from a Pak the current binary cooked: **1921 files across four
+mounts**, 1324 the plugin's, 421 the Convai SDK's, 166 engine ControlRig, 10 `/Game/`. The label's
+recursive rule does reach across mounts.
 
-**Re-run that listing before trusting any of this.** It is one hand-made pak on one project, and it
-is the entire evidential basis for ADR 0011 and for the feature built on it.
+So the feature was built on a false premise. The code works and is tested; what it is *for* is now
+the open question — rescue, or duplication (80 `.uasset` names are in that Pak twice). ADR 0011
+carries a correction block, and
+[.scratch/overnight-fixes/issues/15](../../.scratch/overnight-fixes/issues/15-a-pak-carries-more-than-its-own-mount.md)
+holds the measurement. Take a fresh listing yourself before building anything else on either reading.
 
 ## What is verified, and how
 

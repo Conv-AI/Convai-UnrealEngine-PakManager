@@ -1,5 +1,18 @@
 # A Pak holds only its own mount, so the tool gathers dependencies in
 
+> **Corrected 2026-09-04 — the premise below does not hold.** The measurement this ADR rests on was
+> taken on a stale Pak: 4 files, the plugin's two maps, cooked before `BP_Hana` was the Entry Point,
+> so nothing in it reached outside the mount to begin with. A Pak cooked from chunk 10 with the Entry
+> Point actually in the label carries **1921 files across four mounts** — 1324 from the Modding
+> Plugin, 421 from the Convai SDK, 166 from engine ControlRig content and 10 from `/Game/`. The
+> label's recursive rule does reach across mounts, which is what this repo believed before this ADR.
+>
+> What follows is kept as written because the reasoning is what the gather was built on and the code
+> still behaves this way. What is now open: whether the gather rescues anything, or only duplicates
+> content the cook already carries (80 `.uasset` names are in that Pak under two mounts), and where
+> the boundary should actually be. See
+> [.scratch/overnight-fixes/issues/15-a-pak-carries-more-than-its-own-mount.md](../../.scratch/overnight-fixes/issues/15-a-pak-carries-more-than-its-own-mount.md).
+
 A **Chunk**'s Primary Asset Label gathers the packages under its own mount and nothing else. That is
 verified rather than read off the documentation: a built `pakchunk10-Windows.pak` listed exactly two
 packages, the **Modding Plugin**'s own `Map.umap` and `NewMap.umap`, and none of the meshes or

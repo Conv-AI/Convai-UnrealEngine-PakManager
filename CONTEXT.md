@@ -34,9 +34,9 @@ _Avoid_: asset, uasset, content
 
 **Entry Point**:
 The one **Source Package** in a Chunk that a Convai product opens — the level for a Scene, the
-blueprint for an Avatar. A Chunk gathers everything under its label's mount and does not on its own
-say which of those things is the thing to load; the Entry Point does. Its kind must match the
-**Asset Type**.
+blueprint for an Avatar. A Chunk gathers everything in its label's reach and does not on its own say
+which of those things is the thing to load; the Entry Point does. Its kind must match the **Asset
+Type**.
 The UI does NOT use this term. It labels the field "Selected asset", because a creator reads "entry
 point" as a place — it sits two rows from "Spawn point" — and because one general label is right
 where the code needs a general concept: the field holds a level path or a blueprint path and the
@@ -48,21 +48,20 @@ _Avoid_: source package (for this), main asset; and "Entry point" as a UI label
 The Source Packages gathered into one publishable unit by one Primary Asset Label, identified by
 that label's **Chunk ID**. The unit of packaging AND the unit of publishing — one Chunk is one
 **Asset**, never a part of one.
-Defined by the label alone: a project may label a generated **Modding Plugin**, or its own content
-directly, and both are ordinary Chunks. But *where* the label lives fixes the Chunk's edge — a label
-gathers what is under its own mount and nothing else, verified by listing a built Pak that held only
-the plugin's own packages. A **Source Package** the Chunk reaches but does not contain is not
-published, and an **Entry Point** that reaches one loads in a Convai product with that content
-missing. The Convai SDK's mounts — its content root and `/ConvaiHTTP/` — are the exception nobody
-has to copy in: every Convai product ships them.
+Defined by the label alone, and by nothing about *where* the label lives: a project may label a
+generated **Modding Plugin**, or its own content directly, and both are ordinary Chunks. What the
+label reaches across mounts is carried too — a Pak cooked from a real Chunk listed 1921 files across
+four mounts, only 1324 of them the plugin's own. Whether that is wanted is open; the tool's copy
+Commands were built believing the opposite, and `.scratch/overnight-fixes/issues/15` holds the
+measurement that disagrees.
 _Avoid_: bundle, package, group
 
 **Modding Plugin**:
 The content-only plugin, uniquely named, that the Convai Modding Tool generates into an external
 creator's project, already carrying a Primary Asset Label at its content root. A convention for
-where a creator puts things rather than a part of what a **Chunk** is — projects set up by hand have
-none — but not a free one: the plugin's mount is the edge of any Chunk labelled inside it, so
-whatever a creator leaves in `/Game/` or `/Engine/` stays out of the **Pak**.
+where a creator puts things, not a part of what a **Chunk** is — projects set up by hand have none.
+It is where the tool's copy Commands put a creator's dependencies; it is NOT a wall the cook
+respects.
 _Avoid_: mod folder, content plugin, asset plugin
 
 **Pak**:
@@ -135,10 +134,10 @@ _Avoid_: category, entity type
 - A **Modding Plugin** holds many **Source Packages** and exactly one Primary Asset Label
 - That label gathers every **Source Package** in the plugin into one **Chunk**
 - A **Chunk** builds to one **Pak** per platform
-- A **Source Package** outside the label's mount is absent from the **Pak** however many packages
-  inside it reference that package. Copying one in and repointing its referencers is offered when
-  the creator picks the **Entry Point**, and only then — a **Publish** never re-checks, so a
-  dependency added after the pick ships missing
+- A **Source Package** outside the label's mount can still reach the **Pak**, pulled in by the
+  label's recursive rule — measured at 597 such files in one Pak. Copying one under the mount and
+  repointing its referencers is offered when the creator picks the **Entry Point**, and only then;
+  whether that copy rescues the Pak or merely duplicates what the cook already carries is open
 - A **Chunk** publishes as at most one **Asset** per **Environment**
 - A **Draft** belongs to a **Chunk**, not to an **Environment**
 - An **Asset** has exactly one **Asset Type**, decided before the creator ever opens the Pak Manager

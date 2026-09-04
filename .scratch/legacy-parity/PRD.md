@@ -226,7 +226,7 @@ under **Notes on the closures**.
 | 18 | Refuse an Entry Point outside the Modding Plugin's mount root | blocker | `8bd838f` |
 | 19 | Offer to relocate an out-of-plugin pick — `CPM_DependencyCopyAPI` exists, nothing calls it | major | `770177a` |
 | 20 | Show the Entry Point's dependencies that fall outside the Modding Plugin | major | `770177a` |
-| 32 | A dependency outside the Modding Plugin is not in the Pak at all — copy it in and repoint what referenced it | blocker | `e55b7b2` `24f86a8` |
+| 32 | Copy an out-of-plugin dependency under the mount and repoint what referenced it — landed on the belief that such a dependency was absent from the Pak, which issue 15 measured false | major | `e55b7b2` `24f86a8` |
 | 33 | Repoint every in-plugin package that reaches outside, not only the Entry Point — a World Partition level holds its actors in external packages, and those are what reference the creator's meshes | blocker | `24f86a8` |
 | 34 | Declare the Convai SDK in the Modding Plugin's `.uplugin`, so the components this tool adds stop failing `AssetValidator_AssetReferenceRestrictions` | blocker | `71aa9b4` |
 
@@ -262,6 +262,10 @@ under **Notes on the closures**.
   and engine dependencies are copied in like any other. The window says the outside list will NOT be
   in the Pak, not that it is dragged into it. On demand rather than on every refresh, because the
   walk force-loads packages and the panel already refreshes on every tab activation.
+- **32's premise was wrong.** It was closed on one Pak listing that showed only the plugin's own
+  packages; that Pak predated the Entry Point being in the label. A Pak cooked from a real Chunk
+  carries 597 files from outside the mount (`.scratch/overnight-fixes/issues/15`). The copy still
+  runs and still works — what is unknown is whether it rescues anything or only duplicates.
 - **32 is offered at the pick and nowhere else.** The dialog fires from `HandleUseSelectedAsset`;
   the publish path does not re-walk, so a creator who wires up an outside reference after picking
   publishes without being asked again. Deliberate for now — the walk force-loads packages and a
