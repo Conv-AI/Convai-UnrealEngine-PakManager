@@ -190,7 +190,8 @@ bool FCPMAssetMetadataKeepsWhatItDoesNotOwn::RunTest(const FString&)
 	})"));
 	ConvaiPakManager::Chunk::FillRequiredMetadataFields(Root, TEXT("Proj"), TEXT("PLUGIN"), TEXT("avatar"));
 
-	TestEqual(TEXT("a gender the server chose is kept"), EntityField(Root, TEXT("gender")), FString(TEXT("female")));
+	TestEqual(TEXT("a gender the server chose is kept when the creator has named none"),
+		EntityField(Root, TEXT("gender")), FString(TEXT("female")));
 	TestEqual(TEXT("a field nothing here models is kept"), EntityField(Root, TEXT("server_only")), FString(TEXT("keep me")));
 
 	const TSharedPtr<FJsonObject>* Entity = nullptr;
@@ -199,6 +200,44 @@ bool FCPMAssetMetadataKeepsWhatItDoesNotOwn::RunTest(const FString&)
 	TestTrue(TEXT("avatar_config is not flattened back to empty"),
 		Entity && (*Entity)->TryGetObjectField(TEXT("avatar_config"), Config) && Config
 			&& (*Config)->HasField(TEXT("voice")));
+
+	return true;
+}
+
+/**
+ * Gender is authored flat in the Draft and published inside entity_data.
+ *
+ * The Draft overlay writes only top-level string fields, so the lift happens here or not at all -
+ * and the top-level key has to go, because the document's key set is pinned to legacy's.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMAssetMetadataPublishesTheGenderTheCreatorPicked,
+	"ConvaiPakManager.Publish.Metadata.PublishesTheGenderTheCreatorPicked",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMAssetMetadataPublishesTheGenderTheCreatorPicked::RunTest(const FString&)
+{
+	// The creator picked female; the server still echoes the male it was told last time.
+	const TSharedRef<FJsonObject> Picked = Parse(TEXT(R"({
+		"gender": "female",
+		"entity_data": { "gender": "male" }
+	})"));
+	ConvaiPakManager::Chunk::FillRequiredMetadataFields(Picked, TEXT("Proj"), TEXT("PLUGIN"), TEXT("avatar"));
+
+	TestEqual(TEXT("what the creator picked wins the echo"),
+		EntityField(Picked, TEXT("gender")), FString(TEXT("female")));
+	TestFalse(TEXT("and the flat key the Draft wrote does not reach the wire"),
+		Picked->HasField(TEXT("gender")));
+	TestEqual(TEXT("so the top-level key set is still legacy's"), SortedKeys(Picked),
+		FString(TEXT("asset_description,asset_name,asset_type,blueprint_class,")
+			TEXT("blueprint_class_path,content_path,entity_data,level_name,plugin_name,project_name,root_path")));
+
+	// A Scene carries no gender at all, and a stray flat key must not survive into its document.
+	const TSharedRef<FJsonObject> Scene = Parse(TEXT(R"({ "gender": "female" })"));
+	ConvaiPakManager::Chunk::FillRequiredMetadataFields(Scene, TEXT("Proj"), TEXT("PLUGIN"), TEXT("scene"));
+	TestFalse(TEXT("a Scene publishes no flat gender"), Scene->HasField(TEXT("gender")));
+	TestEqual(TEXT("nor one in its entity_data"), SortedEntityKeys(Scene),
+		FString(TEXT("scene_description,scene_metadata,scene_name")));
 
 	return true;
 }

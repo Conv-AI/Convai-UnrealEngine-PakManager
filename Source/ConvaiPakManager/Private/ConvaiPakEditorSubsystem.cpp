@@ -333,6 +333,10 @@ namespace
 	const TCHAR* AssetNameField = TEXT("asset_name");
 	const TCHAR* AssetDescriptionField = TEXT("asset_description");
 
+	// Flat here, nested under entity_data on the composed document. The Draft has no nested writer
+	// and needs none: FillRequiredMetadataFields is what knows where a field belongs on the wire.
+	const TCHAR* AssetGenderField = TEXT("gender");
+
 	FString ReadDraftField(const int32 ChunkId, const TCHAR* Field)
 	{
 		FString Contents;
@@ -419,6 +423,16 @@ FString UConvaiPakEditorSubsystem::GetAssetDescription(const int32 ChunkId) cons
 bool UConvaiPakEditorSubsystem::SetAssetDescription(const int32 ChunkId, const FString& Description)
 {
 	return WriteDraftFields(ChunkId, { { AssetDescriptionField, Description } });
+}
+
+FString UConvaiPakEditorSubsystem::GetAssetGender(const int32 ChunkId) const
+{
+	return ReadDraftField(ChunkId, AssetGenderField);
+}
+
+bool UConvaiPakEditorSubsystem::SetAssetGender(const int32 ChunkId, const FString& Gender)
+{
+	return WriteDraftFields(ChunkId, { { AssetGenderField, Gender } });
 }
 
 FString UConvaiPakEditorSubsystem::GetEntryPoint(const int32 ChunkId) const

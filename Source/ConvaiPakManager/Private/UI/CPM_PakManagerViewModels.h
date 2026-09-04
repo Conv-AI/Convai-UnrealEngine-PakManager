@@ -22,10 +22,14 @@ struct FCPM_AssetViewModel
 	// What the record holds. Refreshed by LoadFrom and after Save.
 	FString SavedName;
 	FString SavedDescription;
+	FString SavedGender;
 
 	// What the form fields hold. Diverge from Saved* while the creator types.
 	FString Name;
 	FString Description;
+
+	/** Avatar only, and only what the API accepts: `male`, `female`, or empty for neither. */
+	FString Gender;
 
 	/** Empty until the first Publish succeeds. Presence is what turns Create into Update. */
 	FString AssetId;

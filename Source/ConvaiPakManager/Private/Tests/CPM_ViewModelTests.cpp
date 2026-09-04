@@ -46,6 +46,14 @@ bool FCPMViewModelTracksDirtyEditsAndReverts::RunTest(const FString&)
 	Model.Revert();
 	TestFalse(TEXT("Revert also drops description edits"), Model.IsDirty());
 
+	// A field the Save path forgets is a field that silently never reaches the Draft.
+	Model.Gender = TEXT("female");
+	TestTrue(TEXT("a gender pick alone makes it dirty"), Model.IsDirty());
+
+	Model.Revert();
+	TestEqual(TEXT("Revert restores the gender"), Model.Gender, Model.SavedGender);
+	TestFalse(TEXT("clean again after Revert"), Model.IsDirty());
+
 	return true;
 }
 

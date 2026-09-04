@@ -16,10 +16,12 @@ void FCPM_AssetViewModel::LoadFrom(UConvaiPakEditorSubsystem& Subsystem)
 
 	SavedName = Subsystem.GetAssetName(ChunkId);
 	SavedDescription = Subsystem.GetAssetDescription(ChunkId);
+	SavedGender = Subsystem.GetAssetGender(ChunkId);
 	if (!bKeepEdits)
 	{
 		Name = SavedName;
 		Description = SavedDescription;
+		Gender = SavedGender;
 	}
 
 	AssetId = Subsystem.GetAssetId(ChunkId);
@@ -80,7 +82,7 @@ FCPM_PublishOptions FCPM_AssetViewModel::PublishOptions(
 
 bool FCPM_AssetViewModel::IsDirty() const
 {
-	return Name != SavedName || Description != SavedDescription;
+	return Name != SavedName || Description != SavedDescription || Gender != SavedGender;
 }
 
 bool FCPM_AssetViewModel::Save(UConvaiPakEditorSubsystem& Subsystem)
@@ -94,10 +96,15 @@ bool FCPM_AssetViewModel::Save(UConvaiPakEditorSubsystem& Subsystem)
 	{
 		bAccepted &= Subsystem.SetAssetDescription(ChunkId, Description);
 	}
+	if (Gender != SavedGender)
+	{
+		bAccepted &= Subsystem.SetAssetGender(ChunkId, Gender);
+	}
 
 	// Re-read rather than assume: a refused Set* leaves that field dirty against the real record.
 	SavedName = Subsystem.GetAssetName(ChunkId);
 	SavedDescription = Subsystem.GetAssetDescription(ChunkId);
+	SavedGender = Subsystem.GetAssetGender(ChunkId);
 	return bAccepted;
 }
 
@@ -105,6 +112,7 @@ void FCPM_AssetViewModel::Revert()
 {
 	Name = SavedName;
 	Description = SavedDescription;
+	Gender = SavedGender;
 }
 
 namespace

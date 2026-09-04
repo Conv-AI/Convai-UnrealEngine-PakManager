@@ -1004,6 +1004,13 @@ void FillRequiredMetadataFields(
 {
 	const FString Type = AssetType.ToLower();
 
+	// The Draft overlay is flat, and gender belongs inside entity_data. Taken off the top level here
+	// rather than written there in the first place, because the Draft has one writer for every field
+	// and this document is the only thing that knows the shape the API wants.
+	FString DraftedGender;
+	Root->TryGetStringField(TEXT("gender"), DraftedGender);
+	Root->RemoveField(TEXT("gender"));
+
 	Root->SetStringField(TEXT("project_name"), ProjectName);
 	Root->SetStringField(TEXT("plugin_name"), PluginName);
 	Root->SetStringField(TEXT("asset_type"), Type);
@@ -1057,6 +1064,12 @@ void FillRequiredMetadataFields(
 		else
 		{
 			Entity->SetStringField(TEXT("avatar_name"), LeafOf(ClassPath));
+		}
+		// Set, not defaulted, when the creator chose one: the server's echo is the last thing it was
+		// told, and a creator changing the dropdown on a published Avatar must not lose to it.
+		if (!DraftedGender.IsEmpty())
+		{
+			Entity->SetStringField(TEXT("gender"), DraftedGender);
 		}
 		DefaultString(Entity, TEXT("gender"), TEXT("male"));
 		if (!Entity->HasField(TEXT("avatar_config")))

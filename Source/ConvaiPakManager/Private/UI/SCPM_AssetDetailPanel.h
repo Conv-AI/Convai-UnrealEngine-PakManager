@@ -139,6 +139,9 @@ private:
 	/** Scene or Avatar is fixed per project, so the tree shape is decided once at construction. */
 	bool bIsScene = true;
 
+	/** Backs the gender combo. A member because SComboBox holds OptionsSource as a raw pointer. */
+	TArray<TSharedPtr<FString>> GenderOptions;
+
 	/** Why the last Entry Point pick was refused. Empty means no inline error row. */
 	FText EntryPointError;
 

@@ -206,6 +206,19 @@ public:
 	bool SetAssetDescription(int32 ChunkId, const FString& Description);
 
 	/**
+	 * The voice gender an Avatar's Asset is published with, as the API spells it - lowercase `male`
+	 * or `female`. Empty when the creator has not chosen, which publishes the API's own default.
+	 *
+	 * Meaningless for a Scene, whose entity_data has no such field. Nothing refuses to store one, so
+	 * the caller decides whether to ask; only the Avatar branch of the composer reads it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	FString GetAssetGender(int32 ChunkId) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool SetAssetGender(int32 ChunkId, const FString& Gender);
+
+	/**
 	 * The Source Package a Convai product opens out of this Chunk's Pak - the level for a Scene, the
 	 * blueprint for an Avatar. Empty when none has been chosen.
 	 *

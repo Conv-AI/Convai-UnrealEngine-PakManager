@@ -14,6 +14,7 @@
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/MessageDialog.h"
 #include "Misc/Paths.h"
+#include "Widgets/Input/SComboBox.h"
 #include "Widgets/Input/SComboButton.h"
 #include "IContentBrowserSingleton.h"
 #include "Modules/ModuleManager.h"
@@ -66,7 +67,19 @@ namespace
 		}
 	}
 
-	TSharedRef<SWidget> Row(const FText& Label, TSharedRef<SWidget> Content)
+		/** As the asset metadata API spells them. The sibling plugin's EGenderType is UPPERCASE and for
+	 *  a different endpoint; do not reuse its string helper here. */
+	const TCHAR* GenderValues[] = { TEXT("male"), TEXT("female") };
+
+	/** An unset gender publishes as `male`, so the form says so rather than showing a blank. */
+	FText GenderLabel(const FString& Value)
+	{
+		return Value.Equals(TEXT("female"), ESearchCase::IgnoreCase)
+			? LOCTEXT("GenderFemale", "Female")
+			: LOCTEXT("GenderMale", "Male");
+	}
+
+TSharedRef<SWidget> Row(const FText& Label, TSharedRef<SWidget> Content)
 	{
 		return SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
@@ -453,12 +466,7 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildProgressPanel()
 
 TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildIdentitySection()
 {
-	return SNew(SExpandableArea)
-		.AreaTitle(LOCTEXT("IdentitySection", "Identity & metadata"))
-		.InitiallyCollapsed(false)
-		.Padding(FMargin(12.0f, 8.0f))
-		.BodyContent()
-		[
+	const TSharedRef<SVerticalBox> Body =
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f)
 			[
@@ -516,7 +524,55 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildIdentitySection()
 								"Decided by the Convai Modding Tool when this project was generated; it cannot be changed here."))
 						]
 					])
-			]
+			];
+
+	// A Scene's entity_data has no gender, so the row is absent from the tree rather than hidden in
+	// it - the same rule the spawn point follows in the other direction.
+	if (!bIsScene)
+	{
+		GenderOptions.Reset();
+		for (const TCHAR* Value : GenderValues)
+		{
+			GenderOptions.Add(MakeShared<FString>(Value));
+		}
+
+		Body->AddSlot().AutoHeight().Padding(0.0f, 4.0f)
+		[
+			Row(LOCTEXT("GenderLabel", "Gender"),
+				SNew(SComboBox<TSharedPtr<FString>>)
+				.OptionsSource(&GenderOptions)
+				.ToolTipText(LOCTEXT("GenderTip", "The voice gender this avatar is published with."))
+				.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item)
+				{
+					return SNew(STextBlock).Text(GenderLabel(Item.IsValid() ? *Item : FString()));
+				})
+				.OnSelectionChanged_Lambda([this](TSharedPtr<FString> Item, ESelectInfo::Type SelectInfo)
+				{
+					if (SelectInfo != ESelectInfo::Direct && Item.IsValid() && Asset.IsValid())
+					{
+						Asset->Gender = *Item;
+					}
+				})
+				[
+					// Read off the view model rather than the combo's own selection: the form
+					// re-points at another Chunk without rebuilding, and a remembered selection
+					// would then name the previous one's gender.
+					SNew(STextBlock)
+					.Text_Lambda([this]
+					{
+						return GenderLabel(Asset.IsValid() ? Asset->Gender : FString());
+					})
+				])
+		];
+	}
+
+	return SNew(SExpandableArea)
+		.AreaTitle(LOCTEXT("IdentitySection", "Identity & metadata"))
+		.InitiallyCollapsed(false)
+		.Padding(FMargin(12.0f, 8.0f))
+		.BodyContent()
+		[
+			Body
 		];
 }
 
