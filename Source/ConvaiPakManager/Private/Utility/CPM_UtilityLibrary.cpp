@@ -242,6 +242,32 @@ void UCPM_UtilityLibrary::GetModdingMetadataForChunk(const int32 ChunkId, FCPM_M
 	JsonObject->TryGetStringField(TEXT("asset_type"), OutData.AssetType);
 }
 
+bool UCPM_UtilityLibrary::GetAssetMetadataFromJSON(const FString& ResponseString, FString& OutDocument)
+{
+	TSharedPtr<FJsonObject> Root;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResponseString);
+	if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+	{
+		return false;
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* Assets = nullptr;
+	const TSharedPtr<FJsonObject>* FirstAsset = nullptr;
+	const TSharedPtr<FJsonObject>* Metadata = nullptr;
+	if (!Root->TryGetArrayField(TEXT("assets"), Assets) || Assets->IsEmpty()
+		|| !(*Assets)[0]->TryGetObject(FirstAsset)
+		|| !(*FirstAsset)->TryGetObjectField(TEXT("metadata"), Metadata)
+		|| !Metadata->IsValid())
+	{
+		return false;
+	}
+
+	OutDocument.Reset();
+	const TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>> Writer =
+		TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&OutDocument);
+	return FJsonSerializer::Serialize(Metadata->ToSharedRef(), Writer) && !OutDocument.IsEmpty();
+}
+
 bool UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(const FString& JsonString, FCPM_CreatedAssets& OutCreatedAssets)
 {
 	TSharedPtr<FJsonObject> JsonObject;

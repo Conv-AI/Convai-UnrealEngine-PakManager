@@ -28,18 +28,32 @@ The four reasons the `wontfix` gave are answered by one fact each:
   `const FString&`, and it writes the Chunk's cache itself the way the create proxy does.
 - `assets/get` in the URL namespace.
 
+- `UCPM_UtilityLibrary::GetAssetMetadataFromJSON` — the flat envelope, document only.
+
 Deliberately NOT restored: `FCPM_AssetData` / `FCPM_AssetResponse` and
-`ExtractAssetListFromResponseString`. That parser read a flat envelope (`assets[N].asset_id`) and
-appended two unrelated animation shapes into the same array. `GetCreatedAssetsFromJSON` already
-parses the create envelope (`assets[N].asset.*`) and already yields the `MetadataString` the cache
-wants, so it is reused.
+`ExtractAssetListFromResponseString`, which also appended two unrelated animation shapes into the
+same array. Nothing needs a struct: the cache stores a document, so the parser yields a document.
 
-## Open — the wire shape
+## The wire shape — settled
 
-**Nobody has captured a real `assets/get` response.** The restore assumes it matches the create
-envelope. If it does not, the parse yields nothing, and that path is deliberately safe: it logs the
-body at Warning, leaves the cache exactly as it was, and lets the caller carry on. So a mismatch
-costs a log line, not a failed publish — and the log line contains the shape needed to fix it.
+A real response was captured off the live backend (not committed - it carries signed URLs and an
+account id; a trimmed copy is the fixture in `CPM_AssetResponseTest.cpp`). It is **flat**: the record's
+fields sit directly on `assets[N]`, where a create response nests them under `assets[N].asset`. The
+first restore reused `GetCreatedAssetsFromJSON` and would have silently found nothing. Pinned by
+`CPM_AssetResponseTest.cpp`, which asserts the create parser finds no document in a get answer.
+
+`metadata` arrives as an object and is re-serialised to the string the cache stores.
+
+What the same capture settled elsewhere:
+- `Raw_PakSize: 3776337790`, `Windows_PakSize`, `Linux_PakSize` are **JSON numbers** — issue 13's
+  open question, and the raw size does not fit an int32.
+- `versions` holds `ue-5.5-Raw` and `ue-5.6-Raw` — issue 14's naming, confirmed against real data.
+- `entity_data.gender` is lowercase `male`.
+
+## Not logged
+
+An assets/get answer carries a signed GCS URL per Version. Those are credentials, and creators paste
+logs into support tickets, so the failure path logs the response's length and never its body.
 
 ## Callers
 

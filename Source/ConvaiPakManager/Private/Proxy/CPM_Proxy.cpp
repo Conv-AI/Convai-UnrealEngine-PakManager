@@ -332,19 +332,17 @@ void UCPM_GetAssetProxy::HandleSuccess()
 {
 	Super::HandleSuccess();
 
-	FCPM_CreatedAssets Fetched;
-	const FString Document = UCPM_UtilityLibrary::GetCreatedAssetsFromJSON(ResponseString, Fetched)
-			&& Fetched.Assets.IsValidIndex(0)
-		? Fetched.Assets[0].Asset.MetadataString
-		: FString();
-
-	if (Document.IsEmpty())
+	FString Document;
+	if (!UCPM_UtilityLibrary::GetAssetMetadataFromJSON(ResponseString, Document))
 	{
 		// Left exactly as it was. An answer this cannot read is not evidence the Asset changed, and
 		// overwriting the cache with nothing would make every later compose refuse to parse it.
-		CPM_LOG(Warning, TEXT("assets/get returned nothing this version can read for asset %s; ")
-			TEXT("chunk %d keeps the document it had. The server said: %s"),
-			*AssociatedAssetId, RecordChunkId, *ResponseString);
+		//
+		// The body is NOT logged: an assets/get response carries a signed URL per Version, and those
+		// are credentials that outlive the log file a creator pastes into a support ticket.
+		CPM_LOG(Warning, TEXT("assets/get carried no metadata document for asset %s (%d bytes); ")
+			TEXT("chunk %d keeps the document it had."),
+			*AssociatedAssetId, ResponseString.Len(), RecordChunkId);
 		OnFailure.Broadcast(ResponseString);
 		return;
 	}

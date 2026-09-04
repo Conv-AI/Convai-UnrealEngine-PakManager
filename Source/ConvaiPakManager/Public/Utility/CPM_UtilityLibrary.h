@@ -65,6 +65,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
 	static bool GetMintedUploadUrl(const FString& ResponseString, FString& OutUrl);
 
+	/**
+	 * The metadata document an assets/get response carries, re-serialised to the string the Chunk's
+	 * cache stores.
+	 *
+	 * A separate parser from GetCreatedAssetsFromJSON because the envelopes differ: a create nests
+	 * the record under `assets[N].asset`, a get puts its fields directly on `assets[N]`. Only the
+	 * document is taken - the rest of a get response is signed URLs and per-Version detail that
+	 * nothing here records, and the signed URLs are credentials.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager")
+	static bool GetAssetMetadataFromJSON(const FString& ResponseString, FString& OutDocument);
+
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "ConvaiPakManagerLog"), Category = "Convai|PakManager")
 	static void CPM_LogMessage(const FString& Message, ECPM_LogLevel Verbosity = ECPM_LogLevel::Log);
 
