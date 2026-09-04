@@ -1,6 +1,6 @@
 # Drop "(fixed by project)" from the Asset type chip
 
-Status: `ready-for-agent`
+Status: `needs-triage` — done and seen in the editor: the chip reads "Avatar".
 
 The Asset type chip reads "Scene (fixed by project)" / "Avatar (fixed by project)". Show just
 "Scene" / "Avatar".
@@ -13,3 +13,15 @@ belongs in the tooltip, not in the label.
 ## Done when
 
 The chip reads "Scene" or "Avatar".
+
+## Done — 2026-09-04
+
+`SCPM_AssetDetailPanel.cpp` — the chip is now `LOCTEXT("SceneChip", "Scene")` /
+`LOCTEXT("AvatarChip", "Avatar")`, and the sentence it used to carry moved to `.ToolTipText`:
+"Decided by the Convai Modding Tool when this project was generated; it cannot be changed here."
+
+Seen in the editor: the panel draws **Avatar** with nothing after it
+(`Saved/VibeUE/Captures/m04-panel-front-on-1-2.png`). The tooltip itself was not captured — a
+synthetic hover does not raise Slate's tooltip window, and the editor sits behind other windows on
+this desktop, so a screen grab cannot catch one either. What is verified is the label; the tooltip is
+a code read. See issue 11, M06.

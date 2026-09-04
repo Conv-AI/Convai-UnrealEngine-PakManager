@@ -511,9 +511,9 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildIdentitySection()
 						[
 							SNew(STextBlock)
 							.TextStyle(&SecondaryTextStyle())
-							.Text(bIsScene
-								? LOCTEXT("SceneChip", "Scene (fixed by project)")
-								: LOCTEXT("AvatarChip", "Avatar (fixed by project)"))
+							.Text(bIsScene ? LOCTEXT("SceneChip", "Scene") : LOCTEXT("AvatarChip", "Avatar"))
+							.ToolTipText(LOCTEXT("AssetTypeChipTip",
+								"Decided by the Convai Modding Tool when this project was generated; it cannot be changed here."))
 						]
 					])
 			]
