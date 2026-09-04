@@ -343,10 +343,30 @@ void UCPM_CreateAssetJob::Execute()
 	FCPM_ModdingMetadata Modding;
 	UCPM_UtilityLibrary::GetModdingMetadataForChunk(Request.ChunkId, Modding);
 
+	// Measured from what the earlier Jobs left on disk, not from the Policy that asked for it: the
+	// sizes have to describe the artefacts UCPM_UploadArtifactsJob is about to send.
+	TMap<ECPM_Platform, int64> ArtifactSizes;
+	for (const FCPM_PakArtifact& Pak : Context->Paks)
+	{
+		const int64 Size = IFileManager::Get().FileSize(*Pak.PakPath);
+		if (Size > 0)
+		{
+			ArtifactSizes.Add(Pak.Platform, Size);
+		}
+	}
+	if (Context->bHasRawArchive)
+	{
+		const int64 Size = IFileManager::Get().FileSize(*Context->RawArchive.ZipPath);
+		if (Size > 0)
+		{
+			ArtifactSizes.Add(ECPM_Platform::Raw, Size);
+		}
+	}
+
 	// Composed first: what goes on the wire is this Chunk's Draft laid over what this backend last
 	// echoed back, complete, whatever version of the Pak Manager last wrote either. Failed on rather
 	// than logged, here where nothing has been sent yet and so nothing can be orphaned.
-	if (!ConvaiPakManager::Chunk::ComposePakMetadata(Request.ChunkId, Request.EnvironmentSlug))
+	if (!ConvaiPakManager::Chunk::ComposePakMetadata(Request.ChunkId, Request.EnvironmentSlug, ArtifactSizes))
 	{
 		Report(ECPM_PublishResult::Failed, TEXT("this Chunk's asset metadata could not be composed; see the log for which file"));
 		return;

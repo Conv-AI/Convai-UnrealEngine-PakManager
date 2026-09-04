@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/TopLevelAssetPath.h"
+#include "Utility/CPM_Utils.h"
 
 struct FPluginDescriptor;
 
@@ -232,6 +233,10 @@ CONVAIPAKMANAGER_API void ClearAssetRecordsIn(
  * every time: they follow from the project and are wrong, not merely absent, in a document written
  * by a version that computed them differently. Everything a creator or the server chose is kept.
  *
+ * ArtifactSizes writes one `<Platform>_PakSize` per artefact the run measured. Only the platforms it
+ * names are touched: a size this run did not measure describes a Version the Asset still holds, and
+ * clearing it would say the artefact was gone.
+ *
  * Pure and file-free so it can be tested without a project on disk; ComposePakMetadata is the
  * load-fill-save around it.
  */
@@ -239,7 +244,8 @@ CONVAIPAKMANAGER_API void FillRequiredMetadataFields(
 	const TSharedRef<class FJsonObject>& Root,
 	const FString& ProjectName,
 	const FString& PluginName,
-	const FString& AssetType);
+	const FString& AssetType,
+	const TMap<ECPM_Platform, int64>& ArtifactSizes = {});
 
 /**
  * Whether a package lives inside the Modding Plugin a Chunk records.
@@ -331,7 +337,8 @@ CONVAIPAKMANAGER_API FString ResolveLevelPackage(const FString& LevelName, const
  * is left holding whatever the server last echoed. A caller MUST NOT publish on a false - sending
  * that cache hands the server its own last name and description back as if a creator had typed them.
  */
-CONVAIPAKMANAGER_API bool ComposePakMetadata(int32 ChunkId, const FString& EnvironmentSlug);
+CONVAIPAKMANAGER_API bool ComposePakMetadata(
+	int32 ChunkId, const FString& EnvironmentSlug, const TMap<ECPM_Platform, int64>& ArtifactSizes = {});
 
 /** The same composition against explicit paths, so it can be exercised without a project on disk. */
 CONVAIPAKMANAGER_API bool ComposePakMetadataAt(
@@ -339,7 +346,8 @@ CONVAIPAKMANAGER_API bool ComposePakMetadataAt(
 	const FString& DraftPath,
 	const FString& ProjectName,
 	const FString& PluginName,
-	const FString& AssetType);
+	const FString& AssetType,
+	const TMap<ECPM_Platform, int64>& ArtifactSizes = {});
 
 /** Result of one migration attempt, so a caller can tell "nothing to do" from "could not". */
 enum class EMigrationResult : uint8

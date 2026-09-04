@@ -999,7 +999,8 @@ void FillRequiredMetadataFields(
 	const TSharedRef<FJsonObject>& Root,
 	const FString& ProjectName,
 	const FString& PluginName,
-	const FString& AssetType)
+	const FString& AssetType,
+	const TMap<ECPM_Platform, int64>& ArtifactSizes)
 {
 	const FString Type = AssetType.ToLower();
 
@@ -1018,6 +1019,16 @@ void FillRequiredMetadataFields(
 	if (!PluginName.IsEmpty())
 	{
 		DefaultString(Root, TEXT("root_path"), FString::Printf(TEXT("/%s/"), *PluginName));
+	}
+
+	// Only the artefacts this run built. A size the run did not measure is left as the server echoed
+	// it, because the Version it describes is still on the Asset - a Windows-only run does not mean
+	// the Linux Pak stopped existing.
+	for (const TPair<ECPM_Platform, int64>& Size : ArtifactSizes)
+	{
+		Root->SetNumberField(
+			UEnum::GetDisplayValueAsText(Size.Key).ToString() + TEXT("_PakSize"),
+			static_cast<double>(Size.Value));
 	}
 
 	DefaultString(Root, TEXT("asset_name"), ProjectName);
@@ -1211,7 +1222,8 @@ bool ComposePakMetadataAt(
 	const FString& DraftPath,
 	const FString& ProjectName,
 	const FString& PluginName,
-	const FString& AssetType)
+	const FString& AssetType,
+	const TMap<ECPM_Platform, int64>& ArtifactSizes)
 {
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	FString Contents;
@@ -1265,12 +1277,13 @@ bool ComposePakMetadataAt(
 		Root->SetStringField(TEXT("level_name"), ResolveLevelPackage(LevelName, RootPath));
 	}
 
-	FillRequiredMetadataFields(Root.ToSharedRef(), ProjectName, PluginName, AssetType);
+	FillRequiredMetadataFields(Root.ToSharedRef(), ProjectName, PluginName, AssetType, ArtifactSizes);
 
 	return SaveJsonObject(Root.ToSharedRef(), MetadataPath);
 }
 
-bool ComposePakMetadata(const int32 ChunkId, const FString& EnvironmentSlug)
+bool ComposePakMetadata(
+	const int32 ChunkId, const FString& EnvironmentSlug, const TMap<ECPM_Platform, int64>& ArtifactSizes)
 {
 	FCPM_ModdingMetadata Modding;
 	UCPM_UtilityLibrary::GetModdingMetadataForChunk(ChunkId, Modding);
@@ -1280,6 +1293,7 @@ bool ComposePakMetadata(const int32 ChunkId, const FString& EnvironmentSlug)
 		GetDraftPath(ChunkId),
 		UCPM_UtilityLibrary::GetProjectName(),
 		Modding.PluginName,
-		Modding.AssetType);
+		Modding.AssetType,
+		ArtifactSizes);
 }
 }

@@ -294,6 +294,48 @@ bool FCPMAssetMetadataCreateDocumentKeysMatchLegacy::RunTest(const FString&)
 }
 
 /**
+ * The size of each artefact a run built, under legacy's key names.
+ *
+ * Only the platforms the run measured: a Windows-only Publish leaves the Linux size the server
+ * echoed, because the Linux Version is still on the Asset and a cleared size would say it is not.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMAssetMetadataWritesTheSizeOfEachArtefactBuilt,
+	"ConvaiPakManager.Publish.Metadata.WritesTheSizeOfEachArtefactBuilt",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMAssetMetadataWritesTheSizeOfEachArtefactBuilt::RunTest(const FString&)
+{
+	const TSharedRef<FJsonObject> Every = Parse(TEXT("{}"));
+	ConvaiPakManager::Chunk::FillRequiredMetadataFields(Every, TEXT("Proj"), TEXT("PLUGIN"), TEXT("Avatar"),
+		{ { ECPM_Platform::Windows, 111 }, { ECPM_Platform::Linux, 222 }, { ECPM_Platform::Raw, 333 } });
+
+	TestEqual(TEXT("the Windows Pak's size"), Every->GetIntegerField(TEXT("Windows_PakSize")), 111);
+	TestEqual(TEXT("the Linux Pak's size"), Every->GetIntegerField(TEXT("Linux_PakSize")), 222);
+	TestEqual(TEXT("the project archive's size"), Every->GetIntegerField(TEXT("Raw_PakSize")), 333);
+
+	// A run that built one platform, against a document the server echoed with both.
+	const TSharedRef<FJsonObject> WindowsOnly = Parse(TEXT("{ \"Windows_PakSize\": 1, \"Linux_PakSize\": 222 }"));
+	ConvaiPakManager::Chunk::FillRequiredMetadataFields(WindowsOnly, TEXT("Proj"), TEXT("PLUGIN"), TEXT("Scene"),
+		{ { ECPM_Platform::Windows, 999 } });
+
+	TestEqual(TEXT("the measured platform is overwritten"),
+		WindowsOnly->GetIntegerField(TEXT("Windows_PakSize")), 999);
+	TestEqual(TEXT("the platform this run did not build keeps what the server said"),
+		WindowsOnly->GetIntegerField(TEXT("Linux_PakSize")), 222);
+	TestFalse(TEXT("and no size is invented for the archive it never sent"),
+		WindowsOnly->HasField(TEXT("Raw_PakSize")));
+
+	// Sizes are a per-run fact, so a compose with none must not put the keys there at all.
+	const TSharedRef<FJsonObject> None = Parse(TEXT("{}"));
+	ConvaiPakManager::Chunk::FillRequiredMetadataFields(None, TEXT("Proj"), TEXT("PLUGIN"), TEXT("Scene"));
+	TestFalse(TEXT("a run that measured nothing writes no size key"),
+		None->HasField(TEXT("Windows_PakSize")));
+
+	return true;
+}
+
+/**
  * The tags a publish files an Asset under. Legacy's sets verbatim: a Scene that reaches the server
  * as ["Pak","Scene"] is published and then invisible to ConvaiSim.
  */
