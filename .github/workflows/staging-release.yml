@@ -1,0 +1,90 @@
+name: Staging release on plugin version bump
+
+on:
+  push:
+    branches:
+      - staging
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Two pushes in quick succession would otherwise race for the same tag.
+concurrency:
+  group: staging-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Gate on the tag rather than on a diff of the descriptor: a re-run, a force push and a
+      # dispatch all have to reach the same answer, and "a release for this version exists" is the
+      # only question that survives all three. jq ships on the runner; no apt-get needed.
+      - name: Read VersionName and decide
+        id: decide
+        env:
+          PLUGIN_FILE: ConvaiPakManager.uplugin
+        run: |
+          set -euo pipefail
+          VERSION="$(jq -r '.VersionName // empty' "$PLUGIN_FILE")"
+          if [ -z "$VERSION" ]; then
+            echo "::error::$PLUGIN_FILE has no VersionName"; exit 1
+          fi
+          TAG="staging-v${VERSION}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "bumped=no" >> "$GITHUB_OUTPUT"
+            echo "$TAG already exists - bump VersionName in $PLUGIN_FILE to publish." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "bumped=yes" >> "$GITHUB_OUTPUT"
+            echo "Publishing $TAG from ${GITHUB_SHA}." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # git archive rather than a copy of the working tree: it carries only what is committed, so
+      # the untracked Binaries, Intermediate and Context folders a checkout could grow cannot reach
+      # a creator's machine, and naming the four paths keeps docs and CI config out. A path that is
+      # not in the commit fails the step rather than shipping a plugin missing half of itself.
+      - name: Archive the plugin
+        if: steps.decide.outputs.bumped == 'yes'
+        id: stage
+        env:
+          VERSION: ${{ steps.decide.outputs.version }}
+        run: |
+          set -euo pipefail
+          ZIP_NAME="ConvaiPakManager-${VERSION}.zip"
+          git archive --format=zip -9 --prefix=ConvaiPakManager/ -o "$ZIP_NAME" HEAD \
+            ConvaiPakManager.uplugin Config Source Resources
+          echo "zip=$ZIP_NAME" >> "$GITHUB_OUTPUT"
+
+          # An archive of four empty folders is still a valid zip. The module's build script is the
+          # one file whose absence means the plugin cannot compile wherever it lands.
+          # grep without -q: under pipefail an early-exiting reader makes unzip die of SIGPIPE, and
+          # the pipeline would then report failure on a successful match.
+          if ! unzip -l "$ZIP_NAME" | grep -F 'Source/ConvaiPakManager/ConvaiPakManager.Build.cs' >/dev/null; then
+            echo "::error::$ZIP_NAME has no module build script"; exit 1
+          fi
+          echo "$ZIP_NAME - $(unzip -l "$ZIP_NAME" | tail -n 1)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create prerelease
+        if: steps.decide.outputs.bumped == 'yes'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.decide.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: "Convai Pak Manager ${{ steps.decide.outputs.version }} (staging)"
+          body: |
+            Staging build of Convai Pak Manager `${{ steps.decide.outputs.version }}`.
+
+            Unzip into your project's `Plugins/` folder.
+
+            Not a production release - `main` publishes those as `v<version>`.
+          prerelease: true
+          files: ${{ steps.stage.outputs.zip }}
