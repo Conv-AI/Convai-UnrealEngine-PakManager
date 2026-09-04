@@ -98,6 +98,7 @@ private:
 	FReply HandleUseSelectedTexture();
 	FReply HandlePreviewThumbnail();
 	FReply HandleSetSpawnPoint();
+	FReply HandleAddNavMeshBounds();
 	FReply HandleCopyAssetId();
 	FReply HandleCancelPublish();
 
@@ -165,6 +166,9 @@ private:
 	TSharedPtr<SImage> ThumbnailImage;
 
 	FCPM_SpawnPointStatus SpawnStatus;
+
+	/** Refreshed on the same timer as SpawnStatus: both are facts about the level, not about a Chunk. */
+	bool bHasNavMeshBounds = false;
 
 	TSharedPtr<SWrapBox> StageRow;
 	/** What the stage row was last built from, so progress ticks do not rebuild widgets. */

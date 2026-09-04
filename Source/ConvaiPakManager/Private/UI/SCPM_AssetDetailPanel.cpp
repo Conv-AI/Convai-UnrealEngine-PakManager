@@ -205,6 +205,7 @@ void SCPM_AssetDetailPanel::Construct(const FArguments& InArgs)
 	{
 		bIsScene = Subsystem->GetAssetType() != ECPM_AssetType::Avatar;
 		SpawnStatus = Subsystem->GetSpawnPointStatus();
+		bHasNavMeshBounds = Subsystem->HasNavMeshBoundsVolume();
 	}
 
 	ChildSlot
@@ -848,6 +849,41 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildPreviewSection()
 					.OnClicked(this, &SCPM_AssetDetailPanel::HandleSetSpawnPoint)
 				]
 			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.AutoWrapText(true)
+					.TextStyle(&SecondaryTextStyle())
+					// Coloured only while it is missing: this is a Precondition, so the publish will
+					// refuse over it, and a grey line reads as information rather than as a blocker.
+					.ColorAndOpacity_Lambda([this]
+					{
+						return FSlateColor(bHasNavMeshBounds ? FPalette::TextSecondary : FPalette::Warning);
+					})
+					.Text_Lambda([this]
+					{
+						return bHasNavMeshBounds
+							? LOCTEXT("NavMeshPresent", "Nav mesh bounds are in this level.")
+							: LOCTEXT("NavMeshMissing",
+								"No nav mesh bounds in this level. Characters cannot walk without them.");
+					})
+				]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.ButtonStyle(&SecondaryButtonStyle())
+					.Text(LOCTEXT("AddNavMeshBounds", "Add nav mesh bounds"))
+					.ToolTipText(LOCTEXT("AddNavMeshBoundsTip",
+						"Places a Nav Mesh Bounds Volume covering what is already in this level. Resize it like any other volume."))
+					// Still offered once one exists: a level can want a second volume over a region
+					// the first does not reach, and refusing that would be this tool's opinion, not
+					// a requirement.
+					.OnClicked(this, &SCPM_AssetDetailPanel::HandleAddNavMeshBounds)
+				]
+			]
 		];
 	}
 
@@ -1433,6 +1469,23 @@ FReply SCPM_AssetDetailPanel::HandleSetSpawnPoint()
 	return FReply::Handled();
 }
 
+FReply SCPM_AssetDetailPanel::HandleAddNavMeshBounds()
+{
+	UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+	if (!Subsystem)
+	{
+		return FReply::Handled();
+	}
+
+	const bool bPlaced = Subsystem->AddNavMeshBoundsVolume() != nullptr;
+	bHasNavMeshBounds = Subsystem->HasNavMeshBoundsVolume();
+	Notify(bPlaced
+		? LOCTEXT("NavMeshAdded", "Placed a Nav Mesh Bounds Volume over the level. Resize it to cover where characters should walk.")
+		: LOCTEXT("NavMeshNotAdded", "Could not place a Nav Mesh Bounds Volume in this level."),
+		bPlaced ? SNotificationItem::CS_Success : SNotificationItem::CS_Fail);
+	return FReply::Handled();
+}
+
 FReply SCPM_AssetDetailPanel::HandleCopyAssetId()
 {
 	if (Asset.IsValid() && !Asset->AssetId.IsEmpty())
@@ -1930,6 +1983,9 @@ EActiveTimerReturnType SCPM_AssetDetailPanel::RefreshSpawnStatus(double InCurren
 	if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem())
 	{
 		SpawnStatus = Subsystem->GetSpawnPointStatus();
+		// Same timer, because a creator who deletes either one in the level is told by the same row
+		// rather than by the publish that refuses a minute later.
+		bHasNavMeshBounds = Subsystem->HasNavMeshBoundsVolume();
 	}
 	return EActiveTimerReturnType::Continue;
 }

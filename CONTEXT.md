@@ -115,6 +115,21 @@ nothing is copied under the label's mount that was not already there. One reques
 however many steps it takes.
 _Avoid_: upload, export, deploy — upload is one step of a Publish, not the whole of it
 
+**Precondition**:
+Something that must already be true — of the creator's machine or of their project — before a
+**Publish** may start. Distinct from validating a **Publish Policy**, which asks whether the Policy
+is coherent; a Precondition asks whether this host and this project can do what a coherent Policy
+asks. A failed Precondition refuses the Publish outright and no **Job** runs, because every Job would
+fail anyway and the creator would otherwise pay a full cook to learn it. What a Precondition reports
+is a fact that was checked, never a guess — which is why it may refuse where the compatibility check,
+which compares published version numbers, only warns.
+Each one is answerable only for the run that is actually being asked for: the Linux toolchain matters
+only to a run that packages Linux, and what an **Asset** record needs matters only to a run that
+creates or updates one. A Precondition that refused a run it does not apply to would be a bug, not
+strictness.
+_Avoid_: sanity check, pre-flight — the first names neither subject nor criterion, and the second
+names no subject
+
 **Publish Policy**:
 Which platforms a Publish builds for, at which build configuration, and whether it includes the Raw
 Project Archive. Held by Convai and the same for every creator, so that what a Publish produces can
@@ -152,6 +167,14 @@ _Avoid_: category, entity type
 - A **Chunk** publishes as at most one **Asset** per **Environment**
 - A **Draft** belongs to a **Chunk**, not to an **Environment**
 - An **Asset** has exactly one **Asset Type**, decided before the creator ever opens the Pak Manager
+
+- Convai migrates the engine version its products run. An **Asset** keeps being loadable across a
+  migration only if it holds a **Version** for the new engine, and the only way it gains one is the
+  creator publishing the Chunk again from that engine. So the engine-target warning is about
+  COVERAGE, not breakage: it tells a creator which engine Convai is moving to while there is still
+  time to publish for it, and a creator may act on it before the migration lands. Nothing is wrong
+  with the Pak they have — a **Version** slot is named per engine, so a Publish from a
+  non-target engine adds a slot rather than damaging the one Convai serves
 
 - The Pak Manager is not the only thing that edits an **Asset**. Other tooling writes the same
   records, so the server is the record of what an Asset currently holds, and the per-**Environment**

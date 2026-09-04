@@ -51,6 +51,8 @@ public class ConvaiPakManager : ModuleRules
 				// FImage::ChangeFormat, for reading a texture's authored source pixels.
 				"ImageCore",
 				"FileUtilities",
+				// ANavMeshBoundsVolume, which a Scene is refused a publish without.
+				"NavigationSystem",
 				"ToolMenus",
 				"Json",
 				"JsonUtilities",

@@ -34,8 +34,13 @@
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
 #include "Proxy/CPM_Proxy.h"
+#include "ActorFactories/ActorFactory.h"
+#include "Builders/CubeBuilder.h"
+#include "NavMesh/NavMeshBoundsVolume.h"
+#include "ScopedTransaction.h"
 #include "Publish/CPM_Compatibility.h"
 #include "Publish/CPM_PolicyRequest.h"
+#include "Publish/CPM_Preconditions.h"
 #include "Thumbnail/CPM_Thumbnail.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
@@ -643,6 +648,15 @@ bool UConvaiPakEditorSubsystem::SetEntryPoint(const int32 ChunkId, const FString
 		return false;
 	}
 
+	// The action bar keeps a failure until a command moves the status, deliberately - a refusal has
+	// to outlive its toast. This IS the next command, so it has to move it. Without this a copy into
+	// the plugin that worked leaves the refusal that sent the creator to the button still on screen,
+	// and the button reads as having done nothing at all.
+	if (!GetChunkStatus(ChunkId).IsBusy())
+	{
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Max, FString());
+	}
+
 	return true;
 }
 
@@ -891,6 +905,85 @@ bool UConvaiPakEditorSubsystem::SetSpawnPointFromViewport()
 	// SpawnAndSnapActorToView already snaps the sole tagged actor to the view instead of spawning a
 	// second one, so add and move share one path.
 	return AddSpawnPoint() != nullptr;
+}
+
+bool UConvaiPakEditorSubsystem::HasNavMeshBoundsVolume() const
+{
+	const UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World)
+	{
+		return false;
+	}
+
+	for (TActorIterator<ANavMeshBoundsVolume> It(World); It; ++It)
+	{
+		if (IsValid(*It) && !It->IsPendingKillPending())
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+AActor* UConvaiPakEditorSubsystem::AddNavMeshBoundsVolume()
+{
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	// What is already in the level, so the volume lands over the floor rather than beside it. Actors
+	// with no bounds of their own contribute nothing, which is why an empty level falls back below.
+	FBox Bounds(ForceInit);
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		const AActor* Actor = *It;
+		if (!IsValid(Actor) || Actor->IsPendingKillPending() || Actor->IsA<ANavMeshBoundsVolume>())
+		{
+			continue;
+		}
+		FVector Origin;
+		FVector Extent;
+		Actor->GetActorBounds(/*bOnlyCollidingComponents*/ false, Origin, Extent);
+		if (!Extent.IsNearlyZero())
+		{
+			Bounds += FBox::BuildAABB(Origin, Extent);
+		}
+	}
+
+	constexpr double MinimumSide = 1000.0;
+	const bool bHaveBounds = Bounds.IsValid != 0;
+	const FVector Centre = bHaveBounds ? Bounds.GetCenter() : FVector::ZeroVector;
+	const FVector Size = bHaveBounds
+		? Bounds.GetSize().ComponentMax(FVector(MinimumSide))
+		: FVector(MinimumSide * 10.0);
+
+	const FScopedTransaction Transaction(
+		NSLOCTEXT("ConvaiPakManager", "AddNavMeshBounds", "Add Nav Mesh Bounds Volume"));
+
+	ANavMeshBoundsVolume* Volume = World->SpawnActor<ANavMeshBoundsVolume>(Centre, FRotator::ZeroRotator);
+	if (!Volume)
+	{
+		CPM_LOG(Warning, TEXT("Could not place a Nav Mesh Bounds Volume in this level."));
+		return nullptr;
+	}
+
+	// A volume spawned without this has no brush and therefore no volume: it appears in the outliner,
+	// bounds nothing, and reads to a creator as though the button worked. Same call the editor's own
+	// volume placement makes.
+	UCubeBuilder* Builder = NewObject<UCubeBuilder>();
+	Builder->X = static_cast<float>(Size.X);
+	Builder->Y = static_cast<float>(Size.Y);
+	Builder->Z = static_cast<float>(Size.Z);
+	UActorFactory::CreateBrushForVolumeActor(Volume, Builder);
+
+	GEditor->SelectNone(/*bNoteSelectionChange*/ false, /*bDeselectBSPSurfs*/ true);
+	GEditor->SelectActor(Volume, /*bInSelected*/ true, /*bNotify*/ true);
+
+	CPM_LOG(Display, TEXT("Placed a Nav Mesh Bounds Volume of %s at %s."),
+		*Size.ToCompactString(), *Centre.ToCompactString());
+	return Volume;
 }
 
 FString UConvaiPakEditorSubsystem::GetThumbnailPath(const int32 ChunkId) const
@@ -1459,6 +1552,33 @@ void UConvaiPakEditorSubsystem::StartPublishRun(
 			TEXT("Publishing without the project archive, because Upload Raw Project Archive is off. ")
 			TEXT("Convai cannot repackage this asset for a future engine version without it."),
 			ECPM_LogLevel::Warning);
+	}
+
+	// Preconditions. Refused here rather than by a Job's Precheck for the reason in docs/adr/0014:
+	// the answer is already known, and a Job that discovered it would have cooked first. Each is
+	// asked only of a run it applies to - see CONTEXT.md.
+	if (Policy.PlatformsToPackage().Contains(ECPM_Platform::Linux))
+	{
+		const FString Why = ConvaiPakManager::Preconditions::WhyLinuxCannotPackage(
+			ConvaiPakManager::Preconditions::InspectLinuxToolchain());
+		if (!Why.IsEmpty())
+		{
+			SetStatus(ChunkId, ECPM_AssetManagerStatus::Packaging_Failed, Why);
+			return;
+		}
+	}
+
+	if (!bPackageOnly)
+	{
+		// A package-only run produces a Pak on disk and writes no Asset record, so it needs neither
+		// somewhere to put the player nor anywhere for them to walk.
+		const FString Why = ConvaiPakManager::Preconditions::WhyAssetRecordCannotBeWritten(
+			GetAssetType(), GetSpawnPointStatus().Count, HasNavMeshBoundsVolume());
+		if (!Why.IsEmpty())
+		{
+			SetStatus(ChunkId, ECPM_AssetManagerStatus::Create_Failed, Why);
+			return;
+		}
 	}
 
 	UCPM_PublishRunner* Runner = NewObject<UCPM_PublishRunner>(this);

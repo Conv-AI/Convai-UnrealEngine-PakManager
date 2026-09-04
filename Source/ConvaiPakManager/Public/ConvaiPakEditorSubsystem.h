@@ -327,6 +327,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool SetSpawnPointFromViewport();
 
+	/** Whether the open level holds a Nav Mesh Bounds Volume. A Scene is refused a publish without one. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool HasNavMeshBoundsVolume() const;
+
+	/**
+	 * Places a Nav Mesh Bounds Volume large enough to cover what is already in the level.
+	 *
+	 * Sized from the level's own bounds rather than dropped at a fixed size, because a volume that
+	 * covers none of the floor is indistinguishable from no volume at all until a character walks
+	 * into nothing. The creator resizes it like any other volume; this only has to be a starting
+	 * point they can see.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	AActor* AddNavMeshBoundsVolume();
+
 	/**
 	 * Makes this Chunk's thumbnail out of what the project already has - the Avatar's blueprint as
 	 * the Content Browser draws it, or the Scene's viewport.
