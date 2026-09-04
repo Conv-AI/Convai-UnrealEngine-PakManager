@@ -62,6 +62,11 @@ FString ParseTargetEngineVersion(const FString& VersionJson)
 	return ReadStringField(VersionJson, TEXT("target-ue-version"));
 }
 
+FString ParseMinimumToolVersion(const FString& VersionJson)
+{
+	return ReadStringField(VersionJson, TEXT("min-pak-manager-version"));
+}
+
 bool IsNewerVersion(const FString& Installed, const FString& Latest)
 {
 	FEngineVersion Have;

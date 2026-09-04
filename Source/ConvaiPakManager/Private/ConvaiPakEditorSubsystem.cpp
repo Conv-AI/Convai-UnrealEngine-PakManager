@@ -1378,6 +1378,14 @@ void UConvaiPakEditorSubsystem::RefreshCompatibility()
 						ConvaiPakManager::Compatibility::ParseTargetEngineVersion(Contents);
 					Self->Compatibility.bEngineMismatch = !ConvaiPakManager::Compatibility::EngineMatchesTarget(
 						Self->Compatibility.EngineVersion, Self->Compatibility.TargetEngineVersion);
+
+					// A floor Convai has not published yet reads empty, and IsNewerVersion says false
+					// for anything it cannot parse - so the refusal stays dormant until the field
+					// exists. See docs/adr/0014.
+					Self->Compatibility.MinimumToolVersion =
+						ConvaiPakManager::Compatibility::ParseMinimumToolVersion(Contents);
+					Self->Compatibility.bToolBelowFloor = ConvaiPakManager::Compatibility::IsNewerVersion(
+						Self->Compatibility.InstalledToolVersion, Self->Compatibility.MinimumToolVersion);
 				}
 				else
 				{
@@ -1552,6 +1560,19 @@ void UConvaiPakEditorSubsystem::StartPublishRun(
 			TEXT("Publishing without the project archive, because Upload Raw Project Archive is off. ")
 			TEXT("Convai cannot repackage this asset for a future engine version without it."),
 			ECPM_LogLevel::Warning);
+	}
+
+	// A floor Convai published, not "newer exists" - which stays a banner. Read from the cached
+	// compatibility rather than re-fetched: a refusal must not wait on a GET, and a floor nobody has
+	// answered with yet leaves this false, so an unread check refuses nothing. See docs/adr/0014.
+	if (Compatibility.bToolBelowFloor)
+	{
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Create_Failed,
+			FString::Printf(
+				TEXT("this Pak Manager is %s and Convai no longer accepts anything below %s. Update it ")
+				TEXT("with the Convai Modding Tool."),
+				*Compatibility.InstalledToolVersion, *Compatibility.MinimumToolVersion));
+		return;
 	}
 
 	// Preconditions. Refused here rather than by a Job's Precheck for the reason in docs/adr/0014:

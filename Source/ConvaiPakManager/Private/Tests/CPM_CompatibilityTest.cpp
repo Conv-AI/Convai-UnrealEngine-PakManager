@@ -32,6 +32,18 @@ bool FCPMCompatibilityParsesVersionSources::RunTest(const FString&)
 	TestTrue(TEXT("a Version.json with no target reads empty"),
 		ParseTargetEngineVersion(TEXT(R"({"current-ue-version":"5.8"})")).IsEmpty());
 
+	// The floor Convai does not publish yet. Empty is the ordinary answer today, and IsNewerVersion
+	// says false for it, so the refusal it feeds stays dormant until the field appears.
+	TestEqual(TEXT("reads the published floor when there is one"),
+		ParseMinimumToolVersion(TEXT(R"({"target-ue-version":"5.8","min-pak-manager-version":"2.3.0"})")),
+		FString(TEXT("2.3.0")));
+	TestTrue(TEXT("today's Version.json declares no floor"),
+		ParseMinimumToolVersion(
+			TEXT(R"({"current-ue-version":"5.8","target-ue-version":"5.8","modding-tool-version":"3.0.6"})")).IsEmpty());
+	TestFalse(TEXT("an absent floor refuses nobody"), IsNewerVersion(TEXT("2.3.11"), FString()));
+	TestTrue(TEXT("an install below the floor is caught"), IsNewerVersion(TEXT("2.2.9"), TEXT("2.3.0")));
+	TestFalse(TEXT("an install at the floor is accepted"), IsNewerVersion(TEXT("2.3.0"), TEXT("2.3.0")));
+
 	TestFalse(TEXT("this install names its own version"), InstalledToolVersion().IsEmpty());
 
 	return true;

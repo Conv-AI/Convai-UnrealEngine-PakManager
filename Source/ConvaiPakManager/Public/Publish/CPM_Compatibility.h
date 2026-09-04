@@ -31,6 +31,20 @@ struct CONVAIPAKMANAGER_API FCPM_CompatibilityStatus
 	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
 	bool bToolOutdated = false;
 
+	/** The oldest Pak Manager Convai accepts, or empty when Convai publishes no floor. */
+	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
+	FString MinimumToolVersion;
+
+	/**
+	 * Whether this install is older than the floor Convai publishes, which refuses a Publish.
+	 *
+	 * Distinct from bToolOutdated, and the distinction is the point: "newer exists" is a guess about
+	 * whether the newer one matters and only warns, while this is Convai saying yours cannot work.
+	 * Legacy conflated them and stopped creators who were fine. False whenever no floor was read.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
+	bool bToolBelowFloor = false;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Convai|PakManager")
 	FString EngineVersion;
 
@@ -60,6 +74,14 @@ CONVAIPAKMANAGER_API FString ParsePluginVersionName(const FString& UpluginJson);
 
 /** The "target-ue-version" the Modding Tool declares, or empty if it declares none. */
 CONVAIPAKMANAGER_API FString ParseTargetEngineVersion(const FString& VersionJson);
+
+/**
+ * The "min-pak-manager-version" the Modding Tool declares, or empty if it declares none.
+ *
+ * Convai does not publish this field yet. Empty is therefore the ordinary answer and must stay the
+ * harmless one: no floor read means no floor applied, and the refusal it feeds never fires.
+ */
+CONVAIPAKMANAGER_API FString ParseMinimumToolVersion(const FString& VersionJson);
 
 /**
  * Whether Latest is a later version than Installed.

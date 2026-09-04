@@ -418,7 +418,9 @@ TSharedRef<SWidget> SCPM_PakManagerPanel::BuildCompatibilityBanner()
 		.Padding(FMargin(12.0f, 8.0f))
 		.Visibility_Lambda([this]
 		{
-			return Compatibility.bToolOutdated || Compatibility.bEngineMismatch
+			// bToolBelowFloor in its own right: the two version pins are read from different files,
+			// so a floor can be known in a session where "latest" was not.
+			return Compatibility.bToolOutdated || Compatibility.bEngineMismatch || Compatibility.bToolBelowFloor
 				? EVisibility::Visible
 				: EVisibility::Collapsed;
 		})
@@ -438,7 +440,17 @@ TSharedRef<SWidget> SCPM_PakManagerPanel::BuildCompatibilityBanner()
 				.Text_Lambda([this]
 				{
 					TArray<FText> Sentences;
-					if (Compatibility.bToolOutdated)
+					// The floor replaces the advisory rather than adding to it: telling a creator a
+					// newer version exists is noise next to being told this one is refused.
+					if (Compatibility.bToolBelowFloor)
+					{
+						Sentences.Add(FText::Format(LOCTEXT("ToolBelowFloor",
+							"Pak Manager {0} is installed and Convai no longer accepts anything below {1}. "
+							"Publishing is refused until you update it with the Convai Modding Tool."),
+							FText::FromString(Compatibility.InstalledToolVersion),
+							FText::FromString(Compatibility.MinimumToolVersion)));
+					}
+					else if (Compatibility.bToolOutdated)
 					{
 						Sentences.Add(FText::Format(LOCTEXT("ToolOutdated",
 							"Pak Manager {0} is installed and {1} is available. Update it with the Convai Modding "
