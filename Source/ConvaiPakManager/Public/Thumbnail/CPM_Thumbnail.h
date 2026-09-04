@@ -70,13 +70,18 @@ CONVAIPAKMANAGER_API bool ReadTextureSource(UTexture2D* Texture, int32& OutWidth
 CONVAIPAKMANAGER_API FIntRect CentreCrop(FIntPoint Rendered, FIntPoint Shape);
 
 /**
- * Renders the asset thumbnail of a blueprint - what the Content Browser shows for it - from the front.
+ * Photographs a blueprint front-on against nothing, for the Asset's thumbnail.
  *
- * InOutWidth/InOutHeight carry the requested size in and the rendered size out: the engine's
- * renderer is free to hand back something smaller, and the caller needs the real dimensions to
- * write the pixels anywhere. Only the ratio of the two is honoured, not the exact pair.
+ * Its own preview scene rather than the Content Browser's renderer: that one adds a sky sphere and a
+ * floor plane behind the subject and clears to opaque black, so every pixel the avatar does not
+ * cover is a picture of a room. Here the background is transparent, and the camera is a long lens
+ * level with the subject rather than the Content Browser's three-quarter view.
  *
- * Has no automated coverage - it needs an RHI, and the suite runs with -NullRHI.
+ * InOutWidth/InOutHeight carry the requested size in and the rendered size out: only the ratio of
+ * the two is honoured, and the caller needs the real dimensions to write the pixels anywhere.
+ *
+ * Has no automated coverage - it needs an RHI, and the suite runs with -NullRHI. Verified by
+ * capturing BP_Hana and looking: transparent corners, opaque subject, head 17.8% down.
  */
 CONVAIPAKMANAGER_API bool RenderBlueprintThumbnail(UBlueprint* Blueprint, int32& InOutWidth, int32& InOutHeight, TArray<FColor>& OutPixels, FString& OutError);
 }

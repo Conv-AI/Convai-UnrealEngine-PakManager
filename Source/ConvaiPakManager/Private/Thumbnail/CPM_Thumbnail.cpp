@@ -13,8 +13,23 @@
 #include "Misc/Paths.h"
 #include "Misc/ScopeExit.h"
 #include "Modules/ModuleManager.h"
-#include "ObjectTools.h"
-#include "ThumbnailRendering/SceneThumbnailInfo.h"
+#include "CanvasTypes.h"
+#include "AssetCompilingManager.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "ContentStreaming.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "Engine/World.h"
+#include "EngineModule.h"
+#include "GameFramework/Actor.h"
+#include "HAL/IConsoleManager.h"
+#include "LegacyScreenPercentageDriver.h"
+#include "RendererInterface.h"
+#include "SceneView.h"
+#include "ThumbnailHelpers.h"
+#include "UnrealClient.h"
 
 namespace
 {
@@ -62,6 +77,199 @@ namespace
 	 * creator last dragged its Content Browser thumbnail to.
 	 */
 	constexpr float FrontOnOrbitYaw = -90.0f;
+
+	/**
+	 * Long lens, not the engine thumbnail's 30 degrees. The fit puts the camera wherever the subject
+	 * fills the frame, so narrowing this does not change the framing - it changes how much the head
+	 * diverges from the feet, and a catalogue portrait of a person should barely diverge at all.
+	 */
+	constexpr float AvatarFieldOfView = 18.0f;
+
+	/**
+	 * How much of the frame the avatar stands in, vertically. 1.0 would touch both edges; the gap is
+	 * headroom above the hair, and the feet fall out of the bottom of the portrait crop, which is
+	 * what a full-length figure looks like on a card rather than a specimen in a box.
+	 */
+	constexpr float AvatarHeightFill = 0.92f;
+
+	/**
+	 * Where the camera looks, up the figure from the middle of its bounds, as a fraction of half its
+	 * height. Aiming at the centre puts the waist in the middle of the frame; a portrait wants the
+	 * chest there, which leaves headroom above and drops the feet past the bottom edge.
+	 */
+	constexpr float AvatarAimUp = 0.28f;
+
+	bool ShowsGeometry(const USceneComponent* Component)
+	{
+		const UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Component);
+		if (!Primitive || !Primitive->IsVisible() || Primitive->bHiddenInGame)
+		{
+			return false;
+		}
+
+		const UStaticMeshComponent* StaticMesh = Cast<UStaticMeshComponent>(Component);
+		if (StaticMesh)
+		{
+			return StaticMesh->GetStaticMesh() != nullptr;
+		}
+
+		const USkeletalMeshComponent* SkeletalMesh = Cast<USkeletalMeshComponent>(Component);
+		return SkeletalMesh && SkeletalMesh->GetSkeletalMeshAsset();
+	}
+
+	/**
+	 * A preview scene holding the avatar and its lights, and nothing else.
+	 *
+	 * The engine's thumbnail scene adds a sky sphere scaled to 2000 and a floor plane scaled to
+	 * 10000, both of which fill every pixel the subject does not - and a capture with a transparent
+	 * background is exactly a capture with nothing behind the subject. The sky cubemap stays: it
+	 * lights the avatar and draws none of it.
+	 */
+	class FCPM_AvatarThumbnailScene : public FThumbnailPreviewScene
+	{
+	public:
+		FCPM_AvatarThumbnailScene()
+			: FThumbnailPreviewScene(FConstructionValues()
+				.SetCreateSkySphere(false)
+				.SetCreateFloorPlane(false))
+		{
+		}
+
+		virtual ~FCPM_AvatarThumbnailScene()
+		{
+			if (PreviewActor.IsValid())
+			{
+				PreviewActor->Destroy();
+			}
+		}
+
+		/** Spawns the blueprint and measures it. False when it draws nothing worth photographing. */
+		bool SetBlueprint(UBlueprint* Blueprint)
+		{
+			FActorSpawnParameters SpawnInfo;
+			SpawnInfo.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			SpawnInfo.bNoFail = true;
+			SpawnInfo.ObjectFlags = RF_Transient;
+			PreviewActor = GetWorld()->SpawnActor<AActor>(Blueprint->GeneratedClass, SpawnInfo);
+
+			if (!PreviewActor.IsValid() || !PreviewActor->GetRootComponent())
+			{
+				return false;
+			}
+
+			TArray<USceneComponent*> Visible;
+			PreviewActor->GetRootComponent()->GetChildrenComponents(true, Visible);
+			Visible.Add(PreviewActor->GetRootComponent());
+
+			FBoxSphereBounds::Builder BoundsBuilder;
+			bool bAnyGeometry = false;
+			for (const USceneComponent* Component : Visible)
+			{
+				if (ShowsGeometry(Component))
+				{
+					BoundsBuilder += Component->Bounds;
+					bAnyGeometry = true;
+				}
+			}
+			if (!bAnyGeometry)
+			{
+				return false;
+			}
+
+			Bounds = BoundsBuilder;
+			PreviewActor->SetActorLocation(-Bounds.Origin);
+
+			// Re-measured after the move: the fit below is computed against these, and the ones taken
+			// above are in whatever place the blueprint's own transform put the actor.
+			Bounds.Origin = FVector::ZeroVector;
+			return true;
+		}
+
+		/** One render. The pixels come back sRGB BGRA with real coverage in alpha, one per pixel of Side. */
+		bool RenderTo(UTextureRenderTarget2D* Target, int32 Side, TArray<FColor>& OutPixels)
+		{
+			FTextureRenderTargetResource* Resource = Target->GameThread_GetRenderTargetResource();
+			if (!Resource)
+			{
+				return false;
+			}
+
+			// Everything the avatar's materials need, resident, before anything is drawn. Without this
+			// the render is whatever happened to be streamed in - which for a MetaHuman opened seconds
+			// ago is the grey checker its textures fall back to.
+			FlushAsyncLoading();
+			FAssetCompilingManager::Get().FinishAllCompilation();
+			UTexture::ForceUpdateTextureStreaming();
+			IStreamingManager::Get().StreamAllResources();
+
+			FCanvas Canvas(Resource, nullptr, FGameTime(), GetScene()->GetFeatureLevel());
+
+			FSceneViewFamilyContext ViewFamily(FSceneViewFamily::ConstructionValues(Resource, GetScene(), FEngineShowFlags(ESFIM_Game))
+				.SetTime(FGameTime()));
+			ViewFamily.EngineShowFlags.DisableAdvancedFeatures();
+			ViewFamily.EngineShowFlags.MotionBlur = 0;
+
+			// Nothing draws them and both would tint the empty background, which the matte reads as
+			// coverage.
+			ViewFamily.EngineShowFlags.SetAtmosphere(false);
+			ViewFamily.EngineShowFlags.SetFog(false);
+
+			FSceneView* View = CreateView(&ViewFamily, 0, 0, Side, Side);
+			if (!View)
+			{
+				return false;
+			}
+
+			ViewFamily.EngineShowFlags.ScreenPercentage = false;
+			ViewFamily.SetScreenPercentageInterface(
+				new FLegacyScreenPercentageDriver(ViewFamily, /*GlobalResolutionFraction=*/1.0f));
+
+			GetRendererModule().BeginRenderingViewFamily(&Canvas, &ViewFamily);
+			FlushRenderingCommands();
+
+			FReadSurfaceDataFlags ReadFlags;
+			if (!Resource->ReadPixels(OutPixels, ReadFlags))
+			{
+				return false;
+			}
+
+			// Scene colour's alpha is how much of the BACKGROUND still shows through - zero where the
+			// avatar is solid, full where there is nothing. That is the opposite of what an image
+			// means by alpha, and PNG is about to be told this is an image.
+			for (FColor& Pixel : OutPixels)
+			{
+				Pixel.A = 255 - Pixel.A;
+			}
+			return true;
+		}
+
+	protected:
+		virtual float GetFOV() const override { return AvatarFieldOfView; }
+
+		// The engine clamps the orbit to 48 units minimum, which is for a scene where the creator can
+		// drag the camera. This one is computed from the subject's own size every time.
+		virtual bool ShouldClampOrbitZoom() const override { return false; }
+
+		virtual void GetViewMatrixParameters(
+			const float InFOVDegrees, FVector& OutOrigin, float& OutOrbitPitch, float& OutOrbitYaw, float& OutOrbitZoom) const override
+		{
+			const float HalfFOVRadians = FMath::DegreesToRadians(InFOVDegrees) * 0.5f;
+
+			// Fitted on height, not on the bounding sphere. A standing figure is far taller than it is
+			// wide, so its sphere is mostly the empty air either side of it, and fitting that leaves the
+			// avatar small in the middle of the frame.
+			const double HalfHeight = FMath::Max(Bounds.BoxExtent.Z, 1.0) / AvatarHeightFill;
+
+			OutOrigin = FVector(0.0, 0.0, -Bounds.BoxExtent.Z * AvatarAimUp);
+			OutOrbitPitch = 0.0f;
+			OutOrbitYaw = FrontOnOrbitYaw;
+			OutOrbitZoom = static_cast<float>(HalfHeight / FMath::Tan(HalfFOVRadians));
+		}
+
+	private:
+		TWeakObjectPtr<AActor> PreviewActor;
+		FBoxSphereBounds Bounds;
+	};
 }
 
 namespace ConvaiPakManager::Thumbnail
@@ -207,54 +415,73 @@ bool RenderBlueprintThumbnail(UBlueprint* Blueprint, int32& InOutWidth, int32& I
 		return false;
 	}
 
+	if (!IsValid(Blueprint->GeneratedClass) || Blueprint->bBeingCompiled)
+	{
+		OutError = FString::Printf(TEXT("%s has not compiled, so there is nothing to photograph."), *Blueprint->GetName());
+		return false;
+	}
+
 	if (InOutWidth <= 0 || InOutHeight <= 0)
 	{
 		OutError = TEXT("A thumbnail cannot be rendered at that size.");
 		return false;
 	}
 
-	// Swapped in rather than written through: the renderer reads the angle off the blueprint, and
-	// it also clamps OrbitZoom in place, so pointing the camera at the avatar's face by editing the
-	// creator's asset would both discard their framing and dirty their package.
-	USceneThumbnailInfo* FrontOn = NewObject<USceneThumbnailInfo>(GetTransientPackage());
-	FrontOn->OrbitPitch = 0.0f;
-	FrontOn->OrbitYaw = FrontOnOrbitYaw;
-	FrontOn->OrbitZoom = 0.0f;
-
-	UThumbnailInfo* CreatorsFraming = Blueprint->ThumbnailInfo;
-	Blueprint->ThumbnailInfo = FrontOn;
-	ON_SCOPE_EXIT{ Blueprint->ThumbnailInfo = CreatorsFraming; };
-
-	// Rendered square and cropped, rather than rendered at the asked-for shape: the thumbnail
-	// projection is fixed at a 1:1 aspect (FThumbnailPreviewScene::CreateView builds it as
-	// FReversedZPerspectiveMatrix(HalfFOV, 1, 1, Near)), so a 1:2 target would stretch the avatar to
-	// twice its height. The bounds fit centres the subject in the square, so a portrait crop takes
-	// the empty sides; a landscape one would take head and feet, which is the cost of asking a
-	// square fit for a wide card.
+	// Rendered square and cropped rather than rendered at the asked-for shape: CreateView builds the
+	// projection at a fixed 1:1 aspect, so a 1:2 target would stretch the avatar to twice its height.
 	const int32 Side = FMath::Max(InOutWidth, InOutHeight);
 
-	FObjectThumbnail Rendered;
-	ThumbnailTools::RenderThumbnail(
-		Blueprint, Side, Side, ThumbnailTools::EThumbnailTextureFlushMode::AlwaysFlush, nullptr, &Rendered);
+	FCPM_AvatarThumbnailScene Scene;
+	if (!Scene.SetBlueprint(Blueprint))
+	{
+		OutError = FString::Printf(TEXT("%s has no visible mesh to photograph."), *Blueprint->GetName());
+		return false;
+	}
 
-	const TArray<uint8>& Image = Rendered.GetUncompressedImageData();
-	const int32 RenderedWidth = Rendered.GetImageWidth();
-	const int32 RenderedHeight = Rendered.GetImageHeight();
-	if (Rendered.IsEmpty() || Image.Num() != RenderedWidth * RenderedHeight * 4)
+	UTextureRenderTarget2D* Target = NewObject<UTextureRenderTarget2D>(GetTransientPackage());
+	Target->AddToRoot();
+	ON_SCOPE_EXIT{ Target->RemoveFromRoot(); };
+	Target->RenderTargetFormat = RTF_RGBA8_SRGB;
+
+	// Alpha zero, so a pixel the avatar does not cover ends up transparent rather than black.
+	Target->ClearColor = FLinearColor::Transparent;
+	Target->InitAutoFormat(Side, Side);
+	Target->UpdateResourceImmediate(true);
+
+	// Off by default, and without it the renderer is free to write whatever it likes into scene
+	// colour's alpha - which in practice is opaque everywhere, background included. Restored
+	// immediately: it is a global that governs every render in the editor, not just this one.
+	IConsoleVariable* PropagateAlpha =
+		IConsoleManager::Get().FindConsoleVariable(TEXT("r.PostProcessing.PropagateAlpha"));
+	const bool bPropagatedAlpha = PropagateAlpha && PropagateAlpha->GetBool();
+	if (PropagateAlpha)
+	{
+		PropagateAlpha->Set(true, ECVF_SetByCode);
+	}
+	ON_SCOPE_EXIT
+	{
+		if (PropagateAlpha)
+		{
+			PropagateAlpha->Set(bPropagatedAlpha, ECVF_SetByCode);
+		}
+	};
+
+	TArray<FColor> Rendered;
+	if (!Scene.RenderTo(Target, Side, Rendered) || Rendered.Num() != Side * Side)
 	{
 		OutError = FString::Printf(TEXT("The editor could not render a preview of %s."), *Blueprint->GetName());
 		return false;
 	}
 
-	const FIntRect Crop = CentreCrop(FIntPoint(RenderedWidth, RenderedHeight), FIntPoint(InOutWidth, InOutHeight));
+	const FIntRect Crop = CentreCrop(FIntPoint(Side, Side), FIntPoint(InOutWidth, InOutHeight));
 
 	OutPixels.SetNumUninitialized(Crop.Width() * Crop.Height());
 	for (int32 Row = 0; Row < Crop.Height(); ++Row)
 	{
 		FMemory::Memcpy(
 			OutPixels.GetData() + Row * Crop.Width(),
-			Image.GetData() + ((Crop.Min.Y + Row) * RenderedWidth + Crop.Min.X) * 4,
-			Crop.Width() * 4);
+			Rendered.GetData() + (Crop.Min.Y + Row) * Side + Crop.Min.X,
+			Crop.Width() * sizeof(FColor));
 	}
 
 	InOutWidth = Crop.Width();
