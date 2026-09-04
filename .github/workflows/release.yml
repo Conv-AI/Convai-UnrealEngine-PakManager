@@ -4,10 +4,17 @@ on:
   push:
     branches:
       - main
+      - staging
   workflow_dispatch:
 
 permissions:
   contents: write
+
+# Two pushes in quick succession would otherwise race for the same tag. Per branch, so a staging
+# release and a main release never wait on each other.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -18,92 +25,79 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Ensure jq (for parsing .uplugin JSON)
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y jq
-
-      - name: Find and read plugin version from .uplugin
-        id: get_version
-        run: |
-          set -euo pipefail
-          PLUGIN_FILE="$(git ls-files '*.uplugin' | head -n 1 || true)"
-          if [ -z "$PLUGIN_FILE" ]; then
-            echo "No .uplugin found"; exit 1
-          fi
-          echo "plugin_file=$PLUGIN_FILE" >> "$GITHUB_OUTPUT"
-          VER="$(jq -r '(.VersionName // .Version // null)' "$PLUGIN_FILE")"
-          if [ "$VER" = "null" ] || [ -z "$VER" ]; then
-            echo "No VersionName/Version in $PLUGIN_FILE"; exit 1
-          fi
-          echo "version=$VER" >> "$GITHUB_OUTPUT"
-          echo "Detected version: $VER"
-
-      - name: Get latest release tag (if any)
-        id: latest
-        uses: actions/github-script@v7
-        with:
-          script: |
-            try {
-              const { data } = await github.rest.repos.getLatestRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo
-              });
-              core.setOutput('tag', data.tag_name || '');
-            } catch (e) {
-              // No releases yet
-              core.setOutput('tag', '');
-            }
-
-      - name: Decide if version bumped
+      # One workflow for both channels: main publishes v<version>, every other branch publishes
+      # staging-v<version> as a prerelease, so the two can never claim the same tag.
+      #
+      # The gate is the tag rather than a diff of the descriptor: a re-run, a force push and a
+      # manual dispatch all have to reach the same answer, and "a release for this version exists"
+      # is the only question that survives all three. jq ships on the runner; no apt-get needed.
+      - name: Read VersionName and decide
         id: decide
+        env:
+          PLUGIN_FILE: ConvaiPakManager.uplugin
+          BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          WANT="v${{ steps.get_version.outputs.version }}"
-          LATEST="${{ steps.latest.outputs.tag }}"
-          echo "Latest release tag: '${LATEST}'"
-          echo "Desired tag: '${WANT}'"
-
-          if [ "$LATEST" = "$WANT" ]; then
-            echo "changed=no" >> "$GITHUB_OUTPUT"
-            echo "No version bump; skipping."
-          else
-            echo "changed=yes" >> "$GITHUB_OUTPUT"
-            echo "tag=$WANT" >> "$GITHUB_OUTPUT"
-            echo "Version bump detected."
+          VERSION="$(jq -r '.VersionName // empty' "$PLUGIN_FILE")"
+          if [ -z "$VERSION" ]; then
+            echo "::error::$PLUGIN_FILE has no VersionName"; exit 1
           fi
 
-      - name: Zip repository
-        if: steps.decide.outputs.changed == 'yes'
-        id: zip
+          if [ "$BRANCH" = "main" ]; then
+            TAG="v${VERSION}"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "name=Convai Pak Manager Release ${VERSION}" >> "$GITHUB_OUTPUT"
+          else
+            TAG="staging-v${VERSION}"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "name=Convai Pak Manager ${VERSION} (staging)" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "bumped=no" >> "$GITHUB_OUTPUT"
+            echo "$TAG already exists - bump VersionName in $PLUGIN_FILE to publish." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "bumped=yes" >> "$GITHUB_OUTPUT"
+            echo "Publishing $TAG from ${GITHUB_SHA}." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # git archive rather than a copy of the working tree: it carries only what is committed, so
+      # the untracked Binaries, Intermediate and Context folders a checkout could grow cannot reach
+      # a creator's machine, and naming the four paths keeps docs and CI config out. A path that is
+      # not in the commit fails the step rather than shipping a plugin missing half of itself.
+      - name: Archive the plugin
+        if: steps.decide.outputs.bumped == 'yes'
+        id: stage
+        env:
+          VERSION: ${{ steps.decide.outputs.version }}
         run: |
           set -euo pipefail
-          ZIP_NAME="${{ github.event.repository.name }}.zip"
-          STAGE="$(mktemp -d)"
+          ZIP_NAME="ConvaiPakManager-${VERSION}.zip"
+          git archive --format=zip -9 --prefix=ConvaiPakManager/ -o "$ZIP_NAME" HEAD \
+            ConvaiPakManager.uplugin Config Source Resources
+          echo "zip=$ZIP_NAME" >> "$GITHUB_OUTPUT"
 
-          # The plugin sits in its own folder in the archive, so unzipping into a project's
-          # Plugins folder lands it where Unreal expects rather than loose.
-          mkdir -p "$STAGE/${{ github.event.repository.name }}"
-          rsync -a --exclude '.git' --exclude "$ZIP_NAME" \
-            ./ "$STAGE/${{ github.event.repository.name }}/"
+          # An archive of four empty folders is still a valid zip. The module's build script is the
+          # one file whose absence means the plugin cannot compile wherever it lands.
+          # grep without -q: under pipefail an early-exiting reader makes unzip die of SIGPIPE, and
+          # the pipeline would then report failure on a successful match.
+          if ! unzip -l "$ZIP_NAME" | grep -F 'Source/ConvaiPakManager/ConvaiPakManager.Build.cs' >/dev/null; then
+            echo "::error::$ZIP_NAME has no module build script"; exit 1
+          fi
+          echo "$ZIP_NAME - $(unzip -l "$ZIP_NAME" | tail -n 1)" >> "$GITHUB_STEP_SUMMARY"
 
-          (cd "$STAGE" && zip -qr "$OLDPWD/$ZIP_NAME" .)
-          echo "zip_path=$ZIP_NAME" >> "$GITHUB_OUTPUT"
-
-      - name: Create GitHub Release
-        if: steps.decide.outputs.changed == 'yes'
+      - name: Create release
+        if: steps.decide.outputs.bumped == 'yes'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.decide.outputs.tag }}
-          name: "Convai Pak Manager Release ${{ steps.get_version.outputs.version }}"
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.decide.outputs.name }}
           body: |
-            Automated release created from push.
-            - Plugin file: `${{ steps.get_version.outputs.plugin_file }}`
-            - Version: `${{ steps.get_version.outputs.version }}`
+            Convai Pak Manager `${{ steps.decide.outputs.version }}`.
 
             Unzip into your project's `Plugins/` folder.
-          draft: false
-          prerelease: ${{ contains(steps.get_version.outputs.version, '-') }}
-          files: ${{ steps.zip.outputs.zip_path }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: ${{ steps.decide.outputs.prerelease }}
+          files: ${{ steps.stage.outputs.zip }}
