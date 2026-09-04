@@ -3,6 +3,7 @@
 #include "Chunk/CPM_Chunk.h"
 #include "Dom/JsonObject.h"
 #include "HAL/FileManager.h"
+#include "Jobs/CPM_PublishJobs.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -33,6 +34,26 @@ namespace
 		const TSharedPtr<FJsonObject>* Entity = nullptr;
 		return Root->TryGetObjectField(TEXT("entity_data"), Entity) && Entity && Entity->IsValid()
 			? Field((*Entity).ToSharedRef(), Name)
+			: FString();
+	}
+
+	/** The document's key set, order-independent, as one string a failure message can be read from. */
+	FString SortedKeys(const TSharedRef<FJsonObject>& Root)
+	{
+		TArray<FString> Keys;
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Root->Values)
+		{
+			Keys.Add(Field.Key);
+		}
+		Keys.Sort();
+		return FString::Join(Keys, TEXT(","));
+	}
+
+	FString SortedEntityKeys(const TSharedRef<FJsonObject>& Root)
+	{
+		const TSharedPtr<FJsonObject>* Entity = nullptr;
+		return Root->TryGetObjectField(TEXT("entity_data"), Entity) && Entity && Entity->IsValid()
+			? SortedKeys((*Entity).ToSharedRef())
 			: FString();
 	}
 
@@ -234,6 +255,103 @@ bool FCPMAssetMetadataRefusesADocumentItCannotRead::RunTest(const FString&)
 		Field(Parse(*ReadMetadata()), TEXT("asset_name")), FString(TEXT("Nova")));
 
 	IFileManager::Get().DeleteDirectory(*Directory, false, true);
+	return true;
+}
+
+/**
+ * The exact key set legacy's GetCreateMetaData wrote, no more and no less.
+ *
+ * Pinned as a set rather than field by field, because the failure this catches is the one the
+ * per-field tests cannot see: a key silently added or dropped by a later change to the composer.
+ * A key that legitimately joins the schema changes this test in the same commit.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMAssetMetadataCreateDocumentKeysMatchLegacy,
+	"ConvaiPakManager.Publish.Metadata.CreateDocumentKeysMatchLegacy",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMAssetMetadataCreateDocumentKeysMatchLegacy::RunTest(const FString&)
+{
+	const FString ExpectedTopLevel = TEXT("asset_description,asset_name,asset_type,blueprint_class,")
+		TEXT("blueprint_class_path,content_path,entity_data,level_name,plugin_name,project_name,root_path");
+
+	// Seeded with nothing: a create composes from an empty document, so every key below is one the
+	// composer itself put there.
+	const TSharedRef<FJsonObject> Scene = Parse(TEXT("{}"));
+	ConvaiPakManager::Chunk::FillRequiredMetadataFields(Scene, TEXT("Proj"), TEXT("PLUGIN"), TEXT("Scene"));
+	TestEqual(TEXT("a Scene writes exactly the legacy top-level keys"), SortedKeys(Scene), ExpectedTopLevel);
+	TestEqual(TEXT("and exactly the legacy Scene entity keys"), SortedEntityKeys(Scene),
+		FString(TEXT("scene_description,scene_metadata,scene_name")));
+
+	const TSharedRef<FJsonObject> Avatar = Parse(TEXT("{}"));
+	ConvaiPakManager::Chunk::FillRequiredMetadataFields(Avatar, TEXT("Proj"), TEXT("PLUGIN"), TEXT("Avatar"));
+	TestEqual(TEXT("an Avatar writes the same top-level keys"), SortedKeys(Avatar), ExpectedTopLevel);
+	TestEqual(TEXT("and exactly the legacy Avatar entity keys"), SortedEntityKeys(Avatar),
+		FString(TEXT("avatar_config,avatar_name,gender")));
+
+	return true;
+}
+
+/**
+ * The tags a publish files an Asset under. Legacy's sets verbatim: a Scene that reaches the server
+ * as ["Pak","Scene"] is published and then invisible to ConvaiSim.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMAssetMetadataSendsTheLegacyTagSets,
+	"ConvaiPakManager.Publish.Metadata.SendsTheLegacyTagSets",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMAssetMetadataSendsTheLegacyTagSets::RunTest(const FString&)
+{
+	FCPM_PublishPolicy Policy;
+	Policy.Windows.bShouldPackage = true;
+
+	FCPM_CreatePakAssetParams Scene;
+	ConvaiPakManager::Publish::FillPublishFormFields(TEXT("Scene"), Policy, false, false, Scene);
+	TestEqual(TEXT("a Scene carries the four tags legacy sent"), FString::Join(Scene.Tags, TEXT(",")),
+		FString(TEXT("Pak,ConvaiSim,Background3D,Scene")));
+
+	FCPM_CreatePakAssetParams Avatar;
+	ConvaiPakManager::Publish::FillPublishFormFields(TEXT("avatar"), Policy, false, false, Avatar);
+	TestEqual(TEXT("an Avatar carries two"), FString::Join(Avatar.Tags, TEXT(",")), FString(TEXT("Pak,Avatar")));
+
+	FCPM_CreatePakAssetParams WithRaw;
+	ConvaiPakManager::Publish::FillPublishFormFields(TEXT("Avatar"), Policy, true, false, WithRaw);
+	TestEqual(TEXT("a run that sends the project archive is tagged Raw"), FString::Join(WithRaw.Tags, TEXT(",")),
+		FString(TEXT("Pak,Avatar,Raw")));
+
+	TestEqual(TEXT("entity_type is the lowercased asset type"), Scene.Entity_Type, FString(TEXT("scene")));
+
+	return true;
+}
+
+/**
+ * Visibility is a create-time decision. Legacy pinned every new Asset private and never sent the
+ * field again; an update that re-sent it would shut an Asset the creator had opened up since.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMAssetMetadataPinsANewAssetPrivate,
+	"ConvaiPakManager.Publish.Metadata.PinsANewAssetPrivate",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMAssetMetadataPinsANewAssetPrivate::RunTest(const FString&)
+{
+	FCPM_PublishPolicy Policy;
+	Policy.Windows.bShouldPackage = true;
+
+	FCPM_CreatePakAssetParams Created;
+	ConvaiPakManager::Publish::FillPublishFormFields(TEXT("Scene"), Policy, false, false, Created);
+	TestEqual(TEXT("a create pins the new Asset private"), Created.Visiblity, FString(TEXT("private")));
+
+	FCPM_CreatePakAssetParams Updated;
+	ConvaiPakManager::Publish::FillPublishFormFields(TEXT("Scene"), Policy, false, true, Updated);
+	TestTrue(TEXT("an update sends no visibility at all"), Updated.Visiblity.IsEmpty());
+
+	// The Version slot the request names, unchanged by any of the above - the form field a wrong
+	// visibility fix would be easiest to break by accident.
+	TestEqual(TEXT("the Version slot is the first platform the policy packages"), Created.Version,
+		FCPM_PakArtifact::VersionSlotFor(ECPM_Platform::Windows));
+
 	return true;
 }
 
