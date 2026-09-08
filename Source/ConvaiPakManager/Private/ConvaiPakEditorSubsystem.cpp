@@ -33,6 +33,7 @@
 #include "Misc/EngineVersion.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
+#include "Misc/ScopeExit.h"
 #include "Proxy/CPM_Proxy.h"
 #include "ActorFactories/ActorFactory.h"
 #include "Builders/CubeBuilder.h"
@@ -41,6 +42,7 @@
 #include "Publish/CPM_Compatibility.h"
 #include "Publish/CPM_PolicyRequest.h"
 #include "Publish/CPM_Preconditions.h"
+#include "Stage/CPM_Stage.h"
 #include "Thumbnail/CPM_Thumbnail.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
@@ -364,6 +366,11 @@ namespace
 	// and needs none: FillRequiredMetadataFields is what knows where a field belongs on the wire.
 	const TCHAR* AssetGenderField = TEXT("gender");
 
+	// The checkbox and its level, as FillRequiredMetadataFields strips them off the wire. Strings,
+	// because WriteDraftFields writes nothing else.
+	const TCHAR* StageEnabledField = TEXT("stage_enabled");
+	const TCHAR* StageSourceLevelField = TEXT("stage_source_level");
+
 	FString ReadDraftField(const int32 ChunkId, const TCHAR* Field)
 	{
 		FString Contents;
@@ -430,6 +437,26 @@ namespace
 
 		return FFileHelper::SaveStringToFile(Serialised, *Path);
 	}
+
+	/**
+	 * The stage-limits section of the same document. Its failure is logged and NOT the Policy's:
+	 * every non-stage publish would otherwise stop working the day Convai typos that one section,
+	 * and a stage publish is refused on its own terms by the Precondition.
+	 *
+	 * An absent section parses as no rules at all - that is an older policy, not a broken one - so
+	 * the log fires only on real damage.
+	 */
+	FCPM_StageLimits ParseStageLimits(const FString& Json)
+	{
+		FCPM_StageLimits Limits;
+		FString Error;
+		if (!Limits.ParseFromJson(Json, Error))
+		{
+			CPM_LOG(Warning, TEXT("The publish policy's stage-limits could not be read (%s); stages are judged against no limits until it is fixed."),
+				*Error);
+		}
+		return Limits;
+	}
 }
 
 FString UConvaiPakEditorSubsystem::GetAssetName(const int32 ChunkId) const
@@ -460,6 +487,137 @@ FString UConvaiPakEditorSubsystem::GetAssetGender(const int32 ChunkId) const
 bool UConvaiPakEditorSubsystem::SetAssetGender(const int32 ChunkId, const FString& Gender)
 {
 	return WriteDraftFields(ChunkId, { { AssetGenderField, Gender } });
+}
+
+bool UConvaiPakEditorSubsystem::IsStageEnabled(const int32 ChunkId) const
+{
+	return ReadDraftField(ChunkId, StageEnabledField).Equals(TEXT("true"), ESearchCase::IgnoreCase);
+}
+
+FString UConvaiPakEditorSubsystem::GetStageSourceLevel(const int32 ChunkId) const
+{
+	return ReadDraftField(ChunkId, StageSourceLevelField);
+}
+
+bool UConvaiPakEditorSubsystem::SetStageEnabled(const int32 ChunkId, const bool bEnabled, const FString& SourceLevelPackage)
+{
+	if (GetAssetType() != ECPM_AssetType::Avatar)
+	{
+		CPM_LOG(Warning, TEXT("Refusing to change the stage of chunk %d: only an Avatar has one."), ChunkId);
+		return false;
+	}
+
+	const bool bWasEnabled = IsStageEnabled(ChunkId);
+
+	TMap<FString, FString> Fields;
+	Fields.Add(StageEnabledField, bEnabled ? TEXT("true") : TEXT("false"));
+
+	// Only a tick that has to discover its level cares what is open; one naming its level is a
+	// script's business and is written as given, and an untick that refused because the wrong map
+	// was open would strand the creator.
+	if (bEnabled)
+	{
+		FString Level = SourceLevelPackage;
+		if (Level.IsEmpty())
+		{
+			UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+			if (!World)
+			{
+				CPM_LOG(Warning, TEXT("Refusing to enable the stage of chunk %d: open the level that holds the avatar and its stage first."), ChunkId);
+				return false;
+			}
+			if (World->IsPartitionedWorld())
+			{
+				CPM_LOG(Warning, TEXT("Refusing to enable the stage of chunk %d: World Partition levels are not supported for a stage in V0."), ChunkId);
+				return false;
+			}
+			Level = World->GetOutermost()->GetName();
+		}
+		Fields.Add(StageSourceLevelField, Level);
+	}
+
+	if (!WriteDraftFields(ChunkId, Fields))
+	{
+		return false;
+	}
+
+	// A flip changes the thumbnail's shape. The publish gate only refuses a thumbnail that exists
+	// and is blank, so deleting the file is what sends the creator back to Capture for the other
+	// aspect ratio - and only a flip, or re-ticking would throw away a good picture.
+	if (bWasEnabled != bEnabled)
+	{
+		IFileManager::Get().Delete(
+			*ConvaiPakManager::Chunk::GetThumbnailPath(ChunkId), /*RequireExists=*/false, /*EvenReadOnly=*/true);
+	}
+
+	return true;
+}
+
+bool UConvaiPakEditorSubsystem::ScanStage(const int32 ChunkId, FCPM_StageReport& OutReport)
+{
+	OutReport = FCPM_StageReport();
+	OutReport.ChunkId = ChunkId;
+
+	// Every exit broadcasts: a refusal the panel never hears is a scan that looks like it hung.
+	ON_SCOPE_EXIT { OnStageScanned.Broadcast(OutReport); };
+
+	// The first two are never displayed - the view model hides the line when the box is off - but a
+	// script calling this out of turn still gets told why nothing was read.
+	if (GetAssetType() != ECPM_AssetType::Avatar)
+	{
+		OutReport.Refusal = TEXT("only an Avatar has a stage");
+		return false;
+	}
+	if (!IsStageEnabled(ChunkId))
+	{
+		OutReport.Refusal = TEXT("Include environment is not ticked");
+		return false;
+	}
+
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World)
+	{
+		OutReport.Refusal = TEXT("open the level that holds the avatar and its stage first");
+		return false;
+	}
+
+	const FString SourceLevel = GetStageSourceLevel(ChunkId);
+	if (World->GetOutermost()->GetName() != SourceLevel)
+	{
+		OutReport.Refusal = FString::Printf(
+			TEXT("open %s to scan its stage - or untick and tick Include environment with the right level open"),
+			*SourceLevel);
+		return false;
+	}
+
+	if (World->IsPartitionedWorld())
+	{
+		OutReport.Refusal = TEXT("World Partition levels are not supported for a stage in V0");
+		return false;
+	}
+
+	const FString EntryPoint = GetEntryPoint(ChunkId);
+	if (EntryPoint.IsEmpty())
+	{
+		OutReport.Refusal = TEXT("pick the avatar's blueprint first");
+		return false;
+	}
+
+	const UBlueprint* Blueprint = Cast<UBlueprint>(StaticLoadObject(UBlueprint::StaticClass(), nullptr, *EntryPoint));
+	// Null is legal: Inspect then finds no avatar placed, and saying so is Evaluate's job.
+	UClass* AvatarClass = Blueprint ? Blueprint->GeneratedClass : nullptr;
+
+	OutReport.Facts = ConvaiPakManager::Stage::Inspect(World, AvatarClass);
+
+	// Judged only against limits actually read. An unread Policy is not an empty one, and judging
+	// against nothing would print READY over a stage the Publish is about to refuse.
+	if (PolicyState == ECPM_PolicyReadState::Read)
+	{
+		OutReport.bLimitsRead = true;
+		OutReport.Issues = ConvaiPakManager::Stage::Evaluate(OutReport.Facts, CachedLimits);
+	}
+
+	return true;
 }
 
 FString UConvaiPakEditorSubsystem::GetEntryPoint(const int32 ChunkId) const
@@ -1170,7 +1328,7 @@ void UConvaiPakEditorSubsystem::SetStatus(
 
 void UConvaiPakEditorSubsystem::ResolvePolicy(
 	const int32 ChunkId,
-	TFunction<void(bool, const FCPM_PublishPolicy&, const FString&)> OnResolved)
+	TFunction<void(bool, const FCPM_PublishPolicy&, const FCPM_StageLimits&, const FString&)> OnResolved)
 {
 	const UCPM_PakManagerSettings& Settings = UCPM_PakManagerSettings::Get();
 
@@ -1188,7 +1346,7 @@ void UConvaiPakEditorSubsystem::ResolvePolicy(
 		FString Contents;
 		if (!FFileHelper::LoadFileToString(Contents, *Settings.PolicyOverrideFile))
 		{
-			OnResolved(false, FCPM_PublishPolicy(),
+			OnResolved(false, FCPM_PublishPolicy(), FCPM_StageLimits(),
 				FString::Printf(TEXT("could not read the publish policy override at %s"), *Settings.PolicyOverrideFile));
 			return;
 		}
@@ -1196,7 +1354,7 @@ void UConvaiPakEditorSubsystem::ResolvePolicy(
 		FCPM_PublishPolicy Policy;
 		FString Error;
 		const bool bParsed = Policy.ParseFromJson(Contents, Error);
-		OnResolved(bParsed, Policy, Error);
+		OnResolved(bParsed, Policy, ParseStageLimits(Contents), Error);
 		return;
 	}
 
@@ -1205,7 +1363,7 @@ void UConvaiPakEditorSubsystem::ResolvePolicy(
 		FCPM_PublishPolicy Policy;
 		FString Error;
 		const bool bParsed = Policy.ParseFromJson(Settings.PolicyOverrideJson, Error);
-		OnResolved(bParsed, Policy, Error);
+		OnResolved(bParsed, Policy, ParseStageLimits(Settings.PolicyOverrideJson), Error);
 		return;
 	}
 
@@ -1216,7 +1374,9 @@ void UConvaiPakEditorSubsystem::ResolvePolicy(
 		// nothing downstream would notice.
 		FString Error;
 		const bool bValid = Settings.PolicyOverride.Validate(Error);
-		OnResolved(bValid, bValid ? Settings.PolicyOverride : FCPM_PublishPolicy(), Error);
+		// The typed override has no limits field, deliberately: the stage Precondition is what
+		// refuses a stage publish under it, rather than this branch inventing limits to pass on.
+		OnResolved(bValid, bValid ? Settings.PolicyOverride : FCPM_PublishPolicy(), FCPM_StageLimits(), Error);
 		return;
 	}
 
@@ -1231,14 +1391,14 @@ void UConvaiPakEditorSubsystem::ResolvePolicy(
 					// exists so Convai can change what a Publish produces, so a stale copy is wrong
 					// exactly when it matters - and publishing from one yields an Asset missing a
 					// Version, which nothing here would notice. See docs/adr/0004.
-					OnResolved(false, FCPM_PublishPolicy(), TEXT("the publish policy could not be fetched"));
+					OnResolved(false, FCPM_PublishPolicy(), FCPM_StageLimits(), TEXT("the publish policy could not be fetched"));
 					return;
 				}
 
 				FCPM_PublishPolicy Policy;
 				FString Error;
 				const bool bParsed = Policy.ParseFromJson(Contents, Error);
-				OnResolved(bParsed, Policy, Error);
+				OnResolved(bParsed, Policy, ParseStageLimits(Contents), Error);
 			}));
 }
 
@@ -1271,7 +1431,8 @@ bool UConvaiPakEditorSubsystem::GetPublishPolicy(
 	return PolicyState == ECPM_PolicyReadState::Read;
 }
 
-void UConvaiPakEditorSubsystem::CachePolicy(const bool bSucceeded, const FCPM_PublishPolicy& Policy)
+void UConvaiPakEditorSubsystem::CachePolicy(
+	const bool bSucceeded, const FCPM_PublishPolicy& Policy, const FCPM_StageLimits& Limits)
 {
 	// A failed read leaves the last good Policy in place but stops calling it current: callers gate
 	// on the state, and overwriting it with a default-constructed one would make "packages nothing"
@@ -1279,6 +1440,7 @@ void UConvaiPakEditorSubsystem::CachePolicy(const bool bSucceeded, const FCPM_Pu
 	if (bSucceeded)
 	{
 		CachedPolicy = Policy;
+		CachedLimits = Limits;
 		PolicyReadAt = FDateTime::UtcNow();
 	}
 
@@ -1298,12 +1460,13 @@ void UConvaiPakEditorSubsystem::RefreshPolicy()
 	OnPolicyChanged.Broadcast();
 
 	TWeakObjectPtr<UConvaiPakEditorSubsystem> WeakThis(this);
-	ResolvePolicy(INDEX_NONE, [WeakThis](const bool bSucceeded, const FCPM_PublishPolicy& Policy, const FString&)
+	ResolvePolicy(INDEX_NONE,
+		[WeakThis](const bool bSucceeded, const FCPM_PublishPolicy& Policy, const FCPM_StageLimits& Limits, const FString&)
 	{
 		if (UConvaiPakEditorSubsystem* Self = WeakThis.Get())
 		{
 			Self->bPolicyRefreshInFlight = false;
-			Self->CachePolicy(bSucceeded, Policy);
+			Self->CachePolicy(bSucceeded, Policy, Limits);
 		}
 	});
 }
@@ -1483,7 +1646,9 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 	// shape may depend only on what the caller knew before building it - so it is resolved first and
 	// the queue is built from the answer. See docs/adr/0004.
 	TWeakObjectPtr<UConvaiPakEditorSubsystem> WeakThis(this);
-	ResolvePolicy(ChunkId, [WeakThis, ChunkId, bPackageOnly, Options](const bool bSucceeded, const FCPM_PublishPolicy& Policy, const FString& Error)
+	ResolvePolicy(ChunkId,
+		[WeakThis, ChunkId, bPackageOnly, Options](const bool bSucceeded, const FCPM_PublishPolicy& Policy,
+			const FCPM_StageLimits& Limits, const FString& Error)
 	{
 		UConvaiPakEditorSubsystem* Self = WeakThis.Get();
 		if (!Self)
@@ -1494,7 +1659,7 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 		// This run read the Policy for real, so the display cache learns from it for free. Recorded
 		// before the cancel and failure branches: what Convai answered is true regardless of what
 		// this particular run went on to do.
-		Self->CachePolicy(bSucceeded, Policy);
+		Self->CachePolicy(bSucceeded, Policy, Limits);
 
 		Self->PendingPolicyRuns.Remove(ChunkId);
 		if (Self->CancelledDuringPolicyRead.Remove(ChunkId) > 0)
@@ -1514,7 +1679,7 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 		const FCPM_PublishPolicy Effective =
 			Options.bOverridePlatforms ? Policy.WithPlatforms(Options.Platforms) : Policy;
 
-		Self->StartPublishRun(ChunkId, Effective, bPackageOnly, Options);
+		Self->StartPublishRun(ChunkId, Effective, Limits, bPackageOnly, Options);
 	});
 
 	// Accepted. Whether it succeeds arrives later, as this Chunk's status.
@@ -1522,7 +1687,8 @@ bool UConvaiPakEditorSubsystem::BeginPolicyRun(const int32 ChunkId, const bool b
 }
 
 void UConvaiPakEditorSubsystem::StartPublishRun(
-	const int32 ChunkId, const FCPM_PublishPolicy& Policy, const bool bPackageOnly, const FCPM_PublishOptions& Options)
+	const int32 ChunkId, const FCPM_PublishPolicy& Policy, const FCPM_StageLimits& Limits, const bool bPackageOnly,
+	const FCPM_PublishOptions& Options)
 {
 	const bool bHasPaks = !Policy.PlatformsToPackage().IsEmpty();
 

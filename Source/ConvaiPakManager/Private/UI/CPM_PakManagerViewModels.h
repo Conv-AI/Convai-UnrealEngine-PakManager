@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Publish/CPM_PublishTypes.h"
+#include "Stage/CPM_Stage.h"
 #include "Utility/CPM_Utils.h"
 
 class UConvaiPakEditorSubsystem;
@@ -36,6 +37,16 @@ struct FCPM_AssetViewModel
 
 	/** Package path of the Entry Point. Empty until picked. */
 	FString EntryPoint;
+
+	/** Avatar only: whether the surroundings upload with it, and from which level. */
+	bool bStageEnabled = false;
+	FString StageSourceLevel;
+
+	/**
+	 * The last scan's answer, pushed in by the panel when OnStageScanned fires - not reloaded by
+	 * LoadFrom, which reads the record and not the level.
+	 */
+	FCPM_StageReport StageReport;
 
 	ECPM_AssetType AssetType = ECPM_AssetType::Max;
 
@@ -101,13 +112,23 @@ struct FCPM_AssetViewModel
 
 	EBadge Badge() const;
 
-	/** Empty means the Create/Publish gate is open: name, valid Entry Point, captured thumbnail. */
+	/**
+	 * Empty means the Create/Publish gate is open: name, valid Entry Point, captured thumbnail, and
+	 * - with Include environment on and the Policy read - no stage Errors.
+	 */
 	TArray<FText> ValidationMessages() const;
 
 	/** Validation passes and this Chunk is not already busy. Callers still apply the one-publish-at-a-time project gate. */
 	bool CanCreateOrPublish() const;
 
 	FText BadgeText() const;
+
+	/**
+	 * The one line under Include environment: a refusal, limits not read, N issues, or READY.
+	 * Empty when the box is off. Pure like every other rule here, so a test drives it with a
+	 * hand-filled report.
+	 */
+	FText StageStatusLine() const;
 };
 
 /**

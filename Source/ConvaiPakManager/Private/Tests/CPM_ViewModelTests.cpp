@@ -2,6 +2,7 @@
 
 #include "Misc/AutomationTest.h"
 #include "UI/CPM_PakManagerViewModels.h"
+#include "Stage/CPM_Stage.h"
 
 #if WITH_AUTOMATION_TESTS
 
@@ -20,6 +21,26 @@ namespace
 		Model.AssetType = ECPM_AssetType::Scene;
 		Model.bThumbnailExists = true;
 		return Model;
+	}
+
+	/** An Avatar draft with the stage box ticked, otherwise as complete as MakeValidDraft. */
+	FCPM_AssetViewModel MakeStagedAvatarDraft()
+	{
+		FCPM_AssetViewModel Model = MakeValidDraft();
+		Model.AssetType = ECPM_AssetType::Avatar;
+		Model.EntryPoint = TEXT("/Game/Office/BP_Receptionist");
+		Model.bStageEnabled = true;
+		Model.StageReport.ChunkId = Model.ChunkId;
+		Model.StageReport.bLimitsRead = true;
+		return Model;
+	}
+
+	FCPM_StageIssue StageIssue(const ECPM_StageSeverity Severity)
+	{
+		FCPM_StageIssue Issue;
+		Issue.Severity = Severity;
+		Issue.Reason = TEXT("a line the creator reads");
+		return Issue;
 	}
 }
 
@@ -227,6 +248,72 @@ bool FCPMViewModelOverridesPlatformsOnlyWhenTheyDiffer::RunTest(const FString&)
 	Model.SelectedPlatforms.Add(ECPM_Platform::Linux);
 	Model.SeedPlatformSelection(WindowsOnly);
 	TestTrue(TEXT("re-seeding keeps the creator's choice"), Model.SelectedPlatforms.Contains(ECPM_Platform::Linux));
+
+	return true;
+}
+
+/**
+ * Only a scan that found Errors closes Upload. Warnings, an unread Policy and a refusal all leave
+ * the gate open and say so on the one line - a creator must never read READY over a stage the
+ * Publish is about to refuse, nor be locked out by a warning.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMViewModelGatesOnStageIssues,
+	"ConvaiPakManager.UI.ViewModel.GatesOnStageIssues",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMViewModelGatesOnStageIssues::RunTest(const FString&)
+{
+	// Box off: the report is ignored whatever it holds.
+	FCPM_AssetViewModel Off = MakeStagedAvatarDraft();
+	Off.bStageEnabled = false;
+	Off.StageReport.Issues = { StageIssue(ECPM_StageSeverity::Error), StageIssue(ECPM_StageSeverity::Error) };
+	TestEqual(TEXT("an unticked box adds no message"), Off.ValidationMessages().Num(), 0);
+	TestTrue(TEXT("and leaves the gate open"), Off.CanCreateOrPublish());
+	TestTrue(TEXT("and shows no line"), Off.StageStatusLine().IsEmpty());
+
+	// One Error closes the gate and names itself.
+	FCPM_AssetViewModel One = MakeStagedAvatarDraft();
+	One.StageReport.Issues = { StageIssue(ECPM_StageSeverity::Error) };
+	TestEqual(TEXT("one error is one message"), One.ValidationMessages().Num(), 1);
+	TestEqual(TEXT("in the singular"), One.ValidationMessages()[0].ToString(), FString(TEXT("1 issue needs attention.")));
+	TestFalse(TEXT("and closes the gate"), One.CanCreateOrPublish());
+	TestEqual(TEXT("the line says the same"), One.StageStatusLine().ToString(), FString(TEXT("1 issue needs attention.")));
+
+	// Two Errors and a Warning: the plural counts errors alone.
+	FCPM_AssetViewModel Two = MakeStagedAvatarDraft();
+	Two.StageReport.Issues = { StageIssue(ECPM_StageSeverity::Error), StageIssue(ECPM_StageSeverity::Warning), StageIssue(ECPM_StageSeverity::Error) };
+	TestEqual(TEXT("Count sees the errors"), Two.StageReport.Count(ECPM_StageSeverity::Error), 2);
+	TestEqual(TEXT("and the warning"), Two.StageReport.Count(ECPM_StageSeverity::Warning), 1);
+	TestEqual(TEXT("and no info"), Two.StageReport.Count(ECPM_StageSeverity::Info), 0);
+	TestEqual(TEXT("two errors read in the plural"), Two.StageStatusLine().ToString(), FString(TEXT("2 issues need attention.")));
+	TestFalse(TEXT("and close the gate"), Two.CanCreateOrPublish());
+
+	// Warnings only: open, and READY says how many.
+	FCPM_AssetViewModel Warned = MakeStagedAvatarDraft();
+	Warned.StageReport.Issues = { StageIssue(ECPM_StageSeverity::Warning), StageIssue(ECPM_StageSeverity::Info) };
+	TestEqual(TEXT("a warning adds no message"), Warned.ValidationMessages().Num(), 0);
+	TestTrue(TEXT("and leaves the gate open"), Warned.CanCreateOrPublish());
+	TestEqual(TEXT("one warning reads READY with a count"), Warned.StageStatusLine().ToString(), FString(TEXT("READY TO UPLOAD (1 warning)")));
+	Warned.StageReport.Issues.Add(StageIssue(ECPM_StageSeverity::Warning));
+	TestEqual(TEXT("two warnings read in the plural"), Warned.StageStatusLine().ToString(), FString(TEXT("READY TO UPLOAD (2 warnings)")));
+	Warned.StageReport.Issues.Reset();
+	TestEqual(TEXT("a clean scan reads READY alone"), Warned.StageStatusLine().ToString(), FString(TEXT("READY TO UPLOAD")));
+
+	// Limits not read: nothing was judged, so nothing gates - and READY is never claimed.
+	FCPM_AssetViewModel Unread = MakeStagedAvatarDraft();
+	Unread.StageReport.bLimitsRead = false;
+	Unread.StageReport.Issues = { StageIssue(ECPM_StageSeverity::Error) };
+	TestTrue(TEXT("unread limits leave the gate open"), Unread.CanCreateOrPublish());
+	TestEqual(TEXT("and ask for the policy"), Unread.StageStatusLine().ToString(), FString(TEXT("Limits not read - Re-read policy")));
+	TestFalse(TEXT("never READY"), Unread.StageStatusLine().ToString().Contains(TEXT("READY")));
+
+	// A refusal outranks everything else on the line.
+	FCPM_AssetViewModel Refused = MakeStagedAvatarDraft();
+	Refused.StageReport.bLimitsRead = false;
+	Refused.StageReport.Refusal = TEXT("open the level that holds the avatar and its stage first");
+	TestEqual(TEXT("the refusal is the line"), Refused.StageStatusLine().ToString(), Refused.StageReport.Refusal);
+	TestTrue(TEXT("and does not gate"), Refused.CanCreateOrPublish());
 
 	return true;
 }

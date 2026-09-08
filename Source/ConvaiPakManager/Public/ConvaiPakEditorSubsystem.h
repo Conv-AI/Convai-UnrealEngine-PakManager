@@ -6,6 +6,7 @@
 #include "EditorSubsystem.h"
 #include "Publish/CPM_Compatibility.h"
 #include "Publish/CPM_PublishTypes.h"
+#include "Stage/CPM_Stage.h"
 #include "ConvaiPakEditorSubsystem.generated.h"
 
 class UCPM_DeleteAssetProxy;
@@ -220,6 +221,39 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
 	bool SetAssetGender(int32 ChunkId, const FString& Gender);
+
+	/**
+	 * Whether this Chunk publishes its surroundings. Avatars only: a Scene IS its level, so the
+	 * question does not arise, and nothing here stores an answer for one.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool IsStageEnabled(int32 ChunkId) const;
+
+	/** The level the stage is built from, as the last tick recorded it. Empty until a tick. */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	FString GetStageSourceLevel(int32 ChunkId) const;
+
+	/**
+	 * Records the choice, and with it which level the stage is read from - the open one unless
+	 * SourceLevelPackage names another. Every tick rewrites the level: ticking with the wrong map
+	 * open is a mistake, and unticking and ticking again with the right one is the whole recovery.
+	 *
+	 * Refuses a tick for a Scene, with no level open, or on a World Partition level; an untick only
+	 * needs the Chunk to be an Avatar's. Never touches chunk status - it is not a step the Chunk is
+	 * doing (docs/adr/0008); refusals reach the Output Log (docs/adr/0001).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool SetStageEnabled(int32 ChunkId, bool bEnabled, const FString& SourceLevelPackage);
+
+	/**
+	 * Reads the open level into a report and broadcasts it, refusal included, so the panel always has
+	 * a line to show. Returns whether the level was actually read.
+	 *
+	 * A display scan, judged against the cached limits when the Policy has been read and against
+	 * nothing when it has not - the Publish resolves its own limits, so nothing is lost by waiting.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Convai|PakManager|Commands")
+	bool ScanStage(int32 ChunkId, FCPM_StageReport& OutReport);
 
 	/**
 	 * The Source Package a Convai product opens out of this Chunk's Pak - the level for a Scene, the
@@ -471,6 +505,15 @@ public:
 	FCPM_OnPolicyChanged OnPolicyChanged;
 
 	/**
+	 * A stage scan answered.
+	 *
+	 * Its own delegate for the same reason as OnPolicyChanged: the report is a fact about the open
+	 * level, not a step the Chunk is doing, and ADR-0008 keeps chunk status meaning the latter.
+	 */
+	DECLARE_MULTICAST_DELEGATE_OneParam(FCPM_OnStageScanned, const FCPM_StageReport&);
+	FCPM_OnStageScanned OnStageScanned;
+
+	/**
 	 * The compatibility check answered.
 	 *
 	 * Its own delegate for the same reason as OnPolicyChanged: which tool and engine this install
@@ -525,20 +568,28 @@ private:
 		TArray<FString>& OutChanges, FString& OutDeclarationWarning);
 
 	/** Reads the Publish Policy, from disk when a project overrides it and from the repository otherwise. */
-	void ResolvePolicy(int32 ChunkId, TFunction<void(bool bSucceeded, const FCPM_PublishPolicy&, const FString& Error)> OnResolved);
+	void ResolvePolicy(int32 ChunkId,
+		TFunction<void(bool bSucceeded, const FCPM_PublishPolicy&, const FCPM_StageLimits&, const FString& Error)> OnResolved);
 
 	/** Shared acceptance for Publish and Package: guards, then the Policy, then the Job Queue. */
 	bool BeginPolicyRun(int32 ChunkId, bool bPackageOnly, const FCPM_PublishOptions& Options);
 
-	/** Builds the Job Queue this Policy asks for and starts it. A package-only queue stops after the Paks. */
-	void StartPublishRun(int32 ChunkId, const FCPM_PublishPolicy& Policy, bool bPackageOnly,
-		const FCPM_PublishOptions& Options);
+	/**
+	 * Builds the Job Queue this Policy asks for and starts it. A package-only queue stops after the Paks.
+	 *
+	 * Limits ride along unread until the stage Precondition (slice 5a) consumes them.
+	 */
+	void StartPublishRun(int32 ChunkId, const FCPM_PublishPolicy& Policy, const FCPM_StageLimits& Limits,
+		bool bPackageOnly, const FCPM_PublishOptions& Options);
 
 	/** Records what a Policy read answered, for the display cache, and tells the UI. */
-	void CachePolicy(bool bSucceeded, const FCPM_PublishPolicy& Policy);
+	void CachePolicy(bool bSucceeded, const FCPM_PublishPolicy& Policy, const FCPM_StageLimits& Limits);
 
 	/** The Policy last read this session. Display only - see GetPublishPolicy. */
 	FCPM_PublishPolicy CachedPolicy;
+
+	/** The display scan's limits, read with CachedPolicy. A Publish resolves its own - see docs/adr/0004. */
+	FCPM_StageLimits CachedLimits;
 
 	FDateTime PolicyReadAt = FDateTime::MinValue();
 

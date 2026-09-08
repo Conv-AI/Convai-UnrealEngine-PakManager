@@ -56,6 +56,9 @@ private:
 	TSharedRef<SWidget> BuildUploadSection();
 	TSharedRef<SWidget> BuildTechnicalSection();
 
+	/** The Include environment box and its one status line. Avatars only; absent from a Scene's tree. */
+	TSharedRef<SWidget> BuildStageSection();
+
 	/** One platform's row: name, state, its inclusion checkbox and its "..." menu. */
 	TSharedRef<SWidget> BuildPlatformRow(ECPM_Platform Platform);
 
@@ -99,6 +102,7 @@ private:
 	FReply HandlePreviewThumbnail();
 	FReply HandleSetSpawnPoint();
 	FReply HandleAddNavMeshBounds();
+	FReply HandleRescanStage();
 	FReply HandleCopyAssetId();
 	FReply HandleCancelPublish();
 
@@ -112,6 +116,9 @@ private:
 
 	/** Re-seeds the Platform Selection and rebuilds the rows after the cached Policy changed. */
 	void OnPolicyChanged();
+
+	/** Keeps the report the panel's Chunk asked for; another Chunk's answer is not this form's. */
+	void OnStageScanned(const FCPM_StageReport& Report);
 
 	/**
 	 * Show platforms the Publish Policy does not ask for.

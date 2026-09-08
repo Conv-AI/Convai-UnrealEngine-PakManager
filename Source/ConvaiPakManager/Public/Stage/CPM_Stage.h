@@ -8,6 +8,7 @@
 #include "CPM_Stage.generated.h"
 
 class FJsonObject;
+class UWorld;
 
 /** One actor of the stage, as an issue names it and a click finds it. */
 USTRUCT()
@@ -110,7 +111,13 @@ struct CONVAIPAKMANAGER_API FCPM_StageFacts
 	UPROPERTY()
 	int32 TexturesCount = 0;
 
-	/** The largest built edge in pixels among them, and which texture it is. */
+	/**
+	 * The largest built edge in pixels among the STAGE's textures, and which texture it is.
+	 *
+	 * The avatar's are left out of this and of TexturesMemoryMb, unlike TexturesCount: an avatar
+	 * publishes with whatever textures it has when no stage is involved, so measuring them against
+	 * a stage limit would refuse a creator over something ticking the box does not change.
+	 */
 	UPROPERTY()
 	int32 TexturesMaxBuiltPx = 0;
 
@@ -199,14 +206,57 @@ struct CONVAIPAKMANAGER_API FCPM_StageIssue
 };
 
 /**
+ * One scan's answer: what ScanStage hands OnStageScanned, and what the panel's status line is
+ * derived from. A refusal is an answer too, so a scan that could not run reaches the creator as a
+ * line rather than as silence.
+ *
+ * BlueprintType because ScanStage is a Command and takes this by reference; the members stay
+ * unexposed, which is all UHT asks of a struct a Blueprint-callable function carries.
+ */
+USTRUCT(BlueprintType)
+struct CONVAIPAKMANAGER_API FCPM_StageReport
+{
+	GENERATED_BODY()
+
+	/** Which Chunk asked, so a panel showing another one leaves this report alone. */
+	UPROPERTY()
+	int32 ChunkId = INDEX_NONE;
+
+	/** Why the scan did not run, phrased for the creator. Empty when it did. */
+	UPROPERTY()
+	FString Refusal;
+
+	/** False when the Policy has not been read, which is when Evaluate is not run at all. */
+	UPROPERTY()
+	bool bLimitsRead = false;
+
+	UPROPERTY()
+	FCPM_StageFacts Facts;
+
+	UPROPERTY()
+	TArray<FCPM_StageIssue> Issues;
+
+	int32 Count(ECPM_StageSeverity Severity) const;
+};
+
+/**
  * The stage a level becomes when it is published with an Avatar. See CONTEXT.md.
  *
  * Everything that DECIDES here is pure and is handed the facts, so the deciding is testable without
- * a level, a policy read or a project on disk. Reading the facts off the world is one separate
- * function, and it does not live in this slice.
+ * a level, a policy read or a project on disk. Inspect is the one function that reads the live
+ * world, and it only reads: it never judges, and never dirties the level it measures.
  */
 namespace ConvaiPakManager::Stage
 {
+/**
+ * Reads the facts off the open level - the persistent level only, since that is all the studio
+ * streams. AvatarClass may be null, which reads as no avatar placed and is Evaluate's to say.
+ *
+ * Compilation of the meshes and textures it touches is finished first, so the numbers are the built
+ * ones and not a placeholder's - and only of those it touches, because this runs on a tick.
+ */
+CONVAIPAKMANAGER_API FCPM_StageFacts Inspect(UWorld* World, UClass* AvatarClass);
+
 /**
  * Judges the facts against the limits.
  *

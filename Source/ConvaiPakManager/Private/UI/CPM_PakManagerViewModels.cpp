@@ -26,6 +26,8 @@ void FCPM_AssetViewModel::LoadFrom(UConvaiPakEditorSubsystem& Subsystem)
 
 	AssetId = Subsystem.GetAssetId(ChunkId);
 	EntryPoint = Subsystem.GetEntryPoint(ChunkId);
+	bStageEnabled = Subsystem.IsStageEnabled(ChunkId);
+	StageSourceLevel = Subsystem.GetStageSourceLevel(ChunkId);
 	AssetType = Subsystem.GetAssetType();
 	ThumbnailPath = Subsystem.GetThumbnailPath(ChunkId);
 	bThumbnailExists = !ThumbnailPath.IsEmpty() && FPaths::FileExists(ThumbnailPath);
@@ -137,6 +139,14 @@ namespace
 	{
 		return Status.IsBusy() && Status.Status != ECPM_AssetManagerStatus::Delete_Begin;
 	}
+
+	/** Shared so the gate's message and the status line can never drift apart. */
+	FText StageIssuesText(const int32 Errors)
+	{
+		return Errors == 1
+			? LOCTEXT("StageOneIssue", "1 issue needs attention.")
+			: FText::Format(LOCTEXT("StageIssues", "{0} issues need attention."), Errors);
+	}
 }
 
 FCPM_AssetViewModel::EBadge FCPM_AssetViewModel::Badge() const
@@ -190,6 +200,18 @@ TArray<FText> FCPM_AssetViewModel::ValidationMessages() const
 		Messages.Add(LOCTEXT("ThumbnailRequired", "Capture a thumbnail before creating."));
 	}
 
+	// Warnings do not gate, and an unread Policy is not a verdict - nothing was judged, so there are
+	// no Errors to gate on and the line already says "Limits not read" rather than a count. Only a
+	// scan that found Errors closes Upload, which is what the Publish would refuse over anyway.
+	if (bStageEnabled && StageReport.bLimitsRead)
+	{
+		const int32 Errors = StageReport.Count(ECPM_StageSeverity::Error);
+		if (Errors > 0)
+		{
+			Messages.Add(StageIssuesText(Errors));
+		}
+	}
+
 	return Messages;
 }
 
@@ -213,6 +235,41 @@ FText FCPM_AssetViewModel::BadgeText() const
 	default:
 		return LOCTEXT("BadgeDraft", "Draft");
 	}
+}
+
+FText FCPM_AssetViewModel::StageStatusLine() const
+{
+	if (!bStageEnabled)
+	{
+		return FText::GetEmpty();
+	}
+	if (!StageReport.Refusal.IsEmpty())
+	{
+		return FText::FromString(StageReport.Refusal);
+	}
+
+	// Nothing was judged, so READY would be a claim the scan never made.
+	if (!StageReport.bLimitsRead)
+	{
+		return LOCTEXT("StageLimitsNotRead", "Limits not read - Re-read policy");
+	}
+
+	const int32 Errors = StageReport.Count(ECPM_StageSeverity::Error);
+	if (Errors > 0)
+	{
+		return StageIssuesText(Errors);
+	}
+
+	const int32 Warnings = StageReport.Count(ECPM_StageSeverity::Warning);
+	if (Warnings == 1)
+	{
+		return LOCTEXT("StageReadyOneWarning", "READY TO UPLOAD (1 warning)");
+	}
+	if (Warnings > 1)
+	{
+		return FText::Format(LOCTEXT("StageReadyWarnings", "READY TO UPLOAD ({0} warnings)"), Warnings);
+	}
+	return LOCTEXT("StageReady", "READY TO UPLOAD");
 }
 
 void FCPM_ProjectViewModel::Refresh(UConvaiPakEditorSubsystem& Subsystem)

@@ -298,6 +298,7 @@ void SCPM_AssetDetailPanel::Construct(const FArguments& InArgs)
 		// The rows are the Policy's platforms, so the panel cannot draw them until one is read.
 		// Asked for here, once, and never from a paint path - the read is over the network.
 		Subsystem->OnPolicyChanged.AddSP(this, &SCPM_AssetDetailPanel::OnPolicyChanged);
+		Subsystem->OnStageScanned.AddSP(this, &SCPM_AssetDetailPanel::OnStageScanned);
 		Subsystem->RefreshPolicy();
 	}
 }
@@ -593,12 +594,7 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildContentSourceSection()
 {
 	using FPalette = FCPM_PakManagerStyle::FPalette;
 
-	return SNew(SExpandableArea)
-		.AreaTitle(LOCTEXT("ContentSourceSection", "Content"))
-		.InitiallyCollapsed(false)
-		.Padding(FMargin(12.0f, 8.0f))
-		.BodyContent()
-		[
+	const TSharedRef<SVerticalBox> Body =
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f)
 			[
@@ -688,7 +684,137 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildContentSourceSection()
 				{
 					return SetupNotes.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible;
 				})
-			]
+			];
+
+	// A Scene IS its level, so the box is absent from the tree rather than hidden in it - the same
+	// rule the gender row follows.
+	if (!bIsScene)
+	{
+		Body->AddSlot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 4.0f)
+		[
+			BuildStageSection()
+		];
+	}
+
+	return SNew(SExpandableArea)
+		.AreaTitle(LOCTEXT("ContentSourceSection", "Content"))
+		.InitiallyCollapsed(false)
+		.Padding(FMargin(12.0f, 8.0f))
+		.BodyContent()
+		[
+			Body
+		];
+}
+
+TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildStageSection()
+{
+	using FPalette = FCPM_PakManagerStyle::FPalette;
+
+	return SNew(SVerticalBox)
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f)
+		[
+			Row(LOCTEXT("StageLabel", "Environment"),
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+				[
+					SNew(SCheckBox)
+					.ToolTipText(LOCTEXT("StageTip",
+						"Place your avatar in the level where it should stand. The surroundings upload; Avatar Studio spawns your avatar at that spot."))
+					.IsChecked_Lambda([this]
+					{
+						return Asset.IsValid() && Asset->bStageEnabled ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+					})
+					.OnCheckStateChanged_Lambda([this](ECheckBoxState State)
+					{
+						UConvaiPakEditorSubsystem* Subsystem = GetSubsystem();
+						if (!Asset.IsValid() || !Subsystem)
+						{
+							return;
+						}
+
+						Subsystem->SetStageEnabled(Asset->ChunkId, State == ECheckBoxState::Checked, FString());
+
+						// Re-read whether or not it took: a refused tick leaves the box where it was, and a
+						// flip may have deleted the thumbnail the preview is still showing.
+						Asset->LoadFrom(*Subsystem);
+						RefreshThumbnailBrush(true);
+
+						FCPM_StageReport Report;
+						Subsystem->ScanStage(Asset->ChunkId, Report);
+					})
+					[
+						SNew(STextBlock).Text(LOCTEXT("StageInclude", "Include environment"))
+					]
+				]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.ButtonStyle(&SecondaryButtonStyle())
+					.Text(LOCTEXT("StageRescan", "Rescan"))
+					.ToolTipText(LOCTEXT("StageRescanTip", "Reads the open level again."))
+					.IsEnabled_Lambda([this] { return Asset.IsValid() && Asset->bStageEnabled; })
+					.OnClicked(this, &SCPM_AssetDetailPanel::HandleRescanStage)
+				])
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(120.0f, 0.0f, 0.0f, 4.0f)
+		[
+			SNew(STextBlock)
+			.AutoWrapText(true)
+			.Text_Lambda([this] { return Asset.IsValid() ? Asset->StageStatusLine() : FText::GetEmpty(); })
+			.Visibility_Lambda([this]
+			{
+				return Asset.IsValid() && !Asset->StageStatusLine().IsEmpty() ? EVisibility::Visible : EVisibility::Collapsed;
+			})
+			// Coloured the way the nav-mesh line is: red is a Precondition the publish refuses over,
+			// amber a warning it does not, green a stage that ships, grey a line that only informs.
+			.ColorAndOpacity_Lambda([this]
+			{
+				if (!Asset.IsValid())
+				{
+					return FSlateColor(FPalette::TextSecondary);
+				}
+
+				const FCPM_StageReport& Report = Asset->StageReport;
+				if (!Report.Refusal.IsEmpty() || Report.Count(ECPM_StageSeverity::Error) > 0)
+				{
+					return FSlateColor(FPalette::Error);
+				}
+				if (!Report.bLimitsRead)
+				{
+					return FSlateColor(FPalette::TextSecondary);
+				}
+				return FSlateColor(Report.Count(ECPM_StageSeverity::Warning) > 0 ? FPalette::Warning : FPalette::GreenPrimary);
+			})
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(120.0f, 0.0f, 0.0f, 4.0f)
+		[
+			// The Info lines: what the studio will do with what it found, never a fault. One block
+			// rather than a row each - the clickable per-issue rows are a later slice's.
+			SNew(STextBlock)
+			.AutoWrapText(true)
+			.TextStyle(&SecondaryTextStyle())
+			.Text_Lambda([this]
+			{
+				if (!Asset.IsValid() || !Asset->bStageEnabled)
+				{
+					return FText::GetEmpty();
+				}
+
+				TArray<FString> Lines;
+				for (const FCPM_StageIssue& Issue : Asset->StageReport.Issues)
+				{
+					if (Issue.Severity == ECPM_StageSeverity::Info)
+					{
+						Lines.Add(Issue.Reason);
+					}
+				}
+				return FText::FromString(FString::Join(Lines, TEXT("\n")));
+			})
+			.Visibility_Lambda([this]
+			{
+				return Asset.IsValid() && Asset->bStageEnabled && Asset->StageReport.Count(ECPM_StageSeverity::Info) > 0
+					? EVisibility::Visible : EVisibility::Collapsed;
+			})
 		];
 }
 
@@ -1523,6 +1649,26 @@ FReply SCPM_AssetDetailPanel::HandleAddNavMeshBounds()
 		: LOCTEXT("NavMeshNotAdded", "Could not place a Nav Mesh Bounds Volume in this level."),
 		bPlaced ? SNotificationItem::CS_Success : SNotificationItem::CS_Fail);
 	return FReply::Handled();
+}
+
+FReply SCPM_AssetDetailPanel::HandleRescanStage()
+{
+	if (UConvaiPakEditorSubsystem* Subsystem = GetSubsystem(); Subsystem && Asset.IsValid())
+	{
+		FCPM_StageReport Report;
+		Subsystem->ScanStage(Asset->ChunkId, Report);
+	}
+	return FReply::Handled();
+}
+
+void SCPM_AssetDetailPanel::OnStageScanned(const FCPM_StageReport& Report)
+{
+	// Only the answer this form asked for: the line, its colour and the gate all read the view
+	// model on paint, so keeping the report is the whole of the handler.
+	if (Asset.IsValid() && Asset->ChunkId == Report.ChunkId)
+	{
+		Asset->StageReport = Report;
+	}
 }
 
 FReply SCPM_AssetDetailPanel::HandleCopyAssetId()

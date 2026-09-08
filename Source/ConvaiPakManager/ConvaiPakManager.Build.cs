@@ -53,6 +53,8 @@ public class ConvaiPakManager : ModuleRules
 				"FileUtilities",
 				// ANavMeshBoundsVolume, which a Scene is refused a publish without.
 				"NavigationSystem",
+				// ITargetPlatform, for the texture size the cook produces.
+				"TargetPlatform",
 				"ToolMenus",
 				"Json",
 				"JsonUtilities",
