@@ -120,10 +120,18 @@ struct CONVAIPAKMANAGER_API FCPM_PublishPolicy
 	FCPM_PublishPolicy WithPlatforms(const TArray<ECPM_Platform>& Selection) const;
 };
 
+UENUM(BlueprintType)
+enum class ECPM_SourceChoice : uint8
+{
+	ProjectSetting,
+	Omit,
+	IncludeFresh
+};
+
 /**
  * What a caller asked of one Publish beyond what the Policy says, chosen per run.
  *
- * Deliberately not project settings. Both of these describe one run - the enterprise project
+ * Deliberately not project settings. These describe one run - the enterprise project
  * publishing Linux this once, the creator who knows this Pak is fresh - and an override that
  * outlives the run that needed it is how a project silently keeps publishing something nobody
  * remembers agreeing to.
@@ -156,6 +164,13 @@ struct CONVAIPAKMANAGER_API FCPM_PublishOptions
 	 */
 	UPROPERTY(BlueprintReadWrite, Category = "Convai|PakManager")
 	bool bReuseExistingPaks = false;
+
+	/** Controls the V0 project archive; selected-avatar V1 archives require a separate implementation. */
+	UPROPERTY(BlueprintReadWrite, Category = "Convai|PakManager")
+	ECPM_SourceChoice SourceChoice = ECPM_SourceChoice::ProjectSetting;
+
+	bool ResolveSourceArchive(bool bPackageOnly, bool bPolicyAllowsSource, bool bProjectSettingOn,
+		bool& bOutArchive, FString& OutError) const;
 
 	/**
 	 * Whether a run may publish a Pak already on disk instead of cooking one.

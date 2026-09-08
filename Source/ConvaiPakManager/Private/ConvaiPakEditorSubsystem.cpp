@@ -1537,28 +1537,36 @@ void UConvaiPakEditorSubsystem::StartPublishRun(
 		return;
 	}
 
-	// Decided here rather than by a Job's Precheck, although ADR-0004 points at one for re-running a
-	// step: a Precheck would satisfy the archive from the zip still sitting in the cache and pay the
-	// upload anyway, and the upload is the half of the cost the creator is skipping.
-	const bool bArchiveRaw =
-		!bPackageOnly && UCPM_PakManagerSettings::Get().ShouldArchiveRawProject(Policy.bUploadRawProject);
+	bool bArchiveRaw = false;
+	FString SourceError;
+	if (!Options.ResolveSourceArchive(bPackageOnly, Policy.bUploadRawProject,
+		UCPM_PakManagerSettings::Get().bUploadRawProjectArchive, bArchiveRaw, SourceError))
+	{
+		SetStatus(ChunkId, ECPM_AssetManagerStatus::Create_Failed, SourceError);
+		return;
+	}
 
 	if (!bPackageOnly && !bHasPaks && !bArchiveRaw)
 	{
 		// Refused here rather than left to the upload Job's "nothing was built to upload", which
 		// names neither the Policy nor the setting the creator would have to change.
 		SetStatus(ChunkId, ECPM_AssetManagerStatus::Create_Failed,
-			TEXT("this publish would send nothing: the policy asks only for the project archive, and its upload is turned off"));
+			Options.SourceChoice == ECPM_SourceChoice::Omit
+				? TEXT("this publish would send nothing: no platforms are selected and editable source was omitted")
+				: TEXT("this publish would send nothing: the policy asks only for the project archive, and its upload is turned off"));
 		return;
 	}
 
-	if (!bPackageOnly && Policy.bUploadRawProject && !bArchiveRaw)
+	if (!bPackageOnly && !bArchiveRaw &&
+		(Policy.bUploadRawProject || Options.SourceChoice == ECPM_SourceChoice::Omit))
 	{
 		// Warned about rather than merely logged, as with a reused Pak: from here on Convai holds
 		// either an older archive or none, and nothing downstream of this line can tell.
 		UCPM_UtilityLibrary::CPM_LogMessage(
-			TEXT("Publishing without the project archive, because Upload Raw Project Archive is off. ")
-			TEXT("Convai cannot repackage this asset for a future engine version without it."),
+			Options.SourceChoice == ECPM_SourceChoice::Omit
+				? TEXT("Publishing without editable source for this run. Any existing source is not refreshed and may be older than the package.")
+				: TEXT("Publishing without the project archive, because Upload Raw Project Archive is off. ")
+				  TEXT("Convai cannot repackage this asset for a future engine version without it."),
 			ECPM_LogLevel::Warning);
 	}
 
@@ -1712,15 +1720,12 @@ void UConvaiPakEditorSubsystem::HandleRunFinished(
 	switch (Result)
 	{
 	case ECPM_PublishResult::Success:
-		// Recorded from here rather than from the Job that writes the Asset's record, because what
-		// makes it true is the whole queue having finished: the create step writes the AssetID
-		// before a byte of the archive is sent, so a Publish cancelled mid-upload leaves an Asset
-		// that has an ID and no archive, and reusing THAT is the thing this record exists to refuse.
+		// Only confirmed upload completion advances the displayed source-upload timestamp.
 		if (bArchivedRaw)
 		{
 			FFileHelper::SaveStringToFile(
 				TEXT("This chunk's Convai asset holds a raw project archive uploaded from this project.\r\n")
-				TEXT("Delete this file to make the next publish upload the project again.\r\n"),
+				TEXT("This timestamp does not establish whether the source matches the current package.\r\n"),
 				*ConvaiPakManager::Chunk::GetRawArchiveRecordPath(ChunkId, EnvironmentSlug));
 		}
 

@@ -178,6 +178,37 @@ const FCPM_PlatformPolicy* FCPM_PublishPolicy::Find(const ECPM_Platform Platform
 	}
 }
 
+bool FCPM_PublishOptions::ResolveSourceArchive(const bool bPackageOnly, const bool bPolicyAllowsSource,
+	const bool bProjectSettingOn, bool& bOutArchive, FString& OutError) const
+{
+	bOutArchive = false;
+	OutError.Reset();
+	if (bPackageOnly)
+	{
+		return true;
+	}
+
+	switch (SourceChoice)
+	{
+	case ECPM_SourceChoice::ProjectSetting:
+		bOutArchive = bPolicyAllowsSource && bProjectSettingOn;
+		return true;
+	case ECPM_SourceChoice::Omit:
+		return true;
+	case ECPM_SourceChoice::IncludeFresh:
+		if (!bPolicyAllowsSource)
+		{
+			OutError = TEXT("editable source was requested, but the resolved publish policy does not permit raw project uploads");
+			return false;
+		}
+		bOutArchive = true;
+		return true;
+	default:
+		OutError = TEXT("the requested editable source choice is not supported");
+		return false;
+	}
+}
+
 bool FCPM_ChunkStatus::IsBusy() const
 {
 	switch (Status)
