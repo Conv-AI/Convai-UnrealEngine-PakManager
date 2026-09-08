@@ -378,7 +378,7 @@ void SCPM_AssetDetailPanel::SetAssetViewModel(TSharedPtr<FCPM_AssetViewModel> In
 		bLegacyLayoutPending = Subsystem->HasUnmigratedLegacyLayout();
 	}
 
-	RebuildStageRow();
+	RebuildStepLadder();
 	BuiltRowSignature.Reset();
 	RebuildUploadRows();
 	RefreshThumbnailBrush(true);
@@ -401,9 +401,9 @@ void SCPM_AssetDetailPanel::SetAssetViewModel(TSharedPtr<FCPM_AssetViewModel> In
 void SCPM_AssetDetailPanel::OnActiveStatusChanged()
 {
 	const TArray<FString> Steps = Asset.IsValid() ? Asset->Status.PlannedSteps : TArray<FString>();
-	if (Steps != BuiltStageSteps)
+	if (Steps != BuiltStepLadder)
 	{
-		RebuildStageRow();
+		RebuildStepLadder();
 	}
 	RebuildUploadRows();
 	RefreshThumbnailBrush(false);
@@ -454,7 +454,7 @@ TSharedRef<SWidget> SCPM_AssetDetailPanel::BuildProgressPanel()
 			]
 			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SAssignNew(StageRow, SWrapBox)
+				SAssignNew(StepLadderRow, SWrapBox)
 				.UseAllottedSize(true)
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
@@ -1572,22 +1572,22 @@ void SCPM_AssetDetailPanel::RefreshThumbnailBrush(bool bForceReload)
 	}
 }
 
-void SCPM_AssetDetailPanel::RebuildStageRow()
+void SCPM_AssetDetailPanel::RebuildStepLadder()
 {
-	if (!StageRow.IsValid())
+	if (!StepLadderRow.IsValid())
 	{
 		return;
 	}
 
-	StageRow->ClearChildren();
-	BuiltStageSteps = Asset.IsValid() ? Asset->Status.PlannedSteps : TArray<FString>();
+	StepLadderRow->ClearChildren();
+	BuiltStepLadder = Asset.IsValid() ? Asset->Status.PlannedSteps : TArray<FString>();
 
 	using FPalette = FCPM_PakManagerStyle::FPalette;
-	for (int32 Index = 0; Index < BuiltStageSteps.Num(); ++Index)
+	for (int32 Index = 0; Index < BuiltStepLadder.Num(); ++Index)
 	{
 		if (Index > 0)
 		{
-			StageRow->AddSlot().Padding(6.0f, 0.0f)
+			StepLadderRow->AddSlot().Padding(6.0f, 0.0f)
 			[
 				SNew(STextBlock)
 				.TextStyle(&SecondaryTextStyle())
@@ -1595,10 +1595,10 @@ void SCPM_AssetDetailPanel::RebuildStageRow()
 			];
 		}
 
-		StageRow->AddSlot()
+		StepLadderRow->AddSlot()
 		[
 			SNew(STextBlock)
-			.Text(FText::FromString(BuiltStageSteps[Index]))
+			.Text(FText::FromString(BuiltStepLadder[Index]))
 			.ColorAndOpacity_Lambda([this, Index]
 			{
 				const int32 Current = Asset.IsValid() ? Asset->Status.CurrentStepIndex : INDEX_NONE;

@@ -103,7 +103,7 @@ private:
 	FReply HandleCancelPublish();
 
 	void RefreshThumbnailBrush(bool bForceReload);
-	void RebuildStageRow();
+	void RebuildStepLadder();
 	void RebuildUploadRows();
 	EActiveTimerReturnType RefreshSpawnStatus(double InCurrentTime, float InDeltaTime);
 
@@ -170,9 +170,9 @@ private:
 	/** Refreshed on the same timer as SpawnStatus: both are facts about the level, not about a Chunk. */
 	bool bHasNavMeshBounds = false;
 
-	TSharedPtr<SWrapBox> StageRow;
-	/** What the stage row was last built from, so progress ticks do not rebuild widgets. */
-	TArray<FString> BuiltStageSteps;
+	TSharedPtr<SWrapBox> StepLadderRow;
+	/** What the step ladder was last built from, so progress ticks do not rebuild widgets. */
+	TArray<FString> BuiltStepLadder;
 
 	TSharedPtr<SVerticalBox> UploadRows;
 
