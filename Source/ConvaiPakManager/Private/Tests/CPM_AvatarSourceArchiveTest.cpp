@@ -5,10 +5,15 @@
 #include "FileUtilities/ZipArchiveReader.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformFileManager.h"
+#include "HAL/PlatformTime.h"
+#include "HAL/Runnable.h"
+#include "HAL/RunnableThread.h"
 #include "Hash/Blake3.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Misc/Parse.h"
 #include "ProjectDescriptor.h"
 #include "Serialization/JsonSerializer.h"
 #include "Windows/WindowsHWrapper.h"
@@ -162,6 +167,94 @@ namespace
 			Test.TestTrue(TEXT("Preserves every byte of the previous good archive"), ReadArchive() == Previous);
 			return Test.TestFalse(TEXT("Removes only its incomplete temporary archive"), HasTemporary());
 		}
+	};
+
+	class FExportInteroperabilityCommand final : public IAutomationLatentCommand, public FRunnable
+	{
+	public:
+		explicit FExportInteroperabilityCommand(FAutomationTestBase* InTest)
+			: Test(InTest), Fixture(*InTest), Deadline(FPlatformTime::Seconds() + 30.0)
+		{
+			ExportParent = FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectSavedDir(),
+				TEXT("ConvaiAvatarStudio/Development/SourceInterop")));
+			FPaths::NormalizeDirectoryName(ExportParent);
+			ExportDirectory = FPaths::Combine(ExportParent, FGuid::NewGuid().ToString(EGuidFormats::Digits));
+			if (Fixture.bReady) { Thread = FRunnableThread::Create(this, TEXT("CPMSourceInteropExport")); }
+		}
+		~FExportInteroperabilityCommand() override
+		{
+			bCancelled.Store(true);
+			if (Thread) { Thread->WaitForCompletion(); delete Thread; }
+		}
+		uint32 Run() override
+		{
+			if (!MakeExportParent() || !CreateDirectoryW(*ExportDirectory, nullptr))
+			{
+				Result.Error = TEXT("Cannot reserve a fresh physical interoperability export directory.");
+			}
+			else
+			{
+				Result = FCPM_AvatarSourceArchive::Create(Fixture.Input, ExportDirectory, TEXT("avatar.zip"),
+					[this] { return bCancelled.Load(); }, [] { return true; });
+			}
+			bDone.Store(true);
+			return 0;
+		}
+		bool Update() override
+		{
+			if (!Thread) { Test->AddError(TEXT("Cannot start the owned producer interoperability worker.")); return true; }
+			if (!bDone.Load())
+			{
+				if (FPlatformTime::Seconds() < Deadline) { return false; }
+				bCancelled.Store(true);
+				Test->AddError(TEXT("Producer interoperability deadline expired; teardown cancels and joins its worker."));
+				return true;
+			}
+			Thread->WaitForCompletion();
+			if (Test->TestTrue(FString(TEXT("Real producer exports the owned fixture: ")) + Result.Error, Result.bSuccess))
+			{
+				Test->TestTrue(TEXT("Producer returns this exact fresh export path"),
+					Result.ArchivePath.Equals(FPaths::Combine(ExportDirectory, TEXT("avatar.zip")), ESearchCase::CaseSensitive));
+				Test->TestEqual(TEXT("Producer exports the three selected opaque content files"), Result.ContentFileCount, 3);
+				Test->TestEqual(TEXT("Producer returns a manifest BLAKE3 binding"), Result.ManifestBlake3.Len(), 64);
+				Test->AddInfo(TEXT("SourceInteropArchive=") + Result.ArchivePath);
+				Test->AddInfo(TEXT("SourceInteropManifest=") + Result.ManifestBlake3);
+				Test->AddInfo(TEXT("Retained only for exact-path consumer inspection. Opaque payloads do not prove Blueprint readiness, coherent authoring inputs or backend download."));
+			}
+			return true;
+		}
+	private:
+		bool MakeExportParent() const
+		{
+			if (ExportParent.Len() < 4 || ExportParent.Len() > 220 || !FChar::IsAlpha(ExportParent[0])
+				|| ExportParent[1] != ':' || ExportParent[2] != '/') { return false; }
+			TArray<FString> Parts;
+			ExportParent.Mid(3).ParseIntoArray(Parts, TEXT("/"), false);
+			FString Current = ExportParent.Left(3);
+			for (const FString& Part : Parts)
+			{
+				if (Part.IsEmpty() || Part == TEXT(".") || Part == TEXT("..")) { return false; }
+				Current = FPaths::Combine(Current, Part);
+				DWORD Attributes = GetFileAttributesW(*Current);
+				if (Attributes == INVALID_FILE_ATTRIBUTES)
+				{
+					if (GetLastError() != ERROR_FILE_NOT_FOUND || !CreateDirectoryW(*Current, nullptr)) { return false; }
+					Attributes = GetFileAttributesW(*Current);
+				}
+				if (Attributes == INVALID_FILE_ATTRIBUTES
+					|| (Attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != FILE_ATTRIBUTE_DIRECTORY) { return false; }
+			}
+			return true;
+		}
+		FAutomationTestBase* Test;
+		FArchiveFixture Fixture;
+		double Deadline;
+		FString ExportParent;
+		FString ExportDirectory;
+		FCPM_AvatarSourceArchiveResult Result;
+		TAtomic<bool> bCancelled{false};
+		TAtomic<bool> bDone{false};
+		FRunnableThread* Thread = nullptr;
 	};
 
 	TSharedPtr<FJsonObject> ReadJson(FAutomationTestBase& Test, FZipArchiveReader& Reader, const FString& Name)
@@ -410,6 +503,21 @@ bool FCPMSelectedSourceArchiveLinks::RunTest(const FString&)
 		*FPaths::Combine(Fixture.Content, TEXT("BP_Avatar.uasset")), nullptr))) { return false; }
 	Fixture.ExpectFailure(Fixture.Create(), Previous);
 	TestTrue(TEXT("Removes the fixture hard-link alias"), DeleteFileW(*HardLink));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCPMSelectedSourceArchiveExportInteroperability,
+	"ConvaiPakManager.Publish.SelectedSource.ExportInteroperabilityFixture",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMSelectedSourceArchiveExportInteroperability::RunTest(const FString&)
+{
+	if (!FParse::Param(FCommandLine::Get(), TEXT("AvatarStudioExportSourceInterop")))
+	{
+		AddInfo(TEXT("Skipped optional producer export; pass -AvatarStudioExportSourceInterop to retain a fresh owned interoperability archive."));
+		return true;
+	}
+	ADD_LATENT_AUTOMATION_COMMAND(FExportInteroperabilityCommand(this));
 	return true;
 }
 
