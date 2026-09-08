@@ -11,8 +11,8 @@ Convai so that Convai products can load it.
 One step of a **Publish**: package, archive, create, upload, record. A Job runs only once the one
 before it has reported, and reports exactly once itself — Success, Failed, or Cancelled. Which Jobs
 exist is decided by the **Publish Policy** before the first of them runs.
-_Avoid_: task, step, stage — "step" is what the UI calls a Job to a creator, and the two must not
-be used interchangeably in code.
+_Avoid_: task, step, stage as a Publish step (see **Stage**) — "step" is what the UI calls a Job
+to a creator, and the two must not be used interchangeably in code.
 
 **Job Queue**:
 The Jobs of one **Publish**, in order. Sequential, one at a time, and stopped by the first Job that
@@ -82,12 +82,25 @@ The record on Convai's servers that a Chunk is published as, and the thing Conva
 Carries the name, description, thumbnail, type and version the creator supplies.
 _Avoid_: entity, upload, scene — the last is a *kind* of Asset, not a synonym for one
 
+**Stage**:
+The creator's surroundings that ship beside an Avatar — a copy of the level the Avatar was
+authored in, without the Avatar itself, kept under the **Modding Plugin**'s `Stage/` folder so a
+Convai product can stream it in around the Avatar at the transform recorded with it. Not an
+**Asset** of its own: it travels inside the Avatar's **Pak** and its Asset's metadata. Named on
+disk by the record file `Stage_N.json` and the folder `Stage/`, and in the studio by the console
+tag `Convai.Stage.*`. Built and rebuilt by a **Command** — see
+[docs/adr/0015](docs/adr/0015-stage-copy-is-a-command-the-publish-reruns.md).
+_Avoid_: environment, scene, level — the first names the backend here, and is what the UI's
+"Include environment" tick calls it to a creator the way "Selected asset" stands for Entry Point;
+the second is a kind of Asset; the third is the **Source Package** the Stage is copied from, not
+the copy
+
 **Environment**:
 The Convai backend a **Publish** reaches, identified by the base URL its requests resolve to.
 Derived from that URL at the moment a request is built, never chosen — a setting that disagreed with
 the URL would name a backend the bytes never reached. Custom URLs are Environments like any other.
-_Avoid_: backend, server, stage, target — the first two name machines, the last two imply a chosen
-slot
+_Avoid_: backend, server, stage as a backend slot (see **Stage**), target — the first two name
+machines, the last two imply a chosen slot
 
 **Draft**:
 What the creator has authored about a Chunk's **Asset** — name, description, **Entry Point** — kept
@@ -164,6 +177,12 @@ _Avoid_: category, entity type
   label's recursive rule — measured at 597 such files in one Pak. Copying one under the mount and
   repointing its referencers is offered when the creator picks the **Entry Point**, and only then;
   whether that copy rescues the Pak or merely duplicates what the cook already carries is open
+- A **Stage** is the one exception to that offer being made "when the creator picks the **Entry
+  Point**, and only then", and to a **Publish** that "publishes the Chunk as it finds it": its
+  copy under the mount is made by a **Command** at the *Include environment* tick, and the
+  **Publish** runs that Command again — repoint-only, refusing on any reference still outside — so
+  what the Stage records is true of what it ships. See
+  [docs/adr/0015](docs/adr/0015-stage-copy-is-a-command-the-publish-reruns.md)
 - A **Chunk** publishes as at most one **Asset** per **Environment**
 - A **Draft** belongs to a **Chunk**, not to an **Environment**
 - An **Asset** has exactly one **Asset Type**, decided before the creator ever opens the Pak Manager
