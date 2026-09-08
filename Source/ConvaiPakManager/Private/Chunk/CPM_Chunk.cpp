@@ -23,6 +23,7 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "Stage/CPM_Stage.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
 #include "UObject/SoftObjectPath.h"
@@ -585,6 +586,7 @@ void ClearAssetRecordsIn(
 	const TArray<FString> Inputs = {
 		FPaths::Combine(StateDirectory, FString::Printf(TEXT("Draft_%d.json"), ChunkId)),
 		FPaths::Combine(StateDirectory, FString::Printf(TEXT("Thumbnail_%d.png"), ChunkId)),
+		FPaths::Combine(StateDirectory, FString::Printf(TEXT("Stage_%d.json"), ChunkId)),
 	};
 
 	for (const FString& Input : Inputs)
@@ -1022,7 +1024,8 @@ void FillRequiredMetadataFields(
 	const FString& ProjectName,
 	const FString& PluginName,
 	const FString& AssetType,
-	const TMap<ECPM_Platform, int64>& ArtifactSizes)
+	const TMap<ECPM_Platform, int64>& ArtifactSizes,
+	TSharedPtr<FJsonObject> Stage)
 {
 	const FString Type = AssetType.ToLower();
 
@@ -1032,6 +1035,11 @@ void FillRequiredMetadataFields(
 	FString DraftedGender;
 	Root->TryGetStringField(TEXT("gender"), DraftedGender);
 	Root->RemoveField(TEXT("gender"));
+
+	// The same flat Draft carries the stage checkbox and its level. Neither is the API's: the wire
+	// carries the stage record, and these two are how the tool remembers what to build it from.
+	Root->RemoveField(TEXT("stage_enabled"));
+	Root->RemoveField(TEXT("stage_source_level"));
 
 	Root->SetStringField(TEXT("project_name"), ProjectName);
 	Root->SetStringField(TEXT("plugin_name"), PluginName);
@@ -1118,6 +1126,17 @@ void FillRequiredMetadataFields(
 		}
 	}
 	Root->SetObjectField(TEXT("entity_data"), Entity);
+
+	// Removed, not merely not set: composition starts from the server's echo, so an Asset whose
+	// stage was switched off would otherwise send back the stage it last had.
+	if (Stage.IsValid())
+	{
+		Root->SetObjectField(TEXT("stage"), Stage);
+	}
+	else
+	{
+		Root->RemoveField(TEXT("stage"));
+	}
 }
 
 bool IsUnderModdingPlugin(const FString& PackageName, const FString& PluginName)
@@ -1258,7 +1277,8 @@ bool ComposePakMetadataAt(
 	const FString& ProjectName,
 	const FString& PluginName,
 	const FString& AssetType,
-	const TMap<ECPM_Platform, int64>& ArtifactSizes)
+	const TMap<ECPM_Platform, int64>& ArtifactSizes,
+	const FString& StagePath)
 {
 	TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
 	FString Contents;
@@ -1312,7 +1332,8 @@ bool ComposePakMetadataAt(
 		Root->SetStringField(TEXT("level_name"), ResolveLevelPackage(LevelName, RootPath));
 	}
 
-	FillRequiredMetadataFields(Root.ToSharedRef(), ProjectName, PluginName, AssetType, ArtifactSizes);
+	FillRequiredMetadataFields(Root.ToSharedRef(), ProjectName, PluginName, AssetType, ArtifactSizes,
+		StagePath.IsEmpty() ? nullptr : ConvaiPakManager::Stage::ReadStageRecordAt(StagePath));
 
 	return SaveJsonObject(Root.ToSharedRef(), MetadataPath);
 }
@@ -1329,6 +1350,7 @@ bool ComposePakMetadata(
 		UCPM_UtilityLibrary::GetProjectName(),
 		Modding.PluginName,
 		Modding.AssetType,
-		ArtifactSizes);
+		ArtifactSizes,
+		FPaths::Combine(GetStateDirectory(ChunkId), FString::Printf(TEXT("Stage_%d.json"), ChunkId)));
 }
 }

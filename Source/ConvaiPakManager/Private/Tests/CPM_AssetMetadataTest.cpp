@@ -243,6 +243,51 @@ bool FCPMAssetMetadataPublishesTheGenderTheCreatorPicked::RunTest(const FString&
 }
 
 /**
+ * The two strings the tick writes into the Draft to remember what a stage is built from. The Draft
+ * overlay puts every top-level string on the document, so they come off here or they reach an API
+ * that has no such fields; what the wire carries instead is the stage record itself.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMAssetMetadataStripsStageDraftFieldsFromTheWire,
+	"ConvaiPakManager.Publish.Metadata.StripsStageDraftFieldsFromTheWire",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMAssetMetadataStripsStageDraftFieldsFromTheWire::RunTest(const FString&)
+{
+	const FString ExpectedTopLevel = TEXT("asset_description,asset_name,asset_type,blueprint_class,")
+		TEXT("blueprint_class_path,content_path,entity_data,level_name,plugin_name,project_name,root_path");
+
+	const TSharedRef<FJsonObject> Avatar = Parse(TEXT(R"({
+		"stage_enabled": "true",
+		"stage_source_level": "/Game/Office/L_Office"
+	})"));
+	ConvaiPakManager::Chunk::FillRequiredMetadataFields(Avatar, TEXT("Proj"), TEXT("PLUGIN"), TEXT("Avatar"));
+
+	TestFalse(TEXT("the checkbox the Draft wrote does not reach the wire"), Avatar->HasField(TEXT("stage_enabled")));
+	TestFalse(TEXT("nor the level it names"), Avatar->HasField(TEXT("stage_source_level")));
+	TestEqual(TEXT("so the two Draft strings never reach the wire"), SortedKeys(Avatar), ExpectedTopLevel);
+
+	// A Scene has no stage at all, and an older tool has been known to write the pair on one anyway.
+	const TSharedRef<FJsonObject> Scene = Parse(TEXT(R"({
+		"stage_enabled": "false",
+		"stage_source_level": "/Game/Office/L_Office"
+	})"));
+	ConvaiPakManager::Chunk::FillRequiredMetadataFields(Scene, TEXT("Proj"), TEXT("PLUGIN"), TEXT("scene"));
+	TestEqual(TEXT("nor on a Scene"), SortedKeys(Scene), ExpectedTopLevel);
+
+	const TSharedRef<FJsonObject> Staged = Parse(TEXT(R"({
+		"stage_enabled": "true",
+		"stage_source_level": "/Game/Office/L_Office"
+	})"));
+	ConvaiPakManager::Chunk::FillRequiredMetadataFields(
+		Staged, TEXT("Proj"), TEXT("PLUGIN"), TEXT("Avatar"), {}, MakeShared<FJsonObject>());
+	TestEqual(TEXT("the record replaces them, they do not ride beside it"), SortedKeys(Staged),
+		ExpectedTopLevel + TEXT(",stage"));
+
+	return true;
+}
+
+/**
  * Compose refuses on a document it cannot read, and a refusal leaves the cache exactly as the server
  * last echoed it. Both halves matter together: the publish job fails on the false, and there is no
  * half-written document for a later run to send in place of what the creator typed.
@@ -303,7 +348,8 @@ bool FCPMAssetMetadataRefusesADocumentItCannotRead::RunTest(const FString&)
  *
  * Pinned as a set rather than field by field, because the failure this catches is the one the
  * per-field tests cannot see: a key silently added or dropped by a later change to the composer.
- * A key that legitimately joins the schema changes this test in the same commit.
+ * A key that legitimately joins the schema changes this test in the same commit. The stage is that
+ * key, pinned here in the change that put it there.
  */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FCPMAssetMetadataCreateDocumentKeysMatchLegacy,
@@ -329,6 +375,94 @@ bool FCPMAssetMetadataCreateDocumentKeysMatchLegacy::RunTest(const FString&)
 	TestEqual(TEXT("and exactly the legacy Avatar entity keys"), SortedEntityKeys(Avatar),
 		FString(TEXT("avatar_config,avatar_name,gender")));
 
+	const TSharedRef<FJsonObject> Staged = Parse(TEXT("{}"));
+	ConvaiPakManager::Chunk::FillRequiredMetadataFields(
+		Staged, TEXT("Proj"), TEXT("PLUGIN"), TEXT("Avatar"), {}, MakeShared<FJsonObject>());
+	TestEqual(TEXT("and exactly one more key when a stage is handed in"), SortedKeys(Staged),
+		ExpectedTopLevel + TEXT(",stage"));
+
+	return true;
+}
+
+/**
+ * The stage reaches the wire only when the Chunk has a record for it on disk.
+ *
+ * The case that matters is the Asset whose stage was switched off: composition starts from the
+ * server's echo, so the key it echoed has to go, or the document says the Asset still publishes
+ * surroundings it no longer has. A record that will not parse is the same case - nothing to send -
+ * and never a refusal: the tool wrote that file itself, and a publish must not stop on it.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMAssetMetadataStageIsInjectedOnlyWhenEnabled,
+	"ConvaiPakManager.Publish.Metadata.StageIsInjectedOnlyWhenEnabled",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMAssetMetadataStageIsInjectedOnlyWhenEnabled::RunTest(const FString&)
+{
+	const FString Directory = FPaths::Combine(
+		FPaths::ProjectIntermediateDir(), TEXT("CPM_Tests"), TEXT("StageIsInjectedOnlyWhenEnabled"));
+	IFileManager::Get().DeleteDirectory(*Directory, false, true);
+	IFileManager::Get().MakeDirectory(*Directory, true);
+
+	const FString MetadataPath = FPaths::Combine(Directory, TEXT("PakMetaData_3.json"));
+	const FString DraftPath = FPaths::Combine(Directory, TEXT("Draft_3.json"));
+	const FString StagePath = FPaths::Combine(Directory, TEXT("Stage_3.json"));
+
+	// The server echoing back a stage this Asset was published with once.
+	FFileHelper::SaveStringToFile(
+		TEXT("{\"asset_name\":\"Nova\",\"stage\":{\"schema\":1,\"level\":\"/OLD/Stage/L_Old_Stage\"}}"),
+		*MetadataPath);
+	FFileHelper::SaveStringToFile(TEXT("{\"asset_name\":\"Nova\"}"), *DraftPath);
+
+	auto Compose = [&MetadataPath, &DraftPath, &StagePath](const bool bWithStagePath)
+	{
+		return ConvaiPakManager::Chunk::ComposePakMetadataAt(
+			MetadataPath, DraftPath, TEXT("Proj"), TEXT("PLUGIN"), TEXT("avatar"), {},
+			bWithStagePath ? StagePath : FString());
+	};
+	auto Composed = [&MetadataPath]
+	{
+		FString Contents;
+		FFileHelper::LoadFileToString(Contents, *MetadataPath);
+		return Parse(*Contents);
+	};
+
+	TestTrue(TEXT("a Chunk with no record on disk composes"), Compose(true));
+	{
+		const TSharedRef<FJsonObject> Root = Composed();
+		TestFalse(TEXT("an echoed stage is removed when the Chunk has no record"), Root->HasField(TEXT("stage")));
+		TestEqual(TEXT("so the avatar-only document is legacy's exactly"), SortedKeys(Root),
+			FString(TEXT("asset_description,asset_name,asset_type,blueprint_class,")
+				TEXT("blueprint_class_path,content_path,entity_data,level_name,plugin_name,project_name,root_path")));
+	}
+
+	FFileHelper::SaveStringToFile(
+		TEXT("{\"schema\":1,\"level\":\"/JBILN5CDNI4TRYELD6CS/Stage/L_Office_Stage\",\"has_custom_lighting\":true}"),
+		*StagePath);
+	TestTrue(TEXT("and so does one with a record"), Compose(true));
+	{
+		const TSharedRef<FJsonObject> Root = Composed();
+		const TSharedPtr<FJsonObject>* Stage = nullptr;
+		const bool bCarriesStage = Root->TryGetObjectField(TEXT("stage"), Stage) && Stage && Stage->IsValid();
+		TestTrue(TEXT("the record rides in verbatim"), bCarriesStage);
+		if (bCarriesStage)
+		{
+			bool bHasCustomLighting = false;
+			(*Stage)->TryGetBoolField(TEXT("has_custom_lighting"), bHasCustomLighting);
+			TestEqual(TEXT("with the level it was built from"), Field((*Stage).ToSharedRef(), TEXT("level")),
+				FString(TEXT("/JBILN5CDNI4TRYELD6CS/Stage/L_Office_Stage")));
+			TestTrue(TEXT("and the flags the studio reads"), bHasCustomLighting);
+		}
+	}
+
+	TestTrue(TEXT("a compose that names no record composes"), Compose(false));
+	TestFalse(TEXT("the default composes without a stage"), Composed()->HasField(TEXT("stage")));
+
+	FFileHelper::SaveStringToFile(TEXT("{ not json"), *StagePath);
+	TestTrue(TEXT("a record that will not parse is not a refusal"), Compose(true));
+	TestFalse(TEXT("and nothing of it reaches the wire"), Composed()->HasField(TEXT("stage")));
+
+	IFileManager::Get().DeleteDirectory(*Directory, false, true);
 	return true;
 }
 

@@ -250,6 +250,10 @@ CONVAIPAKMANAGER_API void ClearAssetRecordsIn(
  * names are touched: a size this run did not measure describes a Version the Asset still holds, and
  * clearing it would say the artefact was gone.
  *
+ * Stage is the record of the surroundings this Asset publishes with, carried as `stage`. A null one
+ * REMOVES the key rather than leaving it alone: composition starts from the server's echo, so an
+ * Asset whose stage was switched off would otherwise send back the stage it last had.
+ *
  * Pure and file-free so it can be tested without a project on disk; ComposePakMetadata is the
  * load-fill-save around it.
  */
@@ -258,7 +262,8 @@ CONVAIPAKMANAGER_API void FillRequiredMetadataFields(
 	const FString& ProjectName,
 	const FString& PluginName,
 	const FString& AssetType,
-	const TMap<ECPM_Platform, int64>& ArtifactSizes = {});
+	const TMap<ECPM_Platform, int64>& ArtifactSizes = {},
+	TSharedPtr<class FJsonObject> Stage = nullptr);
 
 /**
  * Whether a package lives inside the Modding Plugin a Chunk records.
@@ -346,6 +351,8 @@ CONVAIPAKMANAGER_API FString ResolveLevelPackage(const FString& LevelName, const
  * published from a project last touched by an older Pak Manager has a document missing fields
  * nobody is going to re-enter.
  *
+ * The Chunk's `Stage_N.json` is laid over it too, when the Chunk has one.
+ *
  * False means nothing was written: one of the two documents is on disk but unreadable, so the cache
  * is left holding whatever the server last echoed. A caller MUST NOT publish on a false - sending
  * that cache hands the server its own last name and description back as if a creator had typed them.
@@ -353,14 +360,20 @@ CONVAIPAKMANAGER_API FString ResolveLevelPackage(const FString& LevelName, const
 CONVAIPAKMANAGER_API bool ComposePakMetadata(
 	int32 ChunkId, const FString& EnvironmentSlug, const TMap<ECPM_Platform, int64>& ArtifactSizes = {});
 
-/** The same composition against explicit paths, so it can be exercised without a project on disk. */
+/**
+ * The same composition against explicit paths, so it can be exercised without a project on disk.
+ *
+ * The record at StagePath, when there is one, rides into the document as `stage`; none or unreadable
+ * means the Asset publishes without a stage.
+ */
 CONVAIPAKMANAGER_API bool ComposePakMetadataAt(
 	const FString& MetadataPath,
 	const FString& DraftPath,
 	const FString& ProjectName,
 	const FString& PluginName,
 	const FString& AssetType,
-	const TMap<ECPM_Platform, int64>& ArtifactSizes = {});
+	const TMap<ECPM_Platform, int64>& ArtifactSizes = {},
+	const FString& StagePath = FString());
 
 /** Result of one migration attempt, so a caller can tell "nothing to do" from "could not". */
 enum class EMigrationResult : uint8

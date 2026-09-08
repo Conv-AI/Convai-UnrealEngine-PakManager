@@ -170,4 +170,68 @@ bool FCPMAssetRecordCleanupTheLastDeleteTakesTheDraftAndThumbnail::RunTest(const
 	return true;
 }
 
+/**
+ * The stage record describes the surroundings the last Asset was published with, so it goes with the
+ * Draft and for the same reason: kept once nothing is published anywhere, it describes a stage no
+ * Asset has, and the next Publish would compose the document from it.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMAssetRecordCleanupRemovesTheStageRecordWithTheLastAsset,
+	"ConvaiPakManager.Chunk.Cleanup.RemovesTheStageRecordWithTheLastAsset",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMAssetRecordCleanupRemovesTheStageRecordWithTheLastAsset::RunTest(const FString&)
+{
+	const int32 ChunkId = 7;
+	const FString Essentials = FPaths::Combine(
+		FPaths::ProjectIntermediateDir(), TEXT("CPM_Tests"), TEXT("RemovesTheStageRecord"), TEXT("ConvaiEssentials"));
+
+	IFileManager::Get().DeleteDirectory(*Essentials, false, true);
+
+	const FString Chunk = FPaths::Combine(Essentials, TEXT("ChunkId_7"));
+	auto Write = [&Chunk](const FString& RelativePath, const FString& Contents)
+	{
+		const FString Path = FPaths::Combine(Chunk, RelativePath);
+		IFileManager::Get().MakeDirectory(*FPaths::GetPath(Path), true);
+		FFileHelper::SaveStringToFile(Contents, *Path);
+	};
+	auto Exists = [&Chunk](const FString& RelativePath)
+	{
+		return IFileManager::Get().FileExists(*FPaths::Combine(Chunk, RelativePath));
+	};
+
+	Write(TEXT("Draft_7.json"), TEXT("{\"asset_name\":\"Nova\"}"));
+	Write(TEXT("Stage_7.json"), TEXT("{\"schema\":1}"));
+	Write(TEXT("ModdingMetaData_7.json"), TEXT("{\"asset_type\":\"Avatar\"}"));
+
+	for (const TCHAR* Slug : { ProductionSlug, StagingSlug })
+	{
+		Write(FString(Slug) / TEXT("CreateAssetData_7.json"), TEXT("{}"));
+		Write(FString(Slug) / TEXT("PakMetaData_7.json"), TEXT("{}"));
+		Write(FString(Slug) / TEXT("RawArchive_7.txt"), TEXT("x"));
+	}
+
+	TArray<FString> Undeleted;
+	ClearAssetRecordsIn(Essentials, ChunkId, StagingSlug, Undeleted);
+
+	TestTrue(TEXT("production still holds, so the stage record stays"), Exists(TEXT("Stage_7.json")));
+
+	Undeleted.Reset();
+	ClearAssetRecordsIn(Essentials, ChunkId, ProductionSlug, Undeleted);
+
+	TestTrue(TEXT("nothing was left behind"), Undeleted.IsEmpty());
+	TestFalse(TEXT("the last delete takes the stage record"), Exists(TEXT("Stage_7.json")));
+	TestFalse(TEXT("and the Draft with it"), Exists(TEXT("Draft_7.json")));
+	TestTrue(TEXT("what the Modding Tool decided about the project stays"), Exists(TEXT("ModdingMetaData_7.json")));
+
+	// A Chunk that never had a stage reaches this path too, and a record already gone is not a
+	// failure.
+	Undeleted.Reset();
+	ClearAssetRecordsIn(Essentials, ChunkId, ProductionSlug, Undeleted);
+	TestTrue(TEXT("a repeated delete reports nothing"), Undeleted.IsEmpty());
+
+	IFileManager::Get().DeleteDirectory(*Essentials, false, true);
+	return true;
+}
+
 #endif
