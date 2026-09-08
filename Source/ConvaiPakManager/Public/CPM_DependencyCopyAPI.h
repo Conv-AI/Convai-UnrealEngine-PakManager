@@ -127,6 +127,10 @@ struct CONVAIPAKMANAGER_API FCPM_DependencyCopyOptions
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
 	TArray<FName> AdditionalPackagesToFixup;
+
+	/** Refuse incomplete preparation and unverified replacement of existing packages. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dependency Copy")
+	bool bStrictValidation = false;
 };
 
 /**
@@ -305,66 +309,4 @@ public:
 		const FString &DestinationRoot,
 		const FString &DestinationSubdir = FString());
 
-private:
-	/**
-	 * Gathers all dependencies for the given packages.
-	 */
-	static void GatherDependencies(
-		const TArray<FName> &RootPackages,
-		const FCPM_DependencyCopyOptions &Options,
-		TSet<FName> &OutAllPackages,
-		TSet<FName> &OutEnginePackages,
-		TSet<FName> &OutGamePackages);
-
-	/**
-	 * Recursively gathers dependencies for a single package.
-	 */
-	static void RecursiveGatherDependencies(
-		const FName &PackageName,
-		const FCPM_DependencyCopyOptions &Options,
-		TSet<FName> &VisitedPackages,
-		TSet<FName> &OutEnginePackages,
-		TSet<FName> &OutGamePackages);
-
-	/**
-	 * Builds the copy plan mapping source packages to destination packages.
-	 */
-	static bool BuildCopyPlan(
-		const TSet<FName> &AllPackages,
-		const TSet<FName> &EnginePackages,
-		const FString &DestinationRoot,
-		const FCPM_DependencyCopyOptions &Options,
-		TMap<FName, FName> &OutSourceToDest,
-		FCPM_DependencyCopyReport &InOutReport);
-
-	/**
-	 * Executes the copy using Advanced Copy (handles reference remapping).
-	 */
-	static bool ExecuteAdvancedCopy(
-		const TMap<FName, FName> &SourceToDest,
-		const FCPM_DependencyCopyOptions &Options,
-		FCPM_DependencyCopyReport &InOutReport);
-
-	/**
-	 * Duplicates an asset manually (used for Engine assets that AdvancedCopy rejects).
-	 */
-	static bool DuplicateAssetManually(
-		const FName &SourcePackage,
-		const FName &DestPackage,
-		FString &OutError);
-
-	/**
-	 * Comprehensive reference fixup that handles both hard and soft object references.
-	 * Loads all source and destination packages, builds object mappings, and uses
-	 * FArchiveReplaceObjectRef to replace all references in copied packages.
-	 * 
-	 * @param SourceToDest  Map of source package names to destination package names
-	 * @param AdditionalPackagesToFixup  Packages to rewrite that were not themselves copied
-	 * @param OutError      Error message if operation fails
-	 * @return              True if successful
-	 */
-	static bool FixupAllHardReferences(
-		const TMap<FName, FName>& SourceToDest,
-		const TArray<FName>& AdditionalPackagesToFixup,
-		FString& OutError);
 };

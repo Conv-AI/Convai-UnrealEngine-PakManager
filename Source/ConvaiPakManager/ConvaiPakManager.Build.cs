@@ -35,6 +35,7 @@ public class ConvaiPakManager : ModuleRules
 			new string[]
 			{
 				"Slate",
+				"ConvaiAvatarPreparationEditor",
 				"SlateCore",
 				"InputCore",
 				"UnrealEd",
