@@ -187,7 +187,7 @@ FString WhyAssetRecordCannotBeWritten(
 {
 	TArray<FString> Missing;
 
-	if (SpawnPointCount <= 0)
+	if (AssetType == ECPM_AssetType::Scene && SpawnPointCount <= 0)
 	{
 		Missing.Add(TEXT("this level has no spawn point, so a Convai product has nowhere to put the ")
 			TEXT("player - use Set from viewport to place one"));

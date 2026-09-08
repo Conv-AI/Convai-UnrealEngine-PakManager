@@ -80,21 +80,24 @@ bool FCPMPreconditionsExplainsRefusals::RunTest(const FString&)
 	TestTrue(TEXT("a stale toolchain's refusal names where it was found"),
 		StaleWhy.Contains(TEXT("C:/UnrealToolchains/v23_clang-18.1.0-rockylinux8")));
 
-	// An Avatar has no nav mesh requirement; a Scene has both. Every missing thing is named at once.
+	// An Avatar asks nothing of its level; a Scene needs a spawn point and nav mesh bounds.
+	// Every missing thing is named at once.
 	TestTrue(TEXT("an Avatar with a spawn point is ready"),
 		WhyAssetRecordCannotBeWritten(ECPM_AssetType::Avatar, 1, false).IsEmpty());
 	TestTrue(TEXT("a Scene with both is ready"),
 		WhyAssetRecordCannotBeWritten(ECPM_AssetType::Scene, 1, true).IsEmpty());
+	TestTrue(TEXT("an Avatar without a spawn point is ready"),
+		WhyAssetRecordCannotBeWritten(ECPM_AssetType::Avatar, 0, false).IsEmpty());
 
-	const FString NoSpawn = WhyAssetRecordCannotBeWritten(ECPM_AssetType::Avatar, 0, false);
-	TestTrue(TEXT("a missing spawn point is refused"), NoSpawn.Contains(TEXT("spawn point")));
+	const FString NoSpawn = WhyAssetRecordCannotBeWritten(ECPM_AssetType::Scene, 0, true);
+	TestTrue(TEXT("a Scene without a spawn point is refused"), NoSpawn.Contains(TEXT("spawn point")));
 
 	const FString SceneNoNav = WhyAssetRecordCannotBeWritten(ECPM_AssetType::Scene, 1, false);
 	TestTrue(TEXT("a Scene without nav mesh bounds is refused"),
 		SceneNoNav.Contains(TEXT("Nav Mesh Bounds Volume")));
 
 	const FString Both = WhyAssetRecordCannotBeWritten(ECPM_AssetType::Scene, 0, false);
-	TestTrue(TEXT("both refusals are reported together, not one at a time"),
+	TestTrue(TEXT("a Scene missing both is refused for both at once, not one at a time"),
 		Both.Contains(TEXT("spawn point")) && Both.Contains(TEXT("Nav Mesh Bounds Volume")));
 
 	return true;
