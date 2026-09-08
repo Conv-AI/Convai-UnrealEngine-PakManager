@@ -28,6 +28,21 @@ namespace
 		(*Object)->TryGetBoolField(TEXT("should-package"), OutPolicy.bShouldPackage);
 		(*Object)->TryGetStringField(TEXT("configuration"), OutPolicy.Configuration);
 	}
+
+	/** The section's keys, by ECPM_StageLimit. A name not here is ignored by the read. */
+	const TCHAR* const StageLimitNames[] = {
+		TEXT("dynamic-lights"),
+		TEXT("shadow-lights"),
+		TEXT("static-meshes"),
+		TEXT("triangles"),
+		TEXT("textures"),
+		TEXT("texture-max-size"),
+		TEXT("texture-memory-mb"),
+		TEXT("convai-objects"),
+		TEXT("actors"),
+	};
+	static_assert(UE_ARRAY_COUNT(StageLimitNames) == static_cast<int32>(ECPM_StageLimit::Count),
+		"every stage limit needs its policy name");
 }
 
 FString FCPM_PakArtifact::VersionSlotFor(const ECPM_Platform Platform)
@@ -176,6 +191,73 @@ const FCPM_PlatformPolicy* FCPM_PublishPolicy::Find(const ECPM_Platform Platform
 	default:
 		return nullptr;
 	}
+}
+
+bool FCPM_StageLimits::ParseFromJson(const FString& Json, FString& OutError)
+{
+	TSharedPtr<FJsonObject> Root;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
+	if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+	{
+		OutError = TEXT("the publish policy is not valid JSON");
+		return false;
+	}
+
+	FCPM_StageLimits Parsed;
+	if (!Root->HasField(TEXT("stage-limits")))
+	{
+		// The section postdates the policy. Its absence is an older policy, not a broken one.
+		*this = Parsed;
+		return true;
+	}
+
+	const TSharedPtr<FJsonObject>* Section = nullptr;
+	if (!Root->TryGetObjectField(TEXT("stage-limits"), Section) || !Section || !Section->IsValid())
+	{
+		OutError = TEXT("the publish policy's \"stage-limits\" section is not an object");
+		return false;
+	}
+
+	for (const ECPM_StageLimit Limit : TEnumRange<ECPM_StageLimit>())
+	{
+		const TCHAR* Name = StageLimitNames[static_cast<int32>(Limit)];
+		const TSharedPtr<FJsonObject>* Entry = nullptr;
+		if (!(*Section)->TryGetObjectField(Name, Entry) || !Entry || !Entry->IsValid())
+		{
+			continue;
+		}
+
+		FCPM_StageLimitRule Rule;
+		if (!(*Entry)->TryGetNumberField(TEXT("max"), Rule.Max))
+		{
+			OutError = FString::Printf(TEXT("the publish policy's stage limit \"%s\" names no max"), Name);
+			return false;
+		}
+
+		FString Severity;
+		(*Entry)->TryGetStringField(TEXT("severity"), Severity);
+		if (Severity.Equals(TEXT("error"), ESearchCase::IgnoreCase))
+		{
+			Rule.Severity = ECPM_StageSeverity::Error;
+		}
+		else if (Severity.Equals(TEXT("warning"), ESearchCase::IgnoreCase))
+		{
+			Rule.Severity = ECPM_StageSeverity::Warning;
+		}
+		else
+		{
+			// Refused rather than defaulted to error: a limit whose severity was misspelt is a
+			// limit Convai did not finish writing, and guessing which way is the wrong fix.
+			OutError = FString::Printf(TEXT("the publish policy's stage limit \"%s\" names no severity"), Name);
+			return false;
+		}
+
+		Parsed.Rules.Add(Limit, Rule);
+	}
+
+	// Assigned only once everything parsed, so a failed read leaves the caller's limits alone.
+	*this = Parsed;
+	return true;
 }
 
 bool FCPM_ChunkStatus::IsBusy() const

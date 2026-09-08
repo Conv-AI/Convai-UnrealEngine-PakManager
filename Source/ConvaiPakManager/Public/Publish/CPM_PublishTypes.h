@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Utility/CPM_Utils.h"
+#include "Misc/EnumRange.h"
 #include "CPM_PublishTypes.generated.h"
 
 /**
@@ -118,6 +119,70 @@ struct CONVAIPAKMANAGER_API FCPM_PublishPolicy
 	 * nothing at all.
 	 */
 	FCPM_PublishPolicy WithPlatforms(const TArray<ECPM_Platform>& Selection) const;
+};
+
+/** How much a stage issue matters to a Publish: an error refuses it, a warning and an info do not. */
+UENUM()
+enum class ECPM_StageSeverity : uint8
+{
+	Info,
+	Warning,
+	Error
+};
+
+/** The limits Convai publishes for a stage, in the order the policy lists them. */
+UENUM()
+enum class ECPM_StageLimit : uint8
+{
+	DynamicLights,
+	ShadowLights,
+	StaticMeshes,
+	Triangles,
+	Textures,
+	TextureMaxSize,
+	TextureMemoryMb,
+	ConvaiObjects,
+	Actors,
+	Count UMETA(Hidden)
+};
+ENUM_RANGE_BY_COUNT(ECPM_StageLimit, ECPM_StageLimit::Count)
+
+/** One limit: what a fact may not exceed, and what exceeding it does to the Publish. */
+USTRUCT()
+struct CONVAIPAKMANAGER_API FCPM_StageLimitRule
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	double Max = 0.0;
+
+	UPROPERTY()
+	ECPM_StageSeverity Severity = ECPM_StageSeverity::Error;
+};
+
+/**
+ * What the Publish Policy's `stage-limits` section says, read from the same document as
+ * FCPM_PublishPolicy so Convai tunes a stage the way it tunes a platform. See CONTEXT.md.
+ *
+ * A policy with no section yields no rules. Whether a stage may publish unchecked is the
+ * Precondition's refusal to make, not the parser's: this reads what Convai said, and the older
+ * policy said nothing about stages.
+ */
+USTRUCT()
+struct CONVAIPAKMANAGER_API FCPM_StageLimits
+{
+	GENERATED_BODY()
+
+	/** Only the limits the section names. A limit it does not name is not checked. */
+	UPROPERTY()
+	TMap<ECPM_StageLimit, FCPM_StageLimitRule> Rules;
+
+	/**
+	 * Reads the section. False, with the caller's rules untouched, on JSON that will not parse, a
+	 * section that is not an object, or a named limit with no max or an unknown severity - a limit
+	 * half read would check the wrong number, and nothing downstream would notice.
+	 */
+	bool ParseFromJson(const FString& Json, FString& OutError);
 };
 
 /**

@@ -304,4 +304,93 @@ bool FCPMPublishPolicySelectionAddsAndRemovesPlatforms::RunTest(const FString&)
 	return true;
 }
 
+/**
+ * The `stage-limits` section: read from the same document as the policy, ignored where absent.
+ *
+ * On its own literal rather than LivePolicyJson, which gains the section later - two tests sharing
+ * that fixture would mean the "no limits" case quietly stops testing anything the day it does.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCPMPublishPolicyReadsStageLimits,
+	"ConvaiPakManager.Publish.Policy.ReadsStageLimits",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCPMPublishPolicyReadsStageLimits::RunTest(const FString&)
+{
+	const TCHAR* PolicyWithLimits = TEXT(R"({
+		"unreal-engine": {
+			"windows": { "should-package": true, "configuration": "Shipping" },
+			"linux":   { "should-package": true, "configuration": "Shipping" }
+		},
+		"raw-project-upload": true,
+		"stage-limits": {
+			"dynamic-lights":    { "max": 4,      "severity": "error" },
+			"shadow-lights":     { "max": 0,      "severity": "warning" },
+			"static-meshes":     { "max": 20,     "severity": "error" },
+			"triangles":         { "max": 500000, "severity": "error" },
+			"textures":          { "max": 250,    "severity": "error" },
+			"texture-max-size":  { "max": 2048,   "severity": "error" },
+			"texture-memory-mb": { "max": 512,    "severity": "error" },
+			"convai-objects":    { "max": 10,     "severity": "warning" },
+			"actors":            { "max": 100,    "severity": "warning" },
+			"fog-volumes":       { "max": 1,      "severity": "error" }
+		}
+	})");
+
+	FCPM_StageLimits Limits;
+	FString Error;
+	TestTrue(TEXT("reads the section"), Limits.ParseFromJson(PolicyWithLimits, Error));
+	TestEqual(TEXT("a limit the tool does not know is ignored"), Limits.Rules.Num(), 9);
+
+	const FCPM_StageLimitRule* DynamicLights = Limits.Rules.Find(ECPM_StageLimit::DynamicLights);
+	if (TestNotNull(TEXT("dynamic-lights is one of them"), DynamicLights))
+	{
+		TestEqual(TEXT("at the max the policy names"), DynamicLights->Max, 4.0);
+		TestTrue(TEXT("and exceeding it refuses the publish"), DynamicLights->Severity == ECPM_StageSeverity::Error);
+	}
+
+	// A max of none is a limit like any other, not an absent one.
+	const FCPM_StageLimitRule* ShadowLights = Limits.Rules.Find(ECPM_StageLimit::ShadowLights);
+	if (TestNotNull(TEXT("shadow-lights is one of them"), ShadowLights))
+	{
+		TestEqual(TEXT("at a max of none"), ShadowLights->Max, 0.0);
+		TestTrue(TEXT("which only warns"), ShadowLights->Severity == ECPM_StageSeverity::Warning);
+	}
+
+	const FCPM_StageLimitRule* ConvaiObjects = Limits.Rules.Find(ECPM_StageLimit::ConvaiObjects);
+	if (TestNotNull(TEXT("convai-objects is one of them"), ConvaiObjects))
+	{
+		TestTrue(TEXT("and it only warns"), ConvaiObjects->Severity == ECPM_StageSeverity::Warning);
+	}
+
+	FCPM_PublishPolicy Policy;
+	TestTrue(TEXT("the section is invisible to the policy read beside it"),
+		Policy.ParseFromJson(PolicyWithLimits, Error));
+	TestEqual(TEXT("which still asks for two platforms"), Policy.PlatformsToPackage().Num(), 2);
+
+	FCPM_StageLimits NoSection;
+	TestTrue(TEXT("a policy from before the section parses"), NoSection.ParseFromJson(
+		TEXT(R"({"unreal-engine":{"windows":{"should-package":true,"configuration":"Shipping"}},"raw-project-upload":true})"),
+		Error));
+	TestTrue(TEXT("and yields no limits"), NoSection.Rules.IsEmpty());
+
+	TestFalse(TEXT("a limit with no max is refused"),
+		Limits.ParseFromJson(TEXT(R"({"stage-limits":{"textures":{"severity":"error"}}})"), Error));
+	TestTrue(TEXT("saying which limit it could not read"), Error.Contains(TEXT("textures")));
+	TestEqual(TEXT("and the limits read before it are still there"), Limits.Rules.Num(), 9);
+
+	TestFalse(TEXT("a severity nobody defined is refused"),
+		Limits.ParseFromJson(TEXT(R"({"stage-limits":{"actors":{"max":5,"severity":"blocking"}}})"), Error));
+	TestTrue(TEXT("saying which limit that was"), Error.Contains(TEXT("actors")));
+
+	TestFalse(TEXT("a section that is not an object is refused"),
+		Limits.ParseFromJson(TEXT(R"({"stage-limits": 7})"), Error));
+	TestFalse(TEXT("and so is a document that is not JSON"),
+		Limits.ParseFromJson(TEXT("{ not json"), Error));
+
+	TestEqual(TEXT("a failed read leaves the old limits alone"), Limits.Rules.Num(), 9);
+
+	return true;
+}
+
 #endif  // WITH_AUTOMATION_TESTS
